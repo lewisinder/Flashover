@@ -1,0 +1,135 @@
+{
+  "date": "2025-07-03T03:32:20.868Z",
+  "lockers": [
+    {
+      "id": 1751512339486,
+      "name": "Nearside Front",
+      "shelves": [
+        {
+          "id": 1751512339487,
+          "items": [
+            {
+              "id": 1751512340155,
+              "name": "halligan Bar",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751512346036,
+              "name": "Tool Box",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "container",
+              "subItems": [
+                {
+                  "id": 1751512457752,
+                  "name": "Test 4",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                },
+                {
+                  "id": 1751512461036,
+                  "name": "Test 7",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                }
+              ],
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751512395572,
+              "name": "Test",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "id": 1751512384886,
+          "items": [
+            {
+              "id": 1751512386535,
+              "name": "Test item",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751512405053,
+              "name": "Test 3",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1751512414091,
+      "name": "Nearside Middle",
+      "shelves": [
+        {
+          "id": 1751512414092,
+          "items": [
+            {
+              "id": 1751512429037,
+              "name": "Hoses",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751512434434,
+              "name": "First aid kit",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "container",
+              "subItems": [
+                {
+                  "id": 1751512442918,
+                  "name": "Test",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                },
+                {
+                  "id": 1751512447650,
+                  "name": "Test2",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                }
+              ],
+              "status": "present",
+              "note": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# Flashover Version 0.2.0 - Reports Working
+
+This version includes a fully functional report logging and viewing system.
+
+## Key Features & Changes:
+
+- **Report Saving:** Users can now successfully save a report of the check summary to the server.
+- **Report Viewing:** The "View Past Reports" screen now correctly lists all past reports for the logged-in user.
+- **Report Details:** Clicking on a past report opens a modal window showing the specific issues (missing items or notes) from that check.
+- **Bug Fixes:** Resolved issues with JavaScript event listeners that were preventing the report-related buttons from functioning.
+- **Security:** Implemented password hashing using bcrypt and added a logout button.
+- **Deployment Ready:** The application is configured with a Procfile and .gitignore, making it ready for deployment.

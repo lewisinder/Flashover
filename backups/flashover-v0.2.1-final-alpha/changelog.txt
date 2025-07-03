@@ -1,0 +1,15 @@
+# Flashover Version 0.2.1 - Final Alpha
+
+This version represents a complete and stable alpha prototype of the Flashover application. All core features are implemented and functional.
+
+## Key Features & Changes:
+
+- **Full User Lifecycle:** Users can sign up, log in, and log out. Passwords are now securely hashed.
+- **Personalized Data:** Each user's truck layout is saved to their own account.
+- **Comprehensive Reporting:** The report system is fully functional. Users can save detailed reports of their checks and view a complete, expandable history of all items and their status for each past report.
+- **Bug Fixes:** All known issues with event listeners and date formatting have been resolved.
+- **Deployment Ready:** The application is configured for deployment to a cloud hosting service.
+
+## Known Issues:
+
+- **Image Uploads:** The functionality for uploading and saving images for items is not yet implemented. The UI shows an upload button, but it does not connect to the backend to store the images.

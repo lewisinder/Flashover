@@ -1,0 +1,33 @@
+{
+  "lockers": [
+    {
+      "id": 1751505826914,
+      "name": "TESTTTT",
+      "shelves": [
+        {
+          "id": 1751505826915,
+          "items": [
+            {
+              "id": 1751505828017,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item"
+            },
+            {
+              "id": 1751505829198,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item"
+            }
+          ]
+        },
+        {
+          "id": 1751505830797,
+          "items": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Fire Truck Checks</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+        .screen { display: none; }
+        .screen.active { display: flex; }
+        /* Checker UI Styles */
+        .item-box { transition: all 0.2s ease-in-out; cursor: pointer; }
+        .item-box:hover { background-color: #d1d5db; }
+        .item-box.is-active { box-shadow: 0 0 0 4px #2563eb; transform: scale(1.05); }
+        .item-box.status-present { background-color: #22c55e; }
+        .item-box.status-missing { background-color: #ef4444; }
+        .item-box.status-note { background-color: #f59e0b; }
+        .item-box.status-partial { background-color: #a855f7; } /* Purple for Partial */
+        .control-btn:active { transform: scale(0.95); }
+        /* Editor UI Styles */
+        .editor-shelves-container { display: flex; flex-direction: column; gap: 0.75rem; flex-grow: 1; }
+        .shelf-editor-container { flex: 1 1 0px; background-color: #f3f4f6; border: 2px solid #e5e7eb; border-radius: 0.75rem; padding: 0.75rem; display: flex; flex-direction: column; }
+        .shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
+        .item-editor-box { flex: 1 1 0px; background-color: #e5e7eb; border-radius: 0.5rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.5rem; overflow: hidden; position: relative; }
+        .item-editor-box:hover { background-color: #d1d5db; }
+        .item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
+        .item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
+        .hidden-file-input { display: none; }
+        .custom-file-upload { border: 2px dashed #d1d5db; display: inline-block; padding: 1rem; cursor: pointer; text-align: center; transition: all 0.2s ease; width: 100%; border-radius: 0.5rem; }
+        .custom-file-upload:hover { background-color: #f9fafb; border-color: #9ca3af; }
+        /* Shake animation for validation error */
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+    </style>
+</head>
+<body class="bg-gray-300 flex items-center justify-center">
+
+    <div class="max-w-md w-full h-screen bg-white text-gray-900 flex flex-col shadow-2xl">
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: HOME                                                        -->
+        <!-- =================================================================== -->
+        <div id="home-screen" class="screen active p-6 flex-col h-full">
+            <h1 class="text-3xl font-bold text-center mt-4">Flashover</h1>
+            <div class="flex-grow flex items-center justify-center">
+                <img src="https://placehold.co/300x150/ef4444/ffffff?text=Fire+Truck" alt="Fire Truck" class="rounded-lg">
+            </div>
+            <div class="space-y-4">
+                <button id="start-checks-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg text-xl">Start Full Check</button>
+                <button id="setup-truck-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 px-4 rounded-lg text-xl">Setup Truck</button>
+                <button id="view-reports-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-4 rounded-lg text-xl">View Past Reports</button>
+            </div>
+            <div class="mt-8 text-center">
+                <button id="logout-btn" class="text-gray-500 hover:text-gray-700 hover:underline">Logout</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: LOCKER CHECK                                                -->
+        <!-- =================================================================== -->
+        <div id="locker-check-screen" class="screen p-6 flex-col h-full">
+            <header class="text-center p-2 shadow-md flex-shrink-0 bg-gray-100 rounded-lg mb-4 flex justify-between items-center">
+                <div class="w-24"></div> <!-- Spacer -->
+                <h1 id="locker-name" class="text-xl font-bold text-gray-800">Locker Name</h1>
+                <button id="back-to-locker-list-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Lockers</button>
+            </header>
+            <main class="flex-grow flex flex-col overflow-y-auto">
+                <section id="current-item-display" class="flex items-center gap-4 mb-6 flex-shrink-0">
+                    <img id="item-image" src="" alt="Item" class="w-32 h-32 rounded-2xl border-4 border-gray-300 object-cover bg-gray-100 flex-shrink-0">
+                    <div>
+                        <h2 id="item-name" class="text-gray-900 text-2xl font-bold">Item Name</h2>
+                        <p id="item-desc" class="text-gray-600 text-sm whitespace-pre-wrap">Item description.</p>
+                    </div>
+                </section>
+                <section id="locker-layout" class="flex-grow flex flex-col gap-3"></section>
+            </main>
+            <footer class="pt-6 flex-shrink-0">
+                <div id="controls" class="flex justify-around items-center">
+                    <button id="btn-missing" class="control-btn w-20 h-20 rounded-full bg-red-500 text-white text-5xl font-bold shadow-lg flex items-center justify-center border-4 border-gray-200">✗</button>
+                    <button id="btn-note" class="control-btn w-20 h-20 rounded-full bg-amber-500 text-white text-5xl font-bold shadow-lg flex items-center justify-center border-4 border-gray-200">-</button>
+                    <button id="btn-present" class="control-btn w-20 h-20 rounded-full bg-green-500 text-white text-5xl font-bold shadow-lg flex items-center justify-center border-4 border-gray-200">✓</button>
+                </div>
+                <div id="container-controls" class="hidden flex justify-around items-center">
+                    <button id="btn-container-missing" class="w-2/5 bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-4 rounded-lg text-lg">Container Missing</button>
+                    <button id="btn-check-contents" class="w-2/5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg text-lg">Check Contents</button>
+                </div>
+                <button id="go-to-next-locker-btn" class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg text-xl">Go to Next Locker</button>
+                <button id="back-to-summary-btn" class="hidden w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 px-4 rounded-lg text-xl">Back to Summary</button>
+            </footer>
+        </div>
+        
+        <!-- =================================================================== -->
+        <!-- SCREEN: SELECT LOCKER TO EDIT                                       -->
+        <!-- =================================================================== -->
+        <div id="select-locker-screen" class="screen p-6 flex-col h-full">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-2xl font-bold">Select Locker</h1>
+                <button id="back-home-from-select-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Home</button>
+            </div>
+            <div id="locker-list-container" class="flex-grow space-y-3 overflow-y-auto">
+                <!-- Locker list generated by JS -->
+            </div>
+            <div class="pt-4 flex-shrink-0">
+                 <button id="create-new-locker-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">+ Create New Locker</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: LOCKER EDITOR                                               -->
+        <!-- =================================================================== -->
+        <div id="locker-editor-screen" class="screen p-6 flex-col h-full">
+            <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                <input type="text" id="locker-editor-name" placeholder="Locker Name" class="bg-transparent text-2xl font-bold w-full focus:bg-gray-100 rounded p-1 border-b-2 border-transparent focus:border-blue-500">
+                <button id="done-editing-locker-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg ml-2">Done</button>
+            </div>
+            <div id="locker-editor-shelves" class="editor-shelves-container flex-grow overflow-y-auto pr-2">
+                <!-- Shelves and items generated by JS -->
+            </div>
+            <div class="pt-4 flex-shrink-0">
+                 <button id="add-shelf-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">+ Add Shelf</button>
+            </div>
+        </div>
+        
+        <!-- =================================================================== -->
+        <!-- SCREEN: CONTAINER EDITOR                                            -->
+        <!-- =================================================================== -->
+        <div id="container-editor-screen" class="screen p-6 flex-col h-full">
+            <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                <h1 id="container-editor-title" class="text-2xl font-bold">Editing Container</h1>
+                <button id="back-to-locker-editor-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg ml-2">Back to Locker</button>
+            </div>
+            <div id="container-editor-shelves" class="editor-shelves-container flex-grow overflow-y-auto pr-2">
+                <!-- Container sub-items generated here -->
+            </div>
+            <div class="pt-4 flex-shrink-0">
+                 <button id="add-sub-item-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">+ Add Sub-Item</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: NEXT LOCKER CHOICE                                          -->
+        <!-- =================================================================== -->
+        <div id="next-locker-choice-screen" class="screen p-6 flex-col h-full">
+            <h1 class="text-2xl font-bold text-center mb-4">Locker Status</h1>
+            <p class="text-center text-gray-600 mb-6">Select a locker to continue or finish checks.</p>
+            <div id="next-locker-list-container" class="flex-grow space-y-3 overflow-y-auto">
+                <!-- Next locker choices generated by JS -->
+            </div>
+            <div class="pt-4 flex-shrink-0 space-y-3">
+                 <button id="go-to-selected-locker-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">Go to Selected Locker</button>
+                <button id="finish-checks-early-btn" class="hidden w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg">Finish & View Summary</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: CHECK SUMMARY                                               -->
+        <!-- =================================================================== -->
+        <div id="summary-screen" class="screen p-6 flex-col h-full">
+            <h1 class="text-2xl font-bold text-center mb-4">Check Summary</h1>
+            <div id="summary-list-container" class="flex-grow space-y-4 overflow-y-auto">
+                <!-- Summary items generated by JS -->
+            </div>
+             <div class="pt-4 flex-shrink-0 flex space-x-2">
+                <button id="save-report-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">Save Report</button>
+                <button id="go-home-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg">Done</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: PAST REPORTS                                                -->
+        <!-- =================================================================== -->
+        <div id="reports-screen" class="screen p-6 flex-col h-full">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-2xl font-bold">Past Reports</h1>
+                <button id="back-home-from-reports-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Home</button>
+            </div>
+            <div id="reports-list-container" class="flex-grow space-y-3 overflow-y-auto">
+                <!-- Report list generated by JS -->
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- MODALS (Pop-up windows)                                             -->
+        <!-- =================================================================== -->
+        <div id="modals-container">
+            <!-- Item Editor Modal -->
+            <div id="item-editor-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="item-editor-title" class="text-xl font-bold mb-4">Edit Item</h3>
+                    <div class="space-y-4">
+                        <label class="custom-file-upload"><img id="image-preview" src="https://placehold.co/100x100/e5e7eb/4b5563?text=Upload" alt="Preview" class="mx-auto mb-2 h-24 object-contain"><span id="image-upload-text">Click to upload photo</span><input id="file-upload" type="file" accept="image/*" class="hidden-file-input"></label>
+                        <input type="text" id="item-name-input" placeholder="Item Name" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+                        <textarea id="item-desc-input" rows="3" placeholder="Description" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500"></textarea>
+                        <div id="item-type-selector-container">
+                            <label class="block text-sm font-medium text-gray-700">Item Type</label>
+                            <select id="item-type-select" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 mt-1">
+                                <option value="item">Standard Item</option>
+                                <option value="container">Container</option>
+                            </select>
+                        </div>
+                        <button id="enter-container-btn" class="hidden w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Edit Container Items</button>
+                    </div>
+                    <div class="flex justify-between mt-6">
+                        <button id="delete-item-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                        <div><button id="cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button><button id="save-item-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save</button></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Note Taking Modal -->
+            <div id="note-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="note-modal-title" class="text-xl font-bold mb-4">Add Note</h3>
+                    <textarea id="note-input" class="w-full h-24 bg-gray-100 rounded-lg p-2 border border-gray-300" placeholder="Type note..."></textarea>
+                    <button id="btn-save-note" class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save Note</button>
+                </div>
+            </div>
+
+            <!-- Name Locker Modal -->
+            <div id="name-locker-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 class="text-xl font-bold mb-4">Create New Locker</h3>
+                    <input type="text" id="new-locker-name-input" placeholder="Enter locker name..." class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+                    <div class="flex justify-end mt-6">
+                        <button id="cancel-create-locker-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                        <button id="save-new-locker-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Create</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete Confirmation Modal -->
+            <div id="delete-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="delete-confirm-title" class="text-xl font-bold mb-2">Are you sure?</h3>
+                    <p id="delete-confirm-text" class="text-gray-600 mb-6">This action cannot be undone.</p>
+                    <div class="flex justify-end">
+                        <button id="cancel-delete-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                        <button id="confirm-delete-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Detail Modal -->
+            <div id="report-detail-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-md shadow-2xl flex flex-col" style="max-height: 90vh;">
+                    <h3 id="report-detail-title" class="text-xl font-bold mb-4 flex-shrink-0">Report Details</h3>
+                    <div id="report-detail-content" class="flex-grow overflow-y-auto space-y-3">
+                        <!-- Report issue details will be injected here -->
+                    </div>
+                    <div class="flex justify-end mt-6 flex-shrink-0">
+                        <button id="close-report-detail-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // ===================================================================
+        // JAVASCRIPT - THE BRAIN OF THE APP
+        // ===================================================================
+        const username = localStorage.getItem('username');
+        if (!username) {
+            window.location.href = '/login.html';
+            return; // Stop executing the script
+        }
+
+        // -------------------------------------------------------------------
+        // SECTION A: DATA MANAGEMENT
+        // -------------------------------------------------------------------
+        let truckData = { lockers: [] };
+
+        async function loadData() {
+            try {
+                const response = await fetch(`/api/data/${username}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                truckData = await response.json();
+            } catch (error) {
+                console.error("Could not load truck data:", error);
+                alert("Could not load truck data. Please check the server connection and try again.");
+            }
+        }
+
+        async function saveData() {
+            try {
+                const response = await fetch(`/api/data/${username}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(truckData),
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                console.log('Data saved successfully');
+            } catch (error) {
+                console.error('Failed to save data:', error);
+                alert('Failed to save data to the server.');
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // SECTION B: APP STATE
+        // -------------------------------------------------------------------
+        let checkResults = [];
+        let currentlyEditing = { lockerId: null, shelfId: null, itemId: null, isSubItem: false, parentItemId: null, isNewItem: false };
+        let itemToDelete = { type: null, id: null, parentId: null };
+        let currentCheckState = { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
+        let nextLockerToStartId = null;
+        let tempImageSrc = null;
+
+        // -------------------------------------------------------------------
+        // SECTION C: DOM ELEMENT REFERENCES
+        // -------------------------------------------------------------------
+        const screens = { home: document.getElementById('home-screen'), lockerCheck: document.getElementById('locker-check-screen'), selectLocker: document.getElementById('select-locker-screen'), lockerEditor: document.getElementById('locker-editor-screen'), containerEditor: document.getElementById('container-editor-screen'), nextLockerChoice: document.getElementById('next-locker-choice-screen'), summary: document.getElementById('summary-screen'), reports: document.getElementById('reports-screen') };
+        const checkerUI = { lockerName: document.getElementById('locker-name'), itemImage: document.getElementById('item-image'), itemName: document.getElementById('item-name'), itemDesc: document.getElementById('item-desc'), lockerLayout: document.getElementById('locker-layout'), controls: document.getElementById('controls'), containerControls: document.getElementById('container-controls'), nextLockerBtn: document.getElementById('go-to-next-locker-btn'), backToSummaryBtn: document.getElementById('back-to-summary-btn') };
+        const editorUI = { lockerName: document.getElementById('locker-editor-name'), shelvesContainer: document.getElementById('locker-editor-shelves'), addShelfBtn: document.getElementById('add-shelf-btn'), doneBtn: document.getElementById('done-editing-locker-btn') };
+        const containerEditorUI = { title: document.getElementById('container-editor-title'), shelvesContainer: document.getElementById('container-editor-shelves'), addSubItemBtn: document.getElementById('add-sub-item-btn'), backBtn: document.getElementById('back-to-locker-editor-btn') };
+        const editorModal = { overlay: document.getElementById('item-editor-modal'), title: document.getElementById('item-editor-title'), imagePreview: document.getElementById('image-preview'), uploadText: document.getElementById('image-upload-text'), fileInput: document.getElementById('file-upload'), nameInput: document.getElementById('item-name-input'), descInput: document.getElementById('item-desc-input'), typeSelectorContainer: document.getElementById('item-type-selector-container'), typeSelect: document.getElementById('item-type-select'), enterContainerBtn: document.getElementById('enter-container-btn'), saveBtn: document.getElementById('save-item-btn'), cancelBtn: document.getElementById('cancel-edit-btn'), deleteBtn: document.getElementById('delete-item-btn') };
+        const noteModal = { overlay: document.getElementById('note-modal'), title: document.getElementById('note-modal-title'), input: document.getElementById('note-input'), saveBtn: document.getElementById('btn-save-note') };
+        const nameLockerModal = { overlay: document.getElementById('name-locker-modal'), input: document.getElementById('new-locker-name-input'), saveBtn: document.getElementById('save-new-locker-btn'), cancelBtn: document.getElementById('cancel-create-locker-btn') };
+        const deleteConfirmModal = { overlay: document.getElementById('delete-confirm-modal'), title: document.getElementById('delete-confirm-title'), text: document.getElementById('delete-confirm-text'), confirmBtn: document.getElementById('confirm-delete-btn'), cancelBtn: document.getElementById('cancel-delete-btn') };
+        const mainButtons = { startChecks: document.getElementById('start-checks-btn'), setupTruck: document.getElementById('setup-truck-btn'), goHome: document.getElementById('go-home-btn'), backHomeFromSelect: document.getElementById('back-home-from-select-btn'), createNewLocker: document.getElementById('create-new-locker-btn'), finishChecksEarly: document.getElementById('finish-checks-early-btn'), backToLockerList: document.getElementById('back-to-locker-list-btn'), goToSelectedLocker: document.getElementById('go-to-selected-locker-btn') };
+        const checkButtons = { present: document.getElementById('btn-present'), missing: document.getElementById('btn-missing'), note: document.getElementById('btn-note'), checkContents: document.getElementById('btn-check-contents'), containerMissing: document.getElementById('btn-container-missing') };
+        
+        // -------------------------------------------------------------------
+        // SECTION D: CORE APP LOGIC
+        // -------------------------------------------------------------------
+        
+        function showScreen(screenId) {
+            Object.values(screens).forEach(s => s.classList.remove('active'));
+            screens[screenId].classList.add('active');
+        }
+
+        // -------------------------------------------------------------------
+        // SUB-SECTION: SETUP & EDITOR MODE LOGIC
+        // -------------------------------------------------------------------
+        function renderLockerSelection() {
+            const container = document.getElementById('locker-list-container');
+            container.innerHTML = ''; // Clear existing content
+            const createBtn = document.getElementById('create-new-locker-btn');
+
+            if (truckData.lockers.length === 0) {
+                createBtn.classList.add('hidden'); // Hide the default button
+                const emptyStateDiv = document.createElement('div');
+                emptyStateDiv.className = 'text-center p-8 flex flex-col items-center';
+                emptyStateDiv.innerHTML = `
+                    <h2 class="text-xl font-semibold text-gray-700 mb-2">No lockers yet!</h2>
+                    <p class="text-gray-500 mb-6">Get started by creating your first locker.</p>
+                `;
+                
+                const firstLockerBtn = document.createElement('button');
+                firstLockerBtn.className = 'bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg text-lg';
+                firstLockerBtn.textContent = '+ Create First Locker';
+                firstLockerBtn.addEventListener('click', () => {
+                    nameLockerModal.input.value = '';
+                    nameLockerModal.overlay.classList.remove('hidden');
+                    nameLockerModal.input.focus();
+                });
+
+                emptyStateDiv.appendChild(firstLockerBtn);
+                container.appendChild(emptyStateDiv);
+            } else {
+                createBtn.classList.remove('hidden'); // Show the default button
+                truckData.lockers.forEach(locker => {
+                    const lockerItemDiv = document.createElement('div');
+                    lockerItemDiv.className = 'w-full bg-gray-100 rounded-lg flex items-center';
+                    
+                    const lockerBtn = document.createElement('button');
+                    lockerBtn.className = 'flex-grow p-4 text-left text-gray-800 hover:bg-gray-200 rounded-l-lg';
+                    lockerBtn.textContent = locker.name;
+                    lockerBtn.addEventListener('click', () => openLockerEditor(locker.id));
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'p-4 text-red-500 hover:bg-red-100 rounded-r-lg flex-shrink-0';
+                    deleteBtn.innerHTML = '&#128465;';
+                    deleteBtn.addEventListener('click', () => confirmDelete('locker', locker.id));
+                    
+                    lockerItemDiv.appendChild(lockerBtn);
+                    lockerItemDiv.appendChild(deleteBtn);
+                    container.appendChild(lockerItemDiv);
+                });
+            }
+        }
+
+        function openLockerEditor(lockerId) {
+            currentlyEditing.lockerId = lockerId;
+            const locker = truckData.lockers.find(l => l.id === lockerId);
+            editorUI.lockerName.value = locker.name;
+            renderLockerEditor();
+            showScreen('lockerEditor');
+        }
+
+        function renderLockerEditor() {
+            const locker = truckData.lockers.find(l => l.id === currentlyEditing.lockerId);
+            if (!locker) return;
+            editorUI.shelvesContainer.innerHTML = '';
+            locker.shelves.forEach(shelf => {
+                const shelfDiv = document.createElement('div');
+                shelfDiv.className = 'shelf-editor-container';
+                const shelfHeader = document.createElement('div');
+                shelfHeader.className = 'flex justify-end mb-2';
+                const deleteShelfBtn = document.createElement('button');
+                deleteShelfBtn.className = 'text-red-500 hover:text-red-400 font-bold text-2xl leading-none px-2';
+                deleteShelfBtn.innerHTML = '&times;';
+                deleteShelfBtn.onclick = () => confirmDelete('shelf', shelf.id);
+                shelfHeader.appendChild(deleteShelfBtn);
+                const shelfContent = document.createElement('div');
+                shelfContent.className = 'shelf-content';
+                shelf.items.forEach(item => {
+                    const itemBox = document.createElement('div');
+                    itemBox.className = 'item-editor-box';
+                    let itemIcon = item.type === 'container' ? '&#128451;' : '';
+                    itemBox.innerHTML = `<div class="relative w-full text-center">${itemIcon}</div><img src="${item.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${item.name}"><span class="item-name">${item.name || 'New Item'}</span>`;
+                    itemBox.onclick = () => openItemEditor(shelf.id, item.id);
+                    shelfContent.appendChild(itemBox);
+                });
+                const addItemBtn = document.createElement('button');
+                addItemBtn.className = 'add-item-btn w-16 h-full flex items-center justify-center text-3xl bg-gray-200 hover:bg-gray-300 text-gray-500 rounded-md';
+                addItemBtn.textContent = '+';
+                addItemBtn.onclick = () => addItemToShelf(shelf.id);
+                shelfContent.appendChild(addItemBtn);
+                shelfDiv.appendChild(shelfHeader);
+                shelfDiv.appendChild(shelfContent);
+                editorUI.shelvesContainer.appendChild(shelfDiv);
+            });
+        }
+
+        function openItemEditor(shelfId, itemId, isSubItem = false, parentItemId = null) {
+            currentlyEditing = { ...currentlyEditing, shelfId, itemId, isSubItem, parentItemId };
+            const item = findItemById(itemId, parentItemId);
+            
+            editorModal.title.textContent = isSubItem ? 'Edit Sub-Item' : 'Edit Item';
+            editorModal.nameInput.value = item.name || '';
+            editorModal.descInput.value = item.desc || '';
+            tempImageSrc = item.img || 'https://placehold.co/100x100/e5e7eb/4b5563?text=Upload';
+            editorModal.imagePreview.src = tempImageSrc;
+
+            if (isSubItem) {
+                editorModal.typeSelectorContainer.classList.add('hidden');
+                editorModal.enterContainerBtn.classList.add('hidden');
+            } else {
+                editorModal.typeSelectorContainer.classList.remove('hidden');
+                editorModal.typeSelect.value = item.type || 'item';
+                if (item.type === 'container') {
+                    editorModal.enterContainerBtn.classList.remove('hidden');
+                } else {
+                    editorModal.enterContainerBtn.classList.add('hidden');
+                }
+            }
+
+            editorModal.overlay.classList.remove('hidden');
+        }
+
+        function closeItemEditor() {
+            editorModal.overlay.classList.add('hidden');
+            currentlyEditing.itemId = null;
+            currentlyEditing.isSubItem = false;
+            currentlyEditing.isNewItem = false;
+            editorModal.fileInput.value = '';
+            tempImageSrc = null;
+        }
+
+        function saveItem() {
+            if (!currentlyEditing.itemId) return;
+            const item = findItemById(currentlyEditing.itemId, currentlyEditing.parentItemId);
+            
+            item.name = editorModal.nameInput.value;
+            item.desc = editorModal.descInput.value;
+            item.img = tempImageSrc;
+            
+            const newType = currentlyEditing.isSubItem ? 'item' : editorModal.typeSelect.value;
+            if (item.type === 'container' && newType === 'item' && item.subItems && item.subItems.length > 0) {
+                confirmDelete('containerContents', item.id);
+            } else {
+                item.type = newType;
+                if (item.type === 'container' && !item.subItems) {
+                    item.subItems = [];
+                }
+                saveData();
+            }
+
+            if (currentlyEditing.isSubItem) {
+                renderContainerEditor();
+            } else {
+                renderLockerEditor();
+            }
+            closeItemEditor();
+        }
+
+        function confirmDelete(type, id, parentId = null) {
+            itemToDelete = { type, id, parentId };
+            let title = `Delete ${type}?`;
+            let text = "This action cannot be undone.";
+            if (type === 'containerContents') {
+                title = "Change to Standard Item?";
+                text = "This will delete all sub-items inside the container. Are you sure?";
+            }
+            deleteConfirmModal.title.textContent = title;
+            deleteConfirmModal.text.textContent = text;
+            deleteConfirmModal.overlay.classList.remove('hidden');
+        }
+
+        function executeDelete() {
+            const { type, id, parentId } = itemToDelete;
+            if (type === 'locker') {
+                truckData.lockers = truckData.lockers.filter(l => l.id !== id);
+                renderLockerSelection();
+            } else if (type === 'shelf') {
+                const locker = truckData.lockers.find(l => l.id === currentlyEditing.lockerId);
+                locker.shelves = locker.shelves.filter(s => s.id !== id);
+                renderLockerEditor();
+            } else if (type === 'item') {
+                if (parentId) {
+                    const parentItem = findItemById(parentId);
+                    parentItem.subItems = parentItem.subItems.filter(i => i.id !== id);
+                    renderContainerEditor();
+                } else {
+                    const shelf = findShelfById(currentlyEditing.shelfId);
+                    shelf.items = shelf.items.filter(i => i.id !== id);
+                    renderLockerEditor();
+                }
+                closeItemEditor();
+            } else if (type === 'containerContents') {
+                const item = findItemById(id);
+                item.type = 'item';
+                delete item.subItems;
+                saveData();
+                renderLockerEditor();
+            }
+            saveData();
+            deleteConfirmModal.overlay.classList.add('hidden');
+        }
+        
+        function findItemById(itemId, parentItemId = null) {
+             if (parentItemId) {
+                const parent = findItemById(parentItemId);
+                return parent ? parent.subItems.find(i => i.id === itemId) : null;
+            }
+            for (const locker of truckData.lockers) {
+                for (const shelf of locker.shelves) {
+                    const item = shelf.items.find(i => i.id === itemId);
+                    if (item) return item;
+                }
+            }
+            return null;
+        }
+        
+        function findShelfById(shelfId) {
+            for (const locker of truckData.lockers) {
+                const shelf = locker.shelves.find(s => s.id === shelfId);
+                if (shelf) return shelf;
+            }
+            return null;
+        }
+
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imageUrl = event.target.result;
+                editorModal.imagePreview.src = imageUrl;
+                tempImageSrc = imageUrl;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function addItemToShelf(shelfId) {
+            const shelf = findShelfById(shelfId);
+            const newItem = { id: Date.now(), name: '', desc: '', img: '', type: 'item' };
+            shelf.items.push(newItem);
+            saveData();
+            renderLockerEditor();
+            currentlyEditing.isNewItem = true;
+            openItemEditor(shelfId, newItem.id);
+        }
+
+        function addShelf() {
+            const locker = truckData.lockers.find(l => l.id === currentlyEditing.lockerId);
+            locker.shelves.push({ id: Date.now(), items: [] });
+            saveData();
+            renderLockerEditor();
+        }
+
+        // --- CONTAINER EDITOR LOGIC ---
+        function openContainerEditor(itemId) {
+            closeItemEditor();
+            currentlyEditing.parentItemId = itemId;
+            const item = findItemById(itemId);
+            containerEditorUI.title.textContent = `Editing: ${item.name}`;
+            renderContainerEditor();
+            showScreen('containerEditor');
+        }
+
+        function renderContainerEditor() {
+            const parentItem = findItemById(currentlyEditing.parentItemId);
+            containerEditorUI.shelvesContainer.innerHTML = '';
+            
+            const shelfDiv = document.createElement('div');
+            shelfDiv.className = 'shelf-editor-container';
+            const shelfContent = document.createElement('div');
+            shelfContent.className = 'grid grid-cols-4 gap-4';
+
+            parentItem.subItems.forEach(subItem => {
+                const itemBox = document.createElement('div');
+                itemBox.className = 'item-editor-box aspect-square';
+                itemBox.innerHTML = `<img src="${subItem.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${subItem.name}"><span class="item-name">${subItem.name || 'New Item'}</span>`;
+                itemBox.onclick = () => openItemEditor(null, subItem.id, true, parentItem.id);
+                shelfContent.appendChild(itemBox);
+            });
+
+            shelfDiv.appendChild(shelfContent);
+            containerEditorUI.shelvesContainer.appendChild(shelfDiv);
+        }
+
+        function addSubItem() {
+            const parentItem = findItemById(currentlyEditing.parentItemId);
+            const newItem = { id: Date.now(), name: '', desc: '', img: '', type: 'item' };
+            parentItem.subItems.push(newItem);
+            saveData();
+            renderContainerEditor();
+            currentlyEditing.isNewItem = true;
+            openItemEditor(null, newItem.id, true, parentItem.id);
+        }
+        
+        // -------------------------------------------------------------------
+        // SUB-SECTION: CHECK MODE LOGIC
+        // -------------------------------------------------------------------
+        function startChecks() {
+            if (truckData.lockers.length === 0 || truckData.lockers.every(l => l.shelves.every(s => s.items.length === 0))) {
+                alert("No items to check. Please set up the truck first.");
+                return;
+            }
+            checkResults = [];
+            startLockerCheck(truckData.lockers[0].id, false);
+        }
+        
+        function startLockerCheck(lockerId, isRecheck = false) {
+            currentCheckState = { lockerId: lockerId, selectedItemId: null, isRechecking: isRecheck, isInsideContainer: false, parentItemId: null };
+            loadLockerUI();
+            showScreen('lockerCheck');
+        }
+
+        function loadLockerUI() {
+            const locker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+            checkerUI.lockerName.textContent = locker.name;
+            checkerUI.lockerLayout.innerHTML = '';
+            
+            locker.shelves.forEach(shelf => {
+                 const shelfDiv = document.createElement('div');
+                 shelfDiv.className = 'flex-1 flex gap-3 p-3 bg-gray-100 rounded-xl';
+                 shelf.items.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'item-box flex-1 h-full bg-gray-300 rounded-lg border-2 border-gray-400';
+                    itemDiv.dataset.id = item.id;
+                    
+                    const result = checkResults.find(r => r.itemId === item.id);
+                    if (result) {
+                        itemDiv.classList.remove('bg-gray-300');
+                        itemDiv.classList.add(`status-${result.status}`);
+                    }
+                    
+                    itemDiv.addEventListener('click', () => selectItemForCheck(item.id));
+                    shelfDiv.appendChild(itemDiv);
+                 });
+                 checkerUI.lockerLayout.appendChild(shelfDiv);
+            });
+            
+            const firstUnchecked = locker.shelves.flatMap(s => s.items).find(i => !checkResults.some(r => r.itemId === i.id));
+            const firstItem = locker.shelves[0]?.items[0];
+            selectItemForCheck(firstUnchecked?.id || firstItem?.id);
+
+            if (currentCheckState.isRechecking) {
+                checkerUI.nextLockerBtn.classList.add('hidden');
+                checkerUI.backToSummaryBtn.classList.remove('hidden');
+            } else {
+                checkIfLockerIsComplete();
+            }
+        }
+
+        function selectItemForCheck(itemId, parentId = null) {
+            if (!itemId) {
+                checkerUI.itemName.textContent = 'No item selected';
+                checkerUI.itemDesc.textContent = 'Click an item below to check it.';
+                checkerUI.itemImage.src = 'https://placehold.co/100x100/e5e7eb/4b5563?text=?';
+                checkerUI.controls.classList.remove('hidden');
+                checkerUI.containerControls.classList.add('hidden');
+                return;
+            }
+            currentCheckState.selectedItemId = itemId;
+            
+            const item = findItemById(itemId, parentId);
+            if (item) {
+                checkerUI.itemImage.src = item.img || 'https://placehold.co/100x100/e5e7eb/4b5563?text=No+Img';
+                checkerUI.itemName.textContent = item.name;
+                checkerUI.itemDesc.textContent = item.desc;
+                document.querySelectorAll('.item-box').forEach(box => box.classList.remove('is-active'));
+                const activeBox = document.querySelector(`.item-box[data-id='${item.id}']`);
+                if (activeBox) activeBox.classList.add('is-active');
+
+                if (item.type === 'container' && !currentCheckState.isInsideContainer) {
+                    checkerUI.controls.classList.add('hidden');
+                    checkerUI.containerControls.classList.remove('hidden');
+                } else {
+                    checkerUI.controls.classList.remove('hidden');
+                    checkerUI.containerControls.classList.add('hidden');
+                }
+            }
+        }
+
+        function startContainerCheck() {
+            const containerId = currentCheckState.selectedItemId;
+            const container = findItemById(containerId);
+            currentCheckState.isInsideContainer = true;
+            currentCheckState.parentItemId = containerId;
+            
+            loadContainerUI(container);
+        }
+
+        function loadContainerUI(container) {
+            checkerUI.lockerName.textContent = `Container: ${container.name}`;
+            checkerUI.lockerLayout.innerHTML = '';
+            
+            const shelfDiv = document.createElement('div');
+            shelfDiv.className = 'flex-1 flex gap-3 p-3 bg-gray-100 rounded-xl';
+            container.subItems.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'item-box flex-1 h-full bg-gray-300 rounded-lg border-2 border-gray-400';
+                itemDiv.dataset.id = item.id;
+                
+                const result = checkResults.find(r => r.itemId === item.id);
+                if (result) {
+                    itemDiv.classList.remove('bg-gray-300');
+                    itemDiv.classList.add(`status-${result.status}`);
+                }
+                
+                itemDiv.addEventListener('click', () => selectItemForCheck(item.id, container.id));
+                shelfDiv.appendChild(itemDiv);
+            });
+            checkerUI.lockerLayout.appendChild(shelfDiv);
+
+            const firstUnchecked = container.subItems.find(i => !checkResults.some(r => r.itemId === i.id));
+            const firstItem = container.subItems[0];
+            selectItemForCheck(firstUnchecked?.id || firstItem?.id, container.id);
+
+            checkIfContainerIsComplete();
+        }
+
+        function finishContainerCheck() {
+            const parentItemId = currentCheckState.parentItemId;
+            const parentItem = findItemById(parentItemId);
+            const subItems = parentItem.subItems;
+
+            const subItemResults = checkResults.filter(r => r.parentItemId === parentItemId);
+            
+            let newStatus = 'present';
+            if (subItemResults.some(r => r.status === 'missing')) {
+                newStatus = 'partial'; // New status for missing contents
+            } else if (subItemResults.some(r => r.status === 'note')) {
+                newStatus = 'note';
+            }
+
+            const resultIndex = checkResults.findIndex(r => r.itemId === parentItemId);
+            const result = { lockerId: currentCheckState.lockerId, lockerName: findItemById(parentItemId).name, itemId: parentItemId, itemName: parentItem.name, itemImg: parentItem.img, status: newStatus, note: '' };
+            if (resultIndex > -1) { checkResults[resultIndex] = result; } else { checkResults.push(result); }
+
+            currentCheckState.isInsideContainer = false;
+            currentCheckState.parentItemId = null;
+            loadLockerUI();
+        }
+
+        function checkIfContainerIsComplete() {
+            const parentItem = findItemById(currentCheckState.parentItemId);
+            const allItemsChecked = parentItem.subItems.every(item => checkResults.some(r => r.itemId === item.id));
+
+            const existingFinishBtn = document.getElementById('finish-container-check-btn');
+            if (existingFinishBtn) existingFinishBtn.remove();
+
+            if (allItemsChecked) {
+                checkerUI.controls.classList.add('hidden');
+                checkerUI.containerControls.classList.add('hidden');
+                
+                const finishBtn = document.createElement('button');
+                finishBtn.id = 'finish-container-check-btn';
+                finishBtn.textContent = 'Finish Container';
+                finishBtn.className = 'w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-4 rounded-lg text-xl';
+                finishBtn.onclick = finishContainerCheck;
+                
+                checkerUI.nextLockerBtn.parentElement.insertBefore(finishBtn, checkerUI.nextLockerBtn);
+                checkerUI.nextLockerBtn.classList.add('hidden');
+                finishBtn.classList.remove('hidden');
+            }
+            return allItemsChecked;
+        }
+
+        function processCheck(status) {
+            if (!currentCheckState.selectedItemId) return;
+
+            if (!currentCheckState.isInsideContainer && findItemById(currentCheckState.selectedItemId).type === 'container' && status === 'missing') {
+                 const locker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+                 const item = findItemById(currentCheckState.selectedItemId);
+                 const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
+                 const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'missing', note: '' };
+                 if (resultIndex > -1) { checkResults[resultIndex] = result; } else { checkResults.push(result); }
+                 
+                 const itemBox = document.querySelector(`.item-box[data-id='${item.id}']`);
+                 if (itemBox) {
+                    itemBox.classList.remove('bg-gray-300', 'status-present', 'status-missing', 'status-note', 'status-partial');
+                    itemBox.classList.add(`status-missing`);
+                 }
+                 
+                 if (checkIfLockerIsComplete()) return;
+                 const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+                 const nextUncheckedItem = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
+                 if (nextUncheckedItem) {
+                    selectItemForCheck(nextUncheckedItem.id);
+                 }
+                 return;
+            }
+
+            if (status === 'note') {
+                const item = findItemById(currentCheckState.selectedItemId, currentCheckState.parentItemId);
+                noteModal.title.textContent = `Add Note for ${item.name}`;
+                const existingResult = checkResults.find(r => r.itemId === item.id);
+                noteModal.input.value = existingResult ? existingResult.note : '';
+                noteModal.overlay.classList.remove('hidden');
+                return;
+            }
+
+            const locker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+            const item = findItemById(currentCheckState.selectedItemId, currentCheckState.parentItemId);
+            
+            const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
+            const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: status, note: '', parentItemId: currentCheckState.parentItemId };
+            if (resultIndex > -1) { checkResults[resultIndex] = result; } else { checkResults.push(result); }
+
+            const itemBox = document.querySelector(`.item-box[data-id='${item.id}']`);
+            if (itemBox) {
+                itemBox.classList.remove('bg-gray-300', 'status-present', 'status-missing', 'status-note', 'status-partial');
+                itemBox.classList.add(`status-${status}`);
+            }
+
+            if (currentCheckState.isRechecking) return;
+
+            if (currentCheckState.isInsideContainer) {
+                if (checkIfContainerIsComplete()) return;
+                const parentItem = findItemById(currentCheckState.parentItemId);
+                const nextUncheckedItem = parentItem.subItems.find(i => !checkResults.some(r => r.itemId === i.id));
+                if (nextUncheckedItem) {
+                    selectItemForCheck(nextUncheckedItem.id, parentItem.id);
+                }
+            } else {
+                if (checkIfLockerIsComplete()) return;
+                const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+                const nextUncheckedItem = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
+                if (nextUncheckedItem) {
+                    selectItemForCheck(nextUncheckedItem.id);
+                }
+            }
+        }
+        
+        function saveNoteAndProceed() {
+            const item = findItemById(currentCheckState.selectedItemId, currentCheckState.parentItemId);
+            const locker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+            const noteText = noteModal.input.value;
+
+            const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
+            const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'note', note: noteText, parentItemId: currentCheckState.parentItemId };
+            if (resultIndex > -1) { checkResults[resultIndex] = result; } else { checkResults.push(result); }
+
+            const itemBox = document.querySelector(`.item-box[data-id='${item.id}']`);
+            if (itemBox) {
+                itemBox.classList.remove('bg-gray-300', 'status-present', 'status-missing', 'status-note', 'status-partial');
+                itemBox.classList.add('status-note');
+            }
+            
+            noteModal.overlay.classList.add('hidden');
+            
+            if (currentCheckState.isRechecking) return;
+
+            if (currentCheckState.isInsideContainer) {
+                if (checkIfContainerIsComplete()) return;
+                const parentItem = findItemById(currentCheckState.parentItemId);
+                const nextUncheckedItem = parentItem.subItems.find(i => !checkResults.some(r => r.itemId === i.id));
+                if (nextUncheckedItem) {
+                    selectItemForCheck(nextUncheckedItem.id, parentItem.id);
+                }
+            } else {
+                if (checkIfLockerIsComplete()) return;
+                const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+                const nextUncheckedItem = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
+                if (nextUncheckedItem) {
+                    selectItemForCheck(nextUncheckedItem.id);
+                }
+            }
+        }
+        
+        function checkIfLockerIsComplete() {
+            const locker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+            const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+            const allItemsChecked = allItemsInLocker.every(item => checkResults.some(r => r.itemId === item.id));
+
+            const existingFinishBtn = document.getElementById('finish-container-check-btn');
+            if(existingFinishBtn) existingFinishBtn.remove();
+
+            if (allItemsChecked) {
+                checkerUI.controls.classList.add('hidden');
+                checkerUI.containerControls.classList.add('hidden');
+                checkerUI.nextLockerBtn.classList.remove('hidden');
+                checkerUI.backToSummaryBtn.classList.add('hidden');
+            } else {
+                checkerUI.nextLockerBtn.classList.add('hidden');
+                checkerUI.backToSummaryBtn.classList.add('hidden');
+            }
+            return allItemsChecked;
+        }
+        
+        function handleLockerCompletion() {
+            renderNextLockerChoices();
+            showScreen('nextLockerChoice');
+        }
+        
+        function getLockerCheckStatus(lockerId) {
+            const locker = truckData.lockers.find(l => l.id === lockerId);
+            const allItems = locker.shelves.flatMap(s => s.items);
+            if (allItems.length === 0) return 'complete';
+
+            const checkedItemsInLocker = checkResults.filter(r => r.lockerId === lockerId && !r.parentItemId);
+            
+            if (checkedItemsInLocker.length === 0) return 'untouched';
+            if (checkedItemsInLocker.length === allItems.length) return 'complete';
+            return 'partial';
+        }
+
+        function renderNextLockerChoices() {
+            const container = document.getElementById('next-locker-list-container');
+            container.innerHTML = '';
+            
+            const currentLocker = truckData.lockers.find(l => l.id === currentCheckState.lockerId);
+            const currentLockerDataIndex = truckData.lockers.indexOf(currentLocker);
+            let suggestedNextLocker = null;
+            let allLockersComplete = true;
+
+            truckData.lockers.forEach(locker => {
+                const status = getLockerCheckStatus(locker.id);
+                if (status !== 'complete') {
+                    allLockersComplete = false;
+                }
+                if (!suggestedNextLocker && status !== 'complete' && locker.id !== currentCheckState.lockerId) {
+                     const lockerIndex = truckData.lockers.indexOf(locker);
+                     if (lockerIndex > currentLockerDataIndex) {
+                        if (!suggestedNextLocker || lockerIndex < truckData.lockers.indexOf(suggestedNextLocker)) {
+                            suggestedNextLocker = locker;
+                        }
+                     }
+                }
+            });
+
+            if (!suggestedNextLocker) {
+                 suggestedNextLocker = truckData.lockers.find(l => getLockerCheckStatus(l.id) !== 'complete');
+            }
+
+            nextLockerToStartId = suggestedNextLocker ? suggestedNextLocker.id : null;
+
+            truckData.lockers.forEach(locker => {
+                const status = getLockerCheckStatus(locker.id);
+                const lockerBtn = document.createElement('button');
+                lockerBtn.className = 'w-full bg-gray-100 p-4 rounded-lg flex items-center justify-between text-gray-800 border-2';
+                lockerBtn.dataset.lockerId = locker.id;
+                
+                if (locker.id === nextLockerToStartId) {
+                    lockerBtn.classList.add('border-blue-500');
+                } else {
+                    lockerBtn.classList.add('border-transparent');
+                }
+
+                let icon = '';
+                if (status === 'complete') icon = '<span class="text-green-500 text-2xl">&#10003;</span>';
+                if (status === 'partial') icon = '<span class="text-yellow-500 text-2xl font-bold">!</span>';
+                if (status === 'untouched') icon = '<span class="text-gray-400 text-2xl">&#9675;</span>';
+                
+                lockerBtn.innerHTML = `<span>${locker.name}</span> ${icon}`;
+                lockerBtn.addEventListener('click', () => {
+                    nextLockerToStartId = locker.id;
+                    document.querySelectorAll('#next-locker-list-container button').forEach(btn => {
+                        btn.classList.remove('border-blue-500');
+                        btn.classList.add('border-transparent');
+                    });
+                    lockerBtn.classList.remove('border-transparent');
+                    lockerBtn.classList.add('border-blue-500');
+                });
+                container.appendChild(lockerBtn);
+            });
+
+            if (allLockersComplete) {
+                mainButtons.finishChecksEarly.classList.remove('hidden');
+            } else {
+                mainButtons.finishChecksEarly.classList.add('hidden');
+            }
+        }
+        
+        function renderSummaryScreen() {
+            const container = document.getElementById('summary-list-container');
+            container.innerHTML = '';
+            const issues = checkResults.filter(r => r.status === 'missing' || (r.status === 'note' && r.note));
+            
+            if (issues.length === 0) {
+                container.innerHTML = `<div class="text-center p-8 bg-green-100 text-green-800 rounded-lg"><h3 class="text-2xl font-bold">All Clear!</h3><p>No issues found during the check.</p></div>`;
+            } else {
+                issues.forEach(issue => {
+                    const issueCard = document.createElement('div');
+                    
+                    let bgColor = 'bg-amber-100';
+                    let statusText = '';
+                    let locationText = '';
+                    let recheckButtonHTML = '';
+
+                    if (issue.parentItemId) {
+                        const parentContainer = findItemById(issue.parentItemId);
+                        locationText = `<p class="text-sm text-gray-600">In Container: <strong>${parentContainer.name}</strong></p><p class="text-sm text-gray-500">Locker: ${issue.lockerName}</p>`;
+                        recheckButtonHTML = `<button data-locker-id="${issue.lockerId}" data-item-id="${issue.itemId}" data-parent-item-id="${issue.parentItemId}" class="recheck-btn bg-blue-500 text-white text-sm font-bold py-1 px-3 rounded-full self-center">Re-check</button>`;
+                    } else {
+                        locationText = `<p class="text-sm text-gray-600">Locker: ${issue.lockerName}</p>`;
+                        recheckButtonHTML = `<button data-locker-id="${issue.lockerId}" data-item-id="${issue.itemId}" class="recheck-btn bg-blue-500 text-white text-sm font-bold py-1 px-3 rounded-full self-center">Re-check</button>`;
+                    }
+
+                    if (issue.status === 'missing') {
+                        bgColor = 'bg-red-100';
+                        statusText = `<p class="mt-2 font-bold" style="color: #b91c1c;">STATUS: MISSING</p>`;
+                    } else if (issue.status === 'note') {
+                        statusText = `<p class="mt-2 p-2 bg-white rounded text-sm"><strong>Note:</strong> ${issue.note}</p>`;
+                    }
+
+                    issueCard.className = `p-4 rounded-lg flex items-start gap-4 ${bgColor}`;
+                    issueCard.innerHTML = `<img src="${issue.itemImg || 'https://placehold.co/80x80/e5e7eb/4b5563?text=No+Img'}" class="w-20 h-20 rounded-lg object-cover flex-shrink-0"><div class="flex-grow"><p class="font-bold text-lg">${issue.itemName}</p>${locationText}${statusText}</div>${recheckButtonHTML}`;
+                    container.appendChild(issueCard);
+                });
+            }
+            showScreen('summary');
+        }
+
+        // --- EVENT LISTENERS ---
+        mainButtons.startChecks.addEventListener('click', startChecks);
+        mainButtons.setupTruck.addEventListener('click', () => { renderLockerSelection(); showScreen('selectLocker'); });
+        mainButtons.goHome.addEventListener('click', () => showScreen('home'));
+        mainButtons.backHomeFromSelect.addEventListener('click', () => showScreen('home'));
+        mainButtons.createNewLocker.addEventListener('click', () => { nameLockerModal.input.value = ''; nameLockerModal.overlay.classList.remove('hidden'); nameLockerModal.input.focus(); });
+        mainButtons.finishChecksEarly.addEventListener('click', renderSummaryScreen);
+        mainButtons.backToLockerList.addEventListener('click', handleLockerCompletion);
+        checkerUI.nextLockerBtn.addEventListener('click', handleLockerCompletion);
+        checkerUI.backToSummaryBtn.addEventListener('click', renderSummaryScreen);
+        mainButtons.goToSelectedLocker.addEventListener('click', () => {
+            if(nextLockerToStartId) {
+                startLockerCheck(nextLockerToStartId);
+            }
+        });
+
+        nameLockerModal.cancelBtn.addEventListener('click', () => {
+            console.log('Cancel button clicked');
+            nameLockerModal.overlay.classList.add('hidden');
+        });
+        nameLockerModal.saveBtn.addEventListener('click', () => {
+            console.log('Save locker button clicked');
+            const lockerName = nameLockerModal.input.value;
+            nameLockerModal.input.classList.remove('border-red-500', 'shake');
+            if (lockerName && lockerName.trim() !== "") {
+                const newLocker = { id: Date.now(), name: lockerName.trim(), shelves: [{ id: Date.now()+1, items:[] }] };
+                truckData.lockers.push(newLocker);
+                saveData();
+                nameLockerModal.overlay.classList.add('hidden');
+                openLockerEditor(newLocker.id);
+            } else {
+                nameLockerModal.input.classList.add('border-red-500', 'shake');
+            }
+        });
+        
+        editorUI.doneBtn.addEventListener('click', () => { renderLockerSelection(); showScreen('selectLocker'); });
+        editorUI.addShelfBtn.addEventListener('click', addShelf);
+        editorUI.lockerName.addEventListener('change', (e) => {
+            const locker = truckData.lockers.find(l => l.id === currentlyEditing.lockerId);
+            if(locker) locker.name = e.target.value;
+            saveData();
+        });
+        
+        editorModal.saveBtn.addEventListener('click', saveItem);
+        editorModal.cancelBtn.addEventListener('click', closeItemEditor);
+        editorModal.deleteBtn.addEventListener('click', () => confirmDelete('item', currentlyEditing.itemId, currentlyEditing.parentItemId));
+        editorModal.enterContainerBtn.addEventListener('click', () => openContainerEditor(currentlyEditing.itemId));
+        
+        containerEditorUI.backBtn.addEventListener('click', () => {
+            renderLockerEditor();
+            showScreen('lockerEditor');
+        });
+        containerEditorUI.addSubItemBtn.addEventListener('click', addSubItem);
+
+        deleteConfirmModal.cancelBtn.addEventListener('click', () => deleteConfirmModal.overlay.classList.add('hidden'));
+        deleteConfirmModal.confirmBtn.addEventListener('click', executeDelete);
+        
+        editorModal.fileInput.addEventListener('change', handleImageUpload);
+        
+        document.getElementById('summary-list-container').addEventListener('click', (e) => {
+            if (e.target.classList.contains('recheck-btn')) {
+                const lockerId = parseInt(e.target.dataset.lockerId);
+                const itemId = parseInt(e.target.dataset.itemId);
+                const parentItemId = e.target.dataset.parentItemId ? parseInt(e.target.dataset.parentItemId) : null;
+
+                if (parentItemId) {
+                    const container = findItemById(parentItemId);
+                    currentCheckState = { 
+                        lockerId: lockerId, 
+                        selectedItemId: itemId, 
+                        isRechecking: true, 
+                        isInsideContainer: true, 
+                        parentItemId: parentItemId 
+                    };
+                    loadContainerUI(container);
+                    selectItemForCheck(itemId, parentItemId);
+                    showScreen('lockerCheck');
+                } else {
+                    startLockerCheck(lockerId, true);
+                    selectItemForCheck(itemId);
+                }
+            }
+        });
+
+        checkButtons.present.addEventListener('click', () => processCheck('present'));
+        checkButtons.missing.addEventListener('click', () => processCheck('missing'));
+        checkButtons.note.addEventListener('click', () => processCheck('note'));
+        document.getElementById('btn-check-contents').addEventListener('click', startContainerCheck);
+        document.getElementById('btn-container-missing').addEventListener('click', () => processCheck('missing'));
+        noteModal.saveBtn.addEventListener('click', saveNoteAndProceed);
+
+        async function saveReport() {
+            const issues = checkResults.filter(r => r.status === 'missing' || (r.status === 'note' && r.note));
+            try {
+                const response = await fetch(`/api/reports/${username}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issues })
+                });
+                if (response.ok) {
+                    alert('Report saved successfully!');
+                } else {
+                    alert('Failed to save report.');
+                }
+            } catch (error) {
+                console.error('Error saving report:', error);
+                alert('An error occurred while saving the report.');
+            }
+        }
+
+        async function showReportsScreen() {
+            try {
+                const response = await fetch(`/api/reports/${username}`);
+                const reports = await response.json();
+                const container = document.getElementById('reports-list-container');
+                container.innerHTML = '';
+                if (reports.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500">No past reports found.</p>';
+                } else {
+                    reports.forEach(report => {
+                        const reportDiv = document.createElement('div');
+                        reportDiv.className = 'bg-gray-100 p-4 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors';
+                        reportDiv.innerHTML = `<p class="font-bold">${report.date}</p>`;
+                        reportDiv.addEventListener('click', () => showReportDetails(report.fileName, report.date));
+                        container.appendChild(reportDiv);
+                    });
+                }
+                showScreen('reports');
+            } catch (error) {
+                console.error('Error fetching reports:', error);
+                alert('Could not load past reports.');
+            }
+        }
+
+        async function showReportDetails(fileName, date) {
+            try {
+                const response = await fetch(`/api/report/${username}/${fileName}`);
+                const reportData = await response.json();
+                
+                const modal = document.getElementById('report-detail-modal');
+                const title = document.getElementById('report-detail-title');
+                const content = document.getElementById('report-detail-content');
+                
+                title.textContent = `Report from ${date}`;
+                content.innerHTML = '';
+
+                if (reportData.issues && reportData.issues.length > 0) {
+                    reportData.issues.forEach(issue => {
+                        const issueCard = document.createElement('div');
+                        let bgColor = issue.status === 'missing' ? 'bg-red-100' : 'bg-amber-100';
+                        let statusText = issue.status === 'missing' 
+                            ? `<p class="font-bold" style="color: #b91c1c;">STATUS: MISSING</p>`
+                            : `<p class="mt-2 p-2 bg-white rounded text-sm"><strong>Note:</strong> ${issue.note}</p>`;
+                        
+                        issueCard.className = `p-3 rounded-lg flex items-start gap-3 ${bgColor}`;
+                        issueCard.innerHTML = `
+                            <img src="${issue.itemImg || 'https://placehold.co/60x60/e5e7eb/4b5563?text=No+Img'}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                            <div class="flex-grow">
+                                <p class="font-bold">${issue.itemName}</p>
+                                <p class="text-sm text-gray-600">Locker: ${issue.lockerName}</p>
+                                ${statusText}
+                            </div>
+                        `;
+                        content.appendChild(issueCard);
+                    });
+                } else {
+                    content.innerHTML = '<p class="text-center text-gray-500">No issues were found in this report.</p>';
+                }
+
+                modal.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error fetching report details:', error);
+                alert('Could not load the report details.');
+            }
+        }
+
+        document.getElementById('close-report-detail-btn').addEventListener('click', () => {
+            document.getElementById('report-detail-modal').classList.add('hidden');
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            localStorage.removeItem('username');
+            window.location.href = '/login.html';
+        });
+
+        document.getElementById('view-reports-btn').addEventListener('click', showReportsScreen);
+        document.getElementById('back-home-from-reports-btn').addEventListener('click', () => showScreen('home'));
+        document.getElementById('save-report-btn').addEventListener('click', saveReport);
+
+        async function saveReport() {
+            const issues = checkResults.filter(r => r.status === 'missing' || (r.status === 'note' && r.note));
+            try {
+                const response = await fetch(`/api/reports/${username}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ issues, date: new Date().toLocaleString() })
+                });
+                if (response.ok) {
+                    alert('Report saved successfully!');
+                } else {
+                    const err = await response.json();
+                    alert(`Failed to save report: ${err.message}`);
+                }
+            } catch (error) {
+                console.error('Error saving report:', error);
+                alert('An error occurred while saving the report.');
+            }
+        }
+
+        async function showReportsScreen() {
+            try {
+                const response = await fetch(`/api/reports/${username}`);
+                const reports = await response.json();
+                const container = document.getElementById('reports-list-container');
+                container.innerHTML = '';
+                if (reports.length === 0) {
+                    container.innerHTML = '<p class="text-center text-gray-500">No past reports found.</p>';
+                } else {
+                    reports.forEach(report => {
+                        const reportDiv = document.createElement('div');
+                        reportDiv.className = 'bg-gray-100 p-4 rounded-lg cursor-pointer hover:bg-gray-200 transition-colors';
+                        reportDiv.innerHTML = `<p class="font-bold">${report.date}</p>`;
+                        reportDiv.addEventListener('click', () => showReportDetails(report.fileName, report.date));
+                        container.appendChild(reportDiv);
+                    });
+                }
+                showScreen('reports');
+            } catch (error) {
+                console.error('Error fetching reports:', error);
+                alert('Could not load past reports.');
+            }
+        }
+
+        async function showReportDetails(fileName, date) {
+            try {
+                const response = await fetch(`/api/report/${username}/${fileName}`);
+                const reportData = await response.json();
+                
+                const modal = document.getElementById('report-detail-modal');
+                const title = document.getElementById('report-detail-title');
+                const content = document.getElementById('report-detail-content');
+                
+                title.textContent = `Report from ${date}`;
+                content.innerHTML = '';
+
+                if (reportData.issues && reportData.issues.length > 0) {
+                    reportData.issues.forEach(issue => {
+                        const issueCard = document.createElement('div');
+                        let bgColor = issue.status === 'missing' ? 'bg-red-100' : 'bg-amber-100';
+                        let statusText = issue.status === 'missing' 
+                            ? `<p class="font-bold" style="color: #b91c1c;">STATUS: MISSING</p>`
+                            : `<p class="mt-2 p-2 bg-white rounded text-sm"><strong>Note:</strong> ${issue.note}</p>`;
+                        
+                        issueCard.className = `p-3 rounded-lg flex items-start gap-3 ${bgColor}`;
+                        issueCard.innerHTML = `
+                            <img src="${issue.itemImg || 'https://placehold.co/60x60/e5e7eb/4b5563?text=No+Img'}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                            <div class="flex-grow">
+                                <p class="font-bold">${issue.itemName}</p>
+                                <p class="text-sm text-gray-600">Locker: ${issue.lockerName}</p>
+                                ${statusText}
+                            </div>
+                        `;
+                        content.appendChild(issueCard);
+                    });
+                } else {
+                    content.innerHTML = '<p class="text-center text-gray-500">No issues were found in this report.</p>';
+                }
+
+                modal.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error fetching report details:', error);
+                alert('Could not load the report details.');
+            }
+        }
+
+        document.getElementById('close-report-detail-btn').addEventListener('click', () => {
+            document.getElementById('report-detail-modal').classList.add('hidden');
+        });
+
+        async function initializeApp() {
+            await loadData();
+            showScreen('home');
+        }
+
+        // --- INITIALIZATION ---
+        initializeApp();
+    });
+    </script>
+</body>
+</html>

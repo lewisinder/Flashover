@@ -1,0 +1,18 @@
+# Changelog - Flashover Alpha 0.0.4
+
+## Changes from Version 0.0.3
+
+*   **New "Partial" Status:** Containers will now be marked with a purple "Partial" status if they are present but have one or more sub-items marked as "Missing".
+*   **Improved Summary Screen:**
+    *   The summary now provides more specific location details for sub-items, showing both the container and the locker they belong to (e.g., "In Container: First Aid Kit", "Locker: Nearside Front Locker").
+    *   The summary no longer shows a "Partial" status for the parent container, instead, it lists the specific sub-items that are missing.
+*   **Re-check Functionality Fixed:** Clicking the "Re-check" button for a sub-item on the summary screen now correctly navigates the user directly into the container check view with the specific sub-item selected.
+
+## What's Working
+
+*   All core features, including setup and check modes for both standard items and containers, are now functioning as designed.
+*   The summary report is more accurate and provides better context for issues with sub-items.
+
+## What's Not Working / Next Steps
+
+*   The application is functionally robust. Future work could focus on user experience improvements, such as visual feedback during data saving or more detailed reporting options.
