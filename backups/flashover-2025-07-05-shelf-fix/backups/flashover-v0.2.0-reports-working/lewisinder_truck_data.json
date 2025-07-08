@@ -1,0 +1,46 @@
+{
+  "lockers": [
+    {
+      "id": 1751510600089,
+      "name": "Test",
+      "shelves": [
+        {
+          "id": 1751510600090,
+          "items": [
+            {
+              "id": 1751510600822,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item"
+            },
+            {
+              "id": 1751510602255,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item"
+            }
+          ]
+        },
+        {
+          "id": 1751510603855,
+          "items": [
+            {
+              "id": 1751510604523,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "container",
+              "subItems": []
+            }
+          ]
+        },
+        {
+          "id": 1751510606756,
+          "items": []
+        }
+      ]
+    }
+  ]
+}

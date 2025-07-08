@@ -1,0 +1,14 @@
+# Flashover Version 0.1.0 - User Authentication
+
+This version marks the transition of the Flashover application from a single-file, browser-based tool to a full web application with a Node.js backend and user accounts.
+
+## Key Features & Changes:
+
+- **Backend Server:** Implemented a Node.js server with Express.js to serve the application.
+- **Data Persistence:** Application data is no longer stored in the browser's `localStorage`. It is now saved as user-specific JSON files on the server (e.g., `username_truck_data.json`).
+- **User Authentication:**
+  - Users can sign up for a new account.
+  - Users can log in to access their specific truck data.
+  - The main application is protected and cannot be accessed without logging in.
+- **File Structure:** The project has been reorganized into a standard web application structure with `public` and `node_modules` directories, and a `server.js` file.
+- **UI/UX Improvements:** The "Setup Truck" screen now provides a clear call to action for new users who have not yet created any lockers.

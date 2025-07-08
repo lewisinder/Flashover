@@ -1,0 +1,57 @@
+{
+  "date": "2025-07-04T04:45:25.214Z",
+  "lockers": [
+    {
+      "id": 1751604165046,
+      "name": "Test Locker",
+      "shelves": [
+        {
+          "id": 1751604165047,
+          "items": [
+            {
+              "id": 1751604165778,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751604167201,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751604168746,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "id": 1751604169930,
+          "items": [
+            {
+              "id": 1751604170614,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

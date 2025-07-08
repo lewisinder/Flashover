@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-background flex items-center justify-center h-screen">
+    <div class="max-w-md w-full bg-white text-gray-900 rounded-2xl shadow-2xl p-8">
+        <h1 class="text-3xl font-bold text-center mb-6">Create Account</h1>
+        <form id="signup-form" class="space-y-4">
+            <input type="text" id="username" placeholder="Username" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <input type="password" id="password" placeholder="Password" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <button type="submit" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg text-xl">Sign Up</button>
+        </form>
+        <p class="text-center mt-4">
+            Already have an account? <a href="/login.html" class="text-blue hover:underline">Log in</a>
+        </p>
+        <p id="error-message" class="text-red-action-2 text-center mt-4"></p>
+    </div>
+
+    <script>
+        document.getElementById('signup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('error-message');
+
+            try {
+                const response = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login.html'; // Redirect to login page after successful signup
+                } else {
+                    const error = await response.json();
+                    errorMessage.textContent = error.message;
+                }
+            } catch (err) {
+                errorMessage.textContent = 'An error occurred. Please try again.';
+            }
+        });
+    </script>
+</body>
+</html>

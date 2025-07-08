@@ -1,0 +1,118 @@
+{
+  "date": "2025-07-03T10:33:24.059Z",
+  "lockers": [
+    {
+      "id": 1751531882674,
+      "name": "Nearside Front",
+      "shelves": [
+        {
+          "id": 1751531882675,
+          "items": [
+            {
+              "id": 1751532076999,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751532090732,
+              "name": "First Aid Kit",
+              "desc": "Check Content Inside",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "container",
+              "subItems": [
+                {
+                  "id": 1751538516175,
+                  "name": "",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                },
+                {
+                  "id": 1751538517493,
+                  "name": "",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                },
+                {
+                  "id": 1751538518932,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                },
+                {
+                  "id": 1751538520226,
+                  "name": "",
+                  "desc": "",
+                  "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+                  "type": "item",
+                  "status": "present",
+                  "note": ""
+                }
+              ],
+              "status": "present",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "id": 1751531897216,
+          "items": [
+            {
+              "id": 1751532092032,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751532093398,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        },
+        {
+          "id": 1751531945916,
+          "items": [
+            {
+              "id": 1751532094697,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            },
+            {
+              "id": 1751532095798,
+              "name": "",
+              "desc": "",
+              "img": "https://placehold.co/100x100/e5e7eb/4b5563?text=Upload",
+              "type": "item",
+              "status": "present",
+              "note": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

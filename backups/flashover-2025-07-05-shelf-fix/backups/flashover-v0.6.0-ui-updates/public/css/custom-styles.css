@@ -1,0 +1,29 @@
+:root {
+  --background: #EDE5E5;
+  --blue: #180F5E;
+  --red-action-1: #E41E25;
+  --orange-action-1: #EF7E21;
+  --green-action-1: #48A910;
+  --red-action-2: #CC392E;
+}
+
+.bg-background { background-color: var(--background); }
+.bg-blue { background-color: var(--blue); }
+.bg-red-action-1 { background-color: var(--red-action-1); }
+.bg-orange-action-1 { background-color: var(--orange-action-1); }
+.bg-green-action-1 { background-color: var(--green-action-1); }
+.bg-red-action-2 { background-color: var(--red-action-2); }
+
+.text-blue { color: var(--blue); }
+.text-red-action-1 { color: var(--red-action-1); }
+.text-orange-action-1 { color: var(--orange-action-1); }
+.text-green-action-1 { color: var(--green-action-1); }
+.text-red-action-2 { color: var(--red-action-2); }
+
+.drop-shadow {
+  box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.25);
+}
+
+.inner-shadow {
+  box-shadow: inset 0 4px 8px 3px rgba(0, 0, 0, 0.25);
+}

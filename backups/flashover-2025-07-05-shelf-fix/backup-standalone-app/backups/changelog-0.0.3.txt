@@ -1,0 +1,20 @@
+# Changelog - Flashover Alpha 0.0.3
+
+## Changes from Version 0.0.2
+
+*   **Implemented Container Check Mode:** The "Drill-Down" method for checking items within a container is now fully implemented.
+*   **Added Test Data:** The application now loads with a default locker, shelf, and a container with sub-items to make testing easier.
+*   **Bug Fixes:** Fixed the issue where the main menu buttons and container check buttons were not working due to incorrect event listener setup.
+
+## What's Working
+
+*   **Full Setup Mode:** Including creating and managing containers and their sub-items.
+*   **Full Check Mode:** 
+    *   Users can now "drill down" into a container to check its contents.
+    *   The "Container Missing" button correctly marks the entire container as missing.
+    *   The container's status is automatically updated based on the status of its sub-items after the user finishes checking the contents.
+*   **Default Data:** The app loads with test data on first run.
+
+## What's Not Working / Next Steps
+
+*   The application is now functionally complete based on the initial requirements. Future work could involve UI/UX polishing, adding more detailed reporting, or implementing a backend to save data more permanently.
