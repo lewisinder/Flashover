@@ -1620,6 +1620,84 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Touch Drag and Drop Event Listeners
+    let touchDraggedItem = null;
+    let touchDragGhost = null;
+
+    delegateEvent('locker-editor-shelves', 'touchstart', '.item-editor-box', (e, box) => {
+        // Don't drag if a button was clicked
+        if (e.target.closest('button')) return;
+        
+        e.preventDefault(); // Prevent text selection/scrolling
+
+        const rect = box.getBoundingClientRect();
+        touchDraggedItem = {
+            itemId: parseInt(box.dataset.itemId),
+            originalShelfId: parseInt(box.dataset.shelfId),
+            element: box
+        };
+
+        touchDragGhost = box.cloneNode(true);
+        touchDragGhost.style.position = 'absolute';
+        touchDragGhost.style.zIndex = '1000';
+        touchDragGhost.style.width = `${rect.width}px`;
+        touchDragGhost.style.height = `${rect.height}px`;
+        touchDragGhost.style.left = `${rect.left}px`;
+        touchDragGhost.style.top = `${rect.top}px`;
+        touchDragGhost.style.opacity = '0.8';
+        document.body.appendChild(touchDragGhost);
+
+        box.classList.add('opacity-50');
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (!touchDraggedItem) return;
+        e.preventDefault();
+
+        const touch = e.touches[0];
+        touchDragGhost.style.left = `${touch.clientX - touchDragGhost.offsetWidth / 2}px`;
+        touchDragGhost.style.top = `${touch.clientY - touchDragGhost.offsetHeight / 2}px`;
+
+        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+        const shelfContainer = targetElement ? targetElement.closest('.shelf-editor-container') : null;
+
+        document.querySelectorAll('.shelf-editor-container').forEach(s => s.classList.remove('bg-blue-200'));
+        if (shelfContainer) {
+            shelfContainer.classList.add('bg-blue-200');
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchend', (e) => {
+        if (!touchDraggedItem) return;
+
+        document.querySelectorAll('.shelf-editor-container').forEach(s => s.classList.remove('bg-blue-200'));
+        
+        const touch = e.changedTouches[0];
+        const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+        const shelfContainer = targetElement ? targetElement.closest('.shelf-editor-container') : null;
+
+        if (shelfContainer) {
+            const newShelfId = parseInt(shelfContainer.dataset.shelfId);
+            if (touchDraggedItem.originalShelfId !== newShelfId) {
+                const locker = findLockerById(currentlyEditing.lockerId);
+                const originalShelf = locker.shelves.find(s => s.id === touchDraggedItem.originalShelfId);
+                const newShelf = locker.shelves.find(s => s.id === newShelfId);
+                const itemIndex = originalShelf.items.findIndex(i => i.id === touchDraggedItem.itemId);
+                
+                if (itemIndex > -1) {
+                    const [itemToMove] = originalShelf.items.splice(itemIndex, 1);
+                    newShelf.items.push(itemToMove);
+                    saveData().then(renderLockerEditor);
+                }
+            }
+        }
+
+        touchDraggedItem.element.classList.remove('opacity-50');
+        document.body.removeChild(touchDragGhost);
+        touchDraggedItem = null;
+        touchDragGhost = null;
+    });
+
     // Item Editor Section
     addSafeEventListener(editorSectionUI.saveBtn, 'click', () => saveItem());
     addSafeEventListener(editorSectionUI.cancelBtn, 'click', closeItemEditor);
