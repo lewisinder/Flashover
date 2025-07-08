@@ -265,10 +265,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 applianceItemDiv.innerHTML = `
                     <img src="/design_assets/Truck Icon.png" alt="Truck" class="h-12 w-12 mr-4">
                     <span class="font-bold text-lg flex-grow">${appliance.name}</span>
-                    <button class="edit-appliance-btn p-2">
+                    <button class="edit-appliance-btn p-2 mr-2">
                         <img src="/design_assets/black pencil icon.png" alt="Edit" class="h-6 w-6">
                     </button>
-                    <button class="delete-appliance-btn absolute top-2 right-2">
+                    <button class="delete-appliance-btn p-2">
                         <img src="/design_assets/No Icon.png" alt="Delete" class="h-6 w-6">
                     </button>
                 `;
@@ -782,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${parentItem.subItems.map(subItem => `
                         <div class="item-editor-box aspect-square" data-item-id="${subItem.id}" data-parent-id="${parentItem.id}">
                             <button class="delete-item-btn absolute top-1 right-1 bg-red-action-2 text-white rounded-full h-6 w-6 flex items-center justify-center z-10">&times;</button>
-                            <img src="${subItem.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${subItem.name}" class="w-full h-full object-cover">
+                            <img src="${subItem.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${subItem.name}" class="w-full h-full object-contain">
                             <div class="item-name-overlay">${subItem.name || 'New Item'}</div>
                         </div>
                     `).join('')}
@@ -1466,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showScreen('lockerCheck');
             } else {
                 // If at the top level of a check, confirm before leaving
-                const confirmExit = confirm("Are you sure you want to exit the check? Your progress will be saved.");
+                const confirmExit = confirm("Are you sure you want to exit? Progress for the current check will be deleted.");
                 if (confirmExit) {
                     window.location.href = '/appliance-checks.html';
                 }

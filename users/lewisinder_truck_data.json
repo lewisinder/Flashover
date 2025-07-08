@@ -5,29 +5,37 @@
       "name": "My Appliance",
       "lockers": [
         {
-          "id": 1751940695061,
-          "name": "...",
+          "id": 1751940697001,
+          "name": "Nearside Front",
           "shelves": [
             {
-              "id": 1751940695062,
+              "id": 1751940697002,
+              "name": "Shelf 1",
               "items": [
                 {
-                  "id": 1751940695883,
-                  "name": "",
+                  "id": 1751940697003,
+                  "name": "Crosslay hose with nozzle 4x41mm",
                   "desc": "",
                   "img": "",
                   "type": "item"
                 },
                 {
-                  "id": 1751940696563,
-                  "name": "",
+                  "id": 1751940697004,
+                  "name": "Instantaneous to forrestry coupling",
                   "desc": "",
                   "img": "",
                   "type": "item"
                 },
                 {
-                  "id": 1751940697013,
-                  "name": "",
+                  "id": 1751940697005,
+                  "name": "Carpet Runner",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940697006,
+                  "name": "Flaked delivery 3x70mm 1x45mm",
                   "desc": "",
                   "img": "",
                   "type": "item"
@@ -35,19 +43,113 @@
               ]
             },
             {
-              "id": 1751940695077,
+              "id": 1751940697022,
               "name": "Shelf 2",
               "items": [
                 {
-                  "id": 1751940697530,
-                  "name": "",
+                  "id": 1751940697010,
+                  "name": "Telemetry ECO Board",
+                  "desc": "",
+                  "img": "",
+                  "type": "container",
+                  "subItems": [
+                    {
+                      "id": 1751940697011,
+                      "name": "Hazsub Board",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697012,
+                      "name": "BA Duration Wheel",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697013,
+                      "name": "ECO Jerkin",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697014,
+                      "name": "Chinagraph Pencil(s)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 1751947657664,
+              "name": "Shelf 3",
+              "items": [
+                {
+                  "id": 1751940697015,
+                  "name": "Stage 1 Decon Kit",
+                  "desc": "",
+                  "img": "",
+                  "type": "container",
+                  "subItems": [
+                    {
+                      "id": 1751940697016,
+                      "name": "Pump Sprayer",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697017,
+                      "name": "Soap",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697018,
+                      "name": "Brush",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697019,
+                      "name": "Cloths",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697020,
+                      "name": "Black Bin Bags",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940697021,
+                      "name": "Wet Wipes",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    }
+                  ]
+                },
+                {
+                  "id": 1751940697009,
+                  "name": "Folding Bucket",
                   "desc": "",
                   "img": "",
                   "type": "item"
                 },
                 {
-                  "id": 1751940698128,
-                  "name": "",
+                  "id": 1751940697008,
+                  "name": "Sodium bicarbonate",
                   "desc": "",
                   "img": "",
                   "type": "item"
@@ -55,19 +157,465 @@
               ]
             },
             {
-              "id": 1751940699095,
-              "name": "Shelf 3",
+              "id": 1751947658515,
+              "name": "Shelf 4",
               "items": [
                 {
-                  "id": 1751940700278,
-                  "name": "",
+                  "id": 1751940697023,
+                  "name": "4.5Kg dry powder extinguisher 1",
                   "desc": "",
                   "img": "",
                   "type": "item"
                 },
                 {
-                  "id": 1751940701063,
-                  "name": "",
+                  "id": 1751940697024,
+                  "name": "4.5Kg dry powder extinguisher 2",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940697025,
+                  "name": "3.5Kg CO2 extinguisher",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940698000,
+                  "name": "Red Bin",
+                  "desc": "",
+                  "img": "",
+                  "type": "container",
+                  "subItems": [
+                    {
+                      "id": 1751940698001,
+                      "name": "Taxi seat covers",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698002,
+                      "name": "Hose bandage",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698003,
+                      "name": "Hose washers",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698004,
+                      "name": "Gas tape",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698005,
+                      "name": "Denso tape",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698006,
+                      "name": "Hot zone tape",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698007,
+                      "name": "Nails",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698008,
+                      "name": "Restricted area tape FENZ",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698009,
+                      "name": "Kevlar gloves (1 pairs)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1751940698010,
+                      "name": "Screws",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    }
+                  ]
+                },
+                {
+                  "id": 1751940697007,
+                  "name": "Tank fill length",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1752212865000,
+          "name": "Nearside Middle",
+          "shelves": [
+            {
+              "id": 1752212865001,
+              "name": "Nearside Middle Top",
+              "items": [
+                {
+                  "id": 1752212865002,
+                  "name": "2x 45mm Bandolier",
+                  "desc": "1x branch attached.",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1752212865003,
+              "name": "Nearside Middle Middle",
+              "items": [
+                {
+                  "id": 1752212865004,
+                  "name": "Hatchet",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865005,
+                  "name": "Strike axe",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865006,
+                  "name": "Bolt cutters",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865007,
+                  "name": "Sledge hammer",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865008,
+                  "name": "Halligan Bar",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865009,
+                  "name": "Telemetry Board stand",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865010,
+                  "name": "GP Lines",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865011,
+                  "name": "Pruning Saw",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865012,
+                  "name": "Crowbar",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1752212865013,
+              "name": "Nearside Middle bottom",
+              "items": [
+                {
+                  "id": 1752212865014,
+                  "name": "First Aid Kit - Full check complete check card inside kit.",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865015,
+                  "name": "Power Tool Kit",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752212865016,
+                  "name": "Torpedoes (And 2 BA Cylinders)",
+                  "desc": "",
+                  "img": "",
+                  "type": "container",
+                  "subItems": [
+                    {
+                      "id": 1752212865017,
+                      "name": "2x Cylinders full (with blue caps)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865018,
+                      "name": "Yes",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865019,
+                      "name": "No",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    }
+                  ]
+                },
+                {
+                  "id": 1752212865020,
+                  "name": "Tool Box",
+                  "desc": "",
+                  "img": "",
+                  "type": "container",
+                  "subItems": [
+                    {
+                      "id": 1752212865021,
+                      "name": "Flat head screwdrivers (6)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865022,
+                      "name": "Philips head screwdrivers (3)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865023,
+                      "name": "Spare hacksaw blades (2)",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865024,
+                      "name": "Allen keys",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865025,
+                      "name": "Side cutters",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865026,
+                      "name": "Long nose pliers",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865027,
+                      "name": "Bull nose pliers",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865028,
+                      "name": "Ring spanners: 9, 10, 11, 12, 13, 14, 15mm, 9/16\"",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865029,
+                      "name": "Pencil",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865030,
+                      "name": "Claw hammer",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865031,
+                      "name": "Ball pein hammer",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865032,
+                      "name": "Brush",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865033,
+                      "name": "Hacksaw",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865034,
+                      "name": "Double ring spanners: 5/8, 5/16, 3/4 inch",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865035,
+                      "name": "Adjustable spanners: 150, 200, 250mm",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865036,
+                      "name": "Pipe wrench",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865037,
+                      "name": "Spark plug spanner",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865038,
+                      "name": "Can of CRC / WD-40",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    },
+                    {
+                      "id": 1752212865039,
+                      "name": "Electrical tape",
+                      "desc": "",
+                      "img": "",
+                      "type": "item"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1752213265000,
+          "name": "Nearside Rear",
+          "shelves": [
+            {
+              "id": 1752213265001,
+              "name": "Nearside Rear Top",
+              "items": [
+                {
+                  "id": 1752213265002,
+                  "name": "Step chock x 2",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752213265003,
+                  "name": "Height Safety Kit",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752213265004,
+                  "name": "Ground Anchor x 2",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1752213265005,
+              "name": "Nearside Rear Middle",
+              "items": [
+                {
+                  "id": 1752213265006,
+                  "name": "Water Safety Kit",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1752213265007,
+              "name": "Nearside Rear Bottom",
+              "items": [
+                {
+                  "id": 1752213265008,
+                  "name": "Knapsack pump x 2",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752213265009,
+                  "name": "Forestry pack x 2",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1752213265010,
+                  "name": "Absorbent bucket x 1 Full",
                   "desc": "",
                   "img": "",
                   "type": "item"
