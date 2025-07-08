@@ -265,14 +265,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 applianceItemDiv.innerHTML = `
                     <img src="/design_assets/Truck Icon.png" alt="Truck" class="h-12 w-12 mr-4">
                     <span class="font-bold text-lg flex-grow">${appliance.name}</span>
-                    <div class="flex items-center">
-                        <button class="edit-appliance-btn p-2">
-                            <img src="/design_assets/Pencil Icon.png" alt="Edit" class="h-6 w-6">
-                        </button>
-                        <button class="delete-appliance-btn p-2">
-                            <img src="/design_assets/No Icon.png" alt="Delete" class="h-6 w-6">
-                        </button>
-                    </div>
+                    <button class="edit-appliance-btn p-2">
+                        <img src="/design_assets/black pencil icon.png" alt="Edit" class="h-6 w-6">
+                    </button>
+                    <button class="delete-appliance-btn absolute top-2 right-2">
+                        <img src="/design_assets/No Icon.png" alt="Delete" class="h-6 w-6">
+                    </button>
                 `;
                 container.appendChild(applianceItemDiv);
             });
