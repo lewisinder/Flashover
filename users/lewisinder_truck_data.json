@@ -1,0 +1,82 @@
+{
+  "appliances": [
+    {
+      "id": "default-appliance",
+      "name": "My Appliance",
+      "lockers": [
+        {
+          "id": 1751940695061,
+          "name": "...",
+          "shelves": [
+            {
+              "id": 1751940695062,
+              "items": [
+                {
+                  "id": 1751940695883,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940696563,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940697013,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1751940695077,
+              "name": "Shelf 2",
+              "items": [
+                {
+                  "id": 1751940697530,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940698128,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            },
+            {
+              "id": 1751940699095,
+              "name": "Shelf 3",
+              "items": [
+                {
+                  "id": 1751940700278,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                },
+                {
+                  "id": 1751940701063,
+                  "name": "",
+                  "desc": "",
+                  "img": "",
+                  "type": "item"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
