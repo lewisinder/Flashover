@@ -733,12 +733,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         checkResults = [];
         checkInProgress = true;
-        sessionStorage.setItem('checkResults-' + getActiveAppliance().id, JSON.stringify(checkResults));
+        sessionStorage.setItem('checkResults', JSON.stringify(checkResults));
         sessionStorage.setItem('checkInProgress', 'true');
         
         const firstLockerId = appliance.lockers[0].id;
         currentCheckState = { lockerId: firstLockerId, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
-        sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+        sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
         window.location.href = '/checks.html';
     }
     
@@ -810,14 +810,14 @@ document.addEventListener('DOMContentLoaded', () => {
             checkerUI.controls.classList.toggle('hidden', isContainer);
             checkerUI.containerControls.classList.toggle('hidden', !isContainer);
         }
-        sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+        sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
     }
 
     function startContainerCheck() {
         const containerId = currentCheckState.selectedItemId;
         currentCheckState.isInsideContainer = true;
         currentCheckState.parentItemId = containerId;
-        sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+        sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
         loadContainerUI(findItemById(containerId));
     }
 
@@ -865,8 +865,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         currentCheckState.isInsideContainer = false;
         currentCheckState.parentItemId = null;
-        sessionStorage.setItem('checkResults-' + getActiveAppliance().id, JSON.stringify(checkResults));
-        sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+        sessionStorage.setItem('checkResults', JSON.stringify(checkResults));
+        sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
         loadLockerUI();
     }
 
@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', () => {
              else checkResults.push(result);
              
              updateItemBoxStatus(item.id, 'missing');
-             sessionStorage.setItem('checkResults-' + getActiveAppliance().id, JSON.stringify(checkResults));
+             sessionStorage.setItem('checkResults', JSON.stringify(checkResults));
              
              // After marking container missing, find the next item in the locker
             const allItemsInLocker = locker.shelves.flatMap(s => s.items);
@@ -947,7 +947,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else checkResults.push(result);
         
         updateItemBoxStatus(item.id, status);
-        sessionStorage.setItem('checkResults-' + getActiveAppliance().id, JSON.stringify(checkResults));
+        sessionStorage.setItem('checkResults', JSON.stringify(checkResults));
 
         // If we are re-checking from the summary screen, don't auto-advance.
         if (currentCheckState.isRechecking) return;
@@ -986,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         updateItemBoxStatus(item.id, 'note');
         noteModal.overlay.classList.add('hidden');
-        sessionStorage.setItem('checkResults-' + getActiveAppliance().id, JSON.stringify(checkResults));
+        sessionStorage.setItem('checkResults', JSON.stringify(checkResults));
 
         // After saving a note, run the same auto-advance logic as processCheck
         if (currentCheckState.isRechecking) return;
@@ -1595,7 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addSafeEventListener('go-to-selected-locker-btn', 'click', () => {
         if(nextLockerToStartId) {
             currentCheckState.lockerId = nextLockerToStartId;
-            sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+            sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
             loadLockerUI();
             showScreen('lockerCheck');
         }
@@ -1614,7 +1614,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isInsideContainer: !!btn.dataset.parentItemId, 
             parentItemId: btn.dataset.parentItemId ? parseInt(btn.dataset.parentItemId) : null
         };
-        sessionStorage.setItem('currentCheckState-' + getActiveAppliance().id, JSON.stringify(currentCheckState));
+        sessionStorage.setItem('currentCheckState', JSON.stringify(currentCheckState));
         loadLockerUI();
         showScreen('lockerCheck');
     });
@@ -1648,9 +1648,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeApp() {
         const applianceId = localStorage.getItem('selectedApplianceId');
         // Re-initialize state from sessionStorage every time the app starts or the page is shown.
-        checkResults = JSON.parse(sessionStorage.getItem('checkResults-' + applianceId)) || [];
-        currentCheckState = JSON.parse(sessionStorage.getItem('currentCheckState-' + applianceId)) || { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
-        checkInProgress = sessionStorage.getItem('checkInProgress-' + applianceId) === 'true';
+        checkResults = JSON.parse(sessionStorage.getItem('checkResults')) || [];
+        currentCheckState = JSON.parse(sessionStorage.getItem('currentCheckState')) || { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
+        checkInProgress = sessionStorage.getItem('checkInProgress') === 'true';
 
         const path = window.location.pathname;
 
