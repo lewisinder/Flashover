@@ -53,7 +53,7 @@
 
     <!-- Main Content -->
     <main class="flex-grow p-6 flex flex-col max-w-4xl mx-auto w-full">
-        <div id="appliance-list" class="flex-grow space-y-4 overflow-y-auto pt-4">
+        <div id="appliance-list" class="flex-grow space-y-4 overflow-y-auto pt-4 px-2">
             <!-- Appliance list will be populated by JavaScript -->
         </div>
         <div class="pt-4 flex-shrink-0 flex justify-center">
@@ -61,14 +61,14 @@
         </div>
     </main>
 
-    <!-- Create New Appliance Modal -->
-    <div id="new-appliance-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+    <!-- Create/Edit Appliance Modal -->
+    <div id="appliance-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
         <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-            <h3 class="text-xl font-bold mb-4">Create New Appliance</h3>
-            <input type="text" id="new-appliance-name-input" placeholder="eg RAV281" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+            <h3 id="appliance-modal-title" class="text-xl font-bold mb-4">Create New Appliance</h3>
+            <input type="text" id="appliance-name-input" placeholder="eg RAV281" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
             <div class="flex justify-end mt-6">
-                <button id="cancel-create-appliance-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
-                <button id="save-new-appliance-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Create</button>
+                <button id="cancel-appliance-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                <button id="save-appliance-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Create</button>
             </div>
         </div>
     </div>

@@ -248,6 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------------
     // SUB-SECTION: APPLIANCE SELECTION
     // -------------------------------------------------------------------
+    let currentlyEditingApplianceId = null;
+
     function renderApplianceSelection() {
         const container = getElement('appliance-list');
         if (!container) return;
@@ -263,32 +265,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 applianceItemDiv.innerHTML = `
                     <img src="/design_assets/Truck Icon.png" alt="Truck" class="h-12 w-12 mr-4">
                     <span class="font-bold text-lg flex-grow">${appliance.name}</span>
-                    <button class="delete-appliance-btn">
-                        <img src="/design_assets/No Icon.png" alt="Delete" class="h-6 w-6">
-                    </button>
+                    <div class="flex items-center">
+                        <button class="edit-appliance-btn p-2">
+                            <img src="/design_assets/Pencil Icon.png" alt="Edit" class="h-6 w-6">
+                        </button>
+                        <button class="delete-appliance-btn p-2">
+                            <img src="/design_assets/No Icon.png" alt="Delete" class="h-6 w-6">
+                        </button>
+                    </div>
                 `;
                 container.appendChild(applianceItemDiv);
             });
         }
     }
 
-    function openNewApplianceModal() {
-        const modal = getElement('new-appliance-modal');
+    function openApplianceModal(applianceId = null) {
+        const modal = getElement('appliance-modal');
+        const title = getElement('appliance-modal-title');
+        const input = getElement('appliance-name-input');
+        const saveBtn = getElement('save-appliance-btn');
+
         if (modal) {
-            getElement('new-appliance-name-input').value = '';
+            currentlyEditingApplianceId = applianceId;
+            if (applianceId) {
+                const appliance = userAppData.appliances.find(a => a.id === applianceId);
+                title.textContent = 'Edit Appliance Name';
+                input.value = appliance.name;
+                saveBtn.textContent = 'Save';
+            } else {
+                title.textContent = 'Create New Appliance';
+                input.value = '';
+                saveBtn.textContent = 'Create';
+            }
             modal.classList.remove('hidden');
         }
     }
 
-    function closeNewApplianceModal() {
-        const modal = getElement('new-appliance-modal');
+    function closeApplianceModal() {
+        const modal = getElement('appliance-modal');
         if (modal) modal.classList.add('hidden');
+        currentlyEditingApplianceId = null;
     }
 
-    function createNewAppliance() {
-        const nameInput = getElement('new-appliance-name-input');
+    function saveAppliance() {
+        const nameInput = getElement('appliance-name-input');
         const name = nameInput.value.trim();
-        if (name) {
+        if (!name) {
+            nameInput.classList.add('border-red-500', 'shake');
+            setTimeout(() => nameInput.classList.remove('shake'), 820);
+            return;
+        }
+
+        if (currentlyEditingApplianceId) {
+            // Editing existing appliance
+            const appliance = userAppData.appliances.find(a => a.id === currentlyEditingApplianceId);
+            if (appliance) {
+                appliance.name = name;
+            }
+        } else {
+            // Creating new appliance
             const newAppliance = {
                 id: `appliance-${Date.now()}`,
                 name: name,
@@ -296,14 +331,12 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             if (!userAppData.appliances) userAppData.appliances = [];
             userAppData.appliances.push(newAppliance);
-            saveData().then(() => {
-                renderApplianceSelection();
-                closeNewApplianceModal();
-            });
-        } else {
-            nameInput.classList.add('border-red-500', 'shake');
-            setTimeout(() => nameInput.classList.remove('shake'), 820);
         }
+        
+        saveData().then(() => {
+            renderApplianceSelection();
+            closeApplianceModal();
+        });
     }
 
     function confirmDeleteAppliance(applianceId) {
@@ -615,53 +648,103 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function handleImageUpload(e) {
+    async function compressImage(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 800;
+                    const MAX_HEIGHT = 800;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert canvas to blob
+                    canvas.toBlob(blob => {
+                        resolve(blob);
+                    }, 'image/webp', 0.8); // Use WebP format with 80% quality
+                };
+                img.onerror = reject;
+                img.src = event.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function handleImageUpload(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         const editor = currentlyEditing.isSubItem ? containerEditorUI.itemEditor : editorSectionUI;
+        const saveBtn = editor.saveBtn;
         const imagePreview = editor.imagePreview;
         const imageContainer = imagePreview.parentElement;
         const textSpans = imageContainer.querySelectorAll('span');
 
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            imagePreview.src = event.target.result;
+        // Disable save button and show loader
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Uploading...';
+        showLoader();
+
+        try {
+            const compressedBlob = await compressImage(file);
+            
+            // Show local preview immediately
+            const previewUrl = URL.createObjectURL(compressedBlob);
+            imagePreview.src = previewUrl;
             imagePreview.classList.remove('hidden');
             textSpans.forEach(s => s.classList.add('hidden'));
-        }
-        reader.readAsDataURL(file);
 
-        const formData = new FormData();
-        formData.append('itemImage', file);
-        const item = findItemById(currentlyEditing.itemId, currentlyEditing.parentItemId);
-        if (item && item.img && item.img.startsWith('/uploads/')) {
-            formData.append('oldImagePath', item.img);
-        }
+            const formData = new FormData();
+            formData.append('itemImage', compressedBlob, 'image.webp');
+            const item = findItemById(currentlyEditing.itemId, currentlyEditing.parentItemId);
+            if (item && item.img && item.img.startsWith('/uploads/')) {
+                formData.append('oldImagePath', item.img);
+            }
 
-        showLoader();
-        fetch('/api/upload', { method: 'POST', body: formData })
-            .then(response => response.json())
-            .then(data => {
-                if(data.filePath) {
-                    tempImageSrc = data.filePath;
-                    imagePreview.src = tempImageSrc; // Update with the final path
-                } else {
-                    alert('Image upload failed.');
-                    // Revert UI on failure
-                    imagePreview.src = '';
-                    imagePreview.classList.add('hidden');
-                    textSpans.forEach(s => s.classList.remove('hidden'));
-                }
-            })
-            .catch(error => {
-                alert('An error occurred during image upload.');
-                // Revert UI on failure
-                imagePreview.src = '';
+            const response = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await response.json();
+
+            if (data.filePath) {
+                tempImageSrc = data.filePath;
+                imagePreview.src = tempImageSrc; // Update with the final server path
+            } else {
+                throw new Error(data.message || 'Image upload failed.');
+            }
+
+        } catch (error) {
+            console.error("Image upload error:", error);
+            alert('An error occurred during image upload.');
+            // Revert UI on failure
+            imagePreview.src = tempImageSrc || '';
+            if (!tempImageSrc) {
                 imagePreview.classList.add('hidden');
                 textSpans.forEach(s => s.classList.remove('hidden'));
-            })
-            .finally(hideLoader);
+            }
+        } finally {
+            // Re-enable save button
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save';
+            hideLoader();
+        }
     }
 
     function addItemToShelf(shelfId) {
@@ -697,12 +780,12 @@ document.addEventListener('DOMContentLoaded', () => {
         containerEditorUI.title.textContent = `Editing: ${parentItem.name}`;
         containerEditorUI.shelvesContainer.innerHTML = `
             <div class="shelf-editor-container">
-                <div class="grid grid-cols-4 gap-4">
+                <div class="grid grid-cols-3 gap-4">
                     ${parentItem.subItems.map(subItem => `
                         <div class="item-editor-box aspect-square" data-item-id="${subItem.id}" data-parent-id="${parentItem.id}">
                             <button class="delete-item-btn absolute top-1 right-1 bg-red-action-2 text-white rounded-full h-6 w-6 flex items-center justify-center z-10">&times;</button>
-                            <img src="${subItem.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${subItem.name}">
-                            <span class="item-name">${subItem.name || 'New Item'}</span>
+                            <img src="${subItem.img || 'https://placehold.co/60x60/d1d5db/4b5563?text=Item'}" alt="${subItem.name}" class="w-full h-full object-cover">
+                            <div class="item-name-overlay">${subItem.name || 'New Item'}</div>
                         </div>
                     `).join('')}
                     <div class="add-item-btn-circle" id="add-sub-item-btn">+</div>
@@ -1420,16 +1503,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Appliance Selection Page
-    addSafeEventListener('create-new-appliance-btn', 'click', openNewApplianceModal);
-    addSafeEventListener('save-new-appliance-btn', 'click', createNewAppliance);
-    addSafeEventListener('cancel-create-appliance-btn', 'click', closeNewApplianceModal);
+    addSafeEventListener('create-new-appliance-btn', 'click', () => openApplianceModal());
+    addSafeEventListener('save-appliance-btn', 'click', saveAppliance);
+    addSafeEventListener('cancel-appliance-btn', 'click', closeApplianceModal);
     delegateEvent('appliance-list', 'click', '.appliance-list-item', (e, item) => {
-        // Clicks on the delete button should not trigger navigation
-        if (e.target.closest('.delete-appliance-btn')) {
+        // Clicks on buttons should not trigger navigation
+        if (e.target.closest('button')) {
             return;
         }
         localStorage.setItem('selectedApplianceId', item.dataset.applianceId);
         window.location.href = '/setup.html';
+    });
+    delegateEvent('appliance-list', 'click', '.edit-appliance-btn', (e, btn) => {
+        const applianceId = btn.closest('.appliance-list-item').dataset.applianceId;
+        openApplianceModal(applianceId);
     });
     delegateEvent('appliance-list', 'click', '.delete-appliance-btn', (e, btn) => {
         const applianceId = btn.closest('.appliance-list-item').dataset.applianceId;
