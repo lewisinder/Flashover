@@ -33,6 +33,16 @@
         .item-name-overlay { position: absolute; bottom: 0; left: 0; right: 0; background-color: rgba(0,0,0,0.5); color: white; font-size: 0.75rem; padding: 0.25rem; text-align: center; word-break: break-word; }
         .shelf-container { background-color: #FFFFFF; border-radius: 0.75rem; padding: 0.75rem; box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 0.75rem; flex-grow: 1; }
         .shelf-items-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 0.75rem; flex-grow: 1; }
+        /* Container Check specific styles */
+        .container-check-context .shelf-items-grid {
+            display: flex;
+            flex-grow: 1;
+            align-items: stretch;
+        }
+        .container-check-context .item-box {
+            flex: 1 1 0px;
+            aspect-ratio: unset; /* Override aspect ratio for flex fill */
+        }
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -271,18 +281,23 @@
             }
         }
 
-        function renderLockerLayout(locker) {
+        function renderLockerLayout(locker, isContainerView = false) {
             checkerUI.lockerLayout.innerHTML = '';
             locker.shelves.forEach(shelf => {
                 const shelfDiv = document.createElement('div');
                 shelfDiv.className = 'shelf-container';
+                if (isContainerView) {
+                    shelfDiv.classList.add('container-check-context');
+                }
                 const itemsGrid = document.createElement('div');
                 itemsGrid.className = 'shelf-items-grid';
                 shelf.items.forEach(item => {
                     const itemBox = document.createElement('div');
                     itemBox.className = 'item-box aspect-square';
                     itemBox.dataset.itemId = item.id;
-                    itemBox.innerHTML = `<div class="item-name-overlay">${item.name}</div>`;
+                    // Add image only if in container view
+                    itemBox.innerHTML = (isContainerView && item.img ? `<img src="${item.img}" alt="${item.name}" class="w-full h-full object-contain">` : '') +
+                                        `<div class="item-name-overlay">${item.name}</div>`;
                     itemsGrid.appendChild(itemBox);
                 });
                 shelfDiv.appendChild(itemsGrid);
@@ -293,6 +308,7 @@
         function updateItemDisplay(item) {
             checkerUI.itemName.textContent = item.name;
             checkerUI.itemDesc.textContent = item.desc;
+            // Ensure the image is displayed correctly, falling back to a placeholder if none exists
             checkerUI.itemImage.src = item.img || '/design_assets/Flashover Logo.png';
             checkerUI.controls.classList.toggle('hidden', item.type === 'container');
             checkerUI.containerControls.classList.toggle('hidden', item.type !== 'container');
@@ -380,6 +396,14 @@
 
         function loadContainerUI(container) {
             checkerUI.headerTitle.textContent = `Container: ${container.name}`;
+            
+            // Change the background of the main content area to off-white for container view
+            const mainContentDiv = document.querySelector('#locker-check-screen main > div.flex-grow.bg-blue');
+            if (mainContentDiv) {
+                mainContentDiv.classList.remove('bg-blue');
+                mainContentDiv.classList.add('bg-background'); // Assuming bg-background is off-white
+            }
+
             renderLockerLayout(container, true); // true indicates it's a container view
             
             const finishBtn = document.createElement('button');
