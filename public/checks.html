@@ -42,6 +42,25 @@
         .container-check-context .item-box {
             flex: 1 1 0px;
             aspect-ratio: unset; /* Override aspect ratio for flex fill */
+            /* Ensure content is still centered and image fits */
+            padding: 0.5rem; /* Add padding similar to setup.html's item-editor-box */
+        }
+        .container-check-context .item-box img {
+            max-width: 100%;
+            max-height: 60px; /* Limit image height to prevent overflow */
+            object-fit: contain;
+            border-radius: 0.25rem;
+        }
+        .container-check-context .item-box .item-name-overlay {
+            position: static; /* Allow name to flow naturally within flex item */
+            background-color: transparent; /* Remove overlay background */
+            color: inherit; /* Use inherited text color */
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-align: center;
+            margin-top: 0.5rem;
+            word-break: break-word;
+            padding: 0; /* Remove padding from overlay */
         }
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
