@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Appliance Checks</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <style>
+        body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+        .screen { display: none; }
+        .screen.active { display: flex; }
+        
+        /* Custom styles from setup.html that are relevant */
+        .item-box { 
+            transition: all 0.2s ease-in-out; 
+            cursor: pointer; 
+            background-color: #E5E7EB; /* gray-200 */
+            border-radius: 0.5rem; /* 8px */
+            display: flex;
+            flex-direction: column; /* Align content vertically */
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
+            position: relative;
+            overflow: hidden; /* Prevents content from spilling out */
+            flex-grow: 1; /* Allow item to grow to fill space */
+            flex-basis: 0; /* Distribute space evenly */
+        }
+        .item-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Ensure image covers the box */
+        }
+        .item-box:hover { background-color: #d1d5db; }
+        .item-box.is-active { 
+            border: 4px solid #180F5E; /* Blue */
+            box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
+        }
+        .item-box.status-present, .item-box .status-present { background-color: var(--green-action-1); color: white; }
+        .item-box.status-missing, .item-box .status-missing { background-color: var(--red-action-1); color: white; }
+        .item-box.status-note, .item-box .status-note { background-color: var(--orange-action-1); color: white; }
+        .item-box.status-partial, .item-box .status-partial { background-color: #a855f7; color: white; } /* Purple for Partial */
+
+        .item-name-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            font-size: 0.75rem;
+            padding: 0.25rem;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .shelf-container {
+            background-color: #FFFFFF; /* White */
+            border-radius: 0.75rem; /* 12px */
+            padding: 0.75rem; /* 12px */
+            box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            flex-grow: 1; /* Allow shelf to grow vertically */
+            min-height: 6rem; /* Set a minimum height */
+        }
+        .shelf-items-grid {
+            display: flex;
+            flex-wrap: nowrap; /* Ensure items stay on a single line */
+            gap: 0.75rem; /* 12px */
+            flex-grow: 1;
+            align-items: stretch; /* Make items fill the shelf height */
+        }
+        .container-items-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            padding: 0.75rem;
+        }
+        .container-items-grid .item-box {
+            min-height: 6rem; /* Or any other suitable value */
+        }
+    </style>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#180F5E">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png">
+</head>
+<body class="bg-background flex flex-col h-screen">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0 z-20">
+        <div class="flex items-center">
+            <button id="back-btn" class="mr-3">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
+        </div>
+        <h1 id="header-title" class="text-white text-2xl font-bold flex-grow text-center">Locker Name</h1>
+        <div class="w-20 flex justify-end">
+            <button id="go-to-locker-status-btn">
+                <img src="/design_assets/Truck Icon White.png" alt="Locker Status" class="h-10 w-10">
+            </button>
+        </div> <!-- Spacer to balance header -->
+    </header>
+    
+    <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col min-h-0">
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: LOCKER CHECK (Mirrors setup.html layout)              -->
+        <!-- =================================================================== -->
+        <div id="locker-check-screen" class="screen active flex-col h-full">
+            <!-- Item Display Section (Sticky Header) -->
+            <div class="flex-shrink-0 bg-background">
+                <div class="p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <!-- Image Section -->
+                        <div class="col-span-1 bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col aspect-square">
+                            <div class="flex-grow relative bg-gray-200 rounded">
+                                <img id="item-image" src="/design_assets/Flashover Logo.png" alt="Item Image" class="w-full h-full object-cover rounded absolute top-0 left-0">
+                            </div>
+                        </div>
+                        <!-- Details Section -->
+                        <div class="col-span-1 md:col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col text-white">
+                            <h2 id="item-name" class="text-2xl font-bold mb-2">Item Name</h2>
+                            <p id="item-desc" class="text-base whitespace-pre-wrap flex-grow overflow-y-auto">Item description.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Locker Layout (Scrollable Content) -->
+            <main class="flex-grow p-4 min-h-0 overflow-y-auto">
+                <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow h-full">
+                    <div class="flex items-center justify-center mb-4 flex-shrink-0">
+                        <h2 id="locker-editor-name" class="text-white text-2xl font-bold uppercase tracking-wider">Locker Name</h2>
+                    </div>
+                    <div id="locker-layout" class="flex flex-col flex-grow gap-6 min-h-0 overflow-y-auto">
+                        <!-- Shelves and items generated by JS -->
+                    </div>
+                </div>
+            </main>
+
+            <!-- Footer Controls (Sticky Footer) -->
+            <footer class="flex-shrink-0 bg-background border-t border-gray-200">
+                <div class="p-4">
+                    <div id="controls" class="flex justify-around items-center">
+                        <button id="btn-missing" class="control-btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/No Icon.png" alt="Missing" class="h-16 w-16">
+                        </button>
+                        <button id="btn-note" class="control-btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/Note Icon.png" alt="Note" class="h-16 w-16">
+                        </button>
+                        <button id="btn-present" class="control--btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/Yes Icon.png" alt="Present" class="h-16 w-16">
+                        </button>
+                    </div>
+                    <div id="container-controls" class="hidden flex justify-around items-center gap-4">
+                        <button id="btn-container-missing" class="w-1/2 bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Container Missing</button>
+                        <button id="btn-check-contents" class="w-1/2 bg-orange-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Check Contents</button>
+                    </div>
+                    <button id="go-to-next-locker-btn" class="hidden w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Go to Next Locker</button>
+                    <button id="back-to-summary-btn" class="hidden w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Back to Summary</button>
+                </div>
+            </footer>
+        </div>
+        
+        <!-- =================================================================== -->
+        <!-- SCREEN: NEXT LOCKER CHOICE                                          -->
+        <!-- =================================================================== -->
+        <div id="next-locker-choice-screen" class="screen p-6 flex-col h-full">
+            <h1 class="text-3xl font-bold text-center mb-6">Locker Status</h1>
+            <div id="next-locker-list-container" class="flex-grow grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto p-4 content-start">
+                <!-- Next locker choices generated by JS -->
+            </div>
+            <div class="pt-4 flex-shrink-0 space-y-3">
+                 <button id="go-to-selected-locker-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg">Go to Selected Locker</button>
+                <button id="finish-checks-early-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg">Finish & View Summary</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: CHECK SUMMARY                                               -->
+        <!-- =================================================================== -->
+        <div id="summary-screen" class="screen p-6 flex-col h-full">
+            <h1 class="text-3xl font-bold text-center mb-4">Check Summary</h1>
+            <div id="summary-list-container" class="flex-grow space-y-4 overflow-y-auto">
+                <!-- Summary items generated by JS -->
+            </div>
+             <div class="pt-4 flex-shrink-0 grid grid-cols-3 gap-4">
+                <button id="edit-report-btn" class="w-full bg-orange-action-1 text-white font-bold py-3 px-4 rounded-lg">Edit</button>
+                <button id="save-report-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg">Save</button>
+                <button id="exit-summary-btn" class="w-full bg-red-action-2 text-white font-bold py-3 px-4 rounded-lg">Exit</button>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- MODALS (Pop-up windows)                                             -->
+        <!-- =================================================================== -->
+        <div id="modals-container">
+            <!-- Note Taking Modal -->
+            <div id="note-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="note-modal-title" class="text-xl font-bold mb-4">Add Note</h3>
+                    <textarea id="note-input" class="w-full h-24 bg-gray-100 rounded-lg p-2 border border-gray-300" placeholder="Type note..."></textarea>
+                    <div class="flex justify-end mt-6">
+                        <button id="cancel-note-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                        <button id="btn-save-note" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Save Note</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simplified Exit Confirmation Modal -->
+            <div id="exit-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center">
+                    <h3 class="text-xl font-bold mb-4">Are you sure?</h3>
+                    <p class="text-gray-600 mb-6">You will lose your current check progress.</p>
+                    <div class="flex flex-col space-y-3">
+                        <button id="confirm-exit-anyway-btn" class="w-full bg-red-action-2 text-white font-bold py-3 px-4 rounded-lg">Yes, I'm Sure</button>
+                        <button id="cancel-exit-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-lg">Continue Check</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
+        firebase.initializeApp(firebaseConfig);
+    </script>
+    <script src="/js/checks.js"></script>
+</body>
+</html>
+
+</body>
+</html>

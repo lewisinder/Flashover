@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Brigades - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-background">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center">
+            <button id="back-btn" class="mr-3" onclick="window.location.href='/menu.html'">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
+            <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-10 w-10 object-contain">
+        </div>
+        <h1 class="text-white text-2xl font-bold flex-grow text-center">Manage Brigades</h1>
+        <div class="w-20"></div> <!-- Spacer to balance header -->
+    </header>
+
+    <main class="p-4">
+        <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-6">
+            
+            <!-- Join a Brigade Section -->
+            <div>
+                <h2 class="text-2xl font-bold mb-4">Join a Brigade</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="join-brigade-region" class="block text-lg font-medium text-gray-700">Select a Region to Find Brigades</label>
+                        <select id="join-brigade-region" class="mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300">
+                            <option value="" disabled selected>Select a Region</option>
+                            <option value="Te Hiku">Te Hiku (Northland, Whangarei, Auckland)</option>
+                            <option value="Ngā Tai Ki Te Puku">Ngā Tai Ki Te Puku (Hamilton, Thames, Tauranga, Rotorua, Gisborne)</option>
+                            <option value="Te Ūpoko">Te Ūpoko (Napier, New Plymouth, Whanganui, Palmerston North, Wellington)</option>
+                            <option value="Te Ihu">Te Ihu (Nelson, Greymouth, Rolleston, Christchurch, Timaru)</option>
+                            <option value="Te Kei">Te Kei (Queenstown, Dunedin, Invercargill)</option>
+                        </select>
+                    </div>
+                    <div id="join-brigades-list" class="space-y-4">
+                        <!-- Brigades available to join will be listed here -->
+                    </div>
+                    <p id="join-brigade-error" class="text-red-action-2 text-center mt-4"></p>
+                    <p id="join-brigade-success" class="text-green-action-1 text-center mt-4"></p>
+                </div>
+            </div>
+
+            <hr class="my-8">
+
+            <!-- My Brigades Section -->
+            <div>
+                <h2 class="text-2xl font-bold mb-4">My Brigades</h2>
+                <div id="brigades-list" class="space-y-4">
+                    <!-- Brigades will be listed here -->
+                    <p id="loading-brigades-msg">Loading your brigades...</p>
+                </div>
+            </div>
+
+            <hr class="my-8">
+
+            <!-- Create New Brigade Section -->
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold mb-4">Create a New Brigade</h2>
+                <form id="create-brigade-form" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="brigade-name" class="block text-lg font-medium text-gray-700">Name</label>
+                            <input type="text" id="brigade-name" placeholder="e.g., Titirangi" class="mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+                        </div>
+                        <div>
+                            <label for="station-number" class="block text-lg font-medium text-gray-700">Station Number</label>
+                            <input type="text" id="station-number" placeholder="e.g., 69" class="mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="brigade-region" class="block text-lg font-medium text-gray-700">Region</label>
+                        <select id="brigade-region" class="mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300" required>
+                            <option value="" disabled selected>Select a Region</option>
+                            <option value="Te Hiku">Te Hiku (Northland, Whangarei, Auckland)</option>
+                            <option value="Ngā Tai Ki Te Puku">Ngā Tai Ki Te Puku (Hamilton, Thames, Tauranga, Rotorua, Gisborne)</option>
+                            <option value="Te Ūpoko">Te Ūpoko (Napier, New Plymouth, Whanganui, Palmerston North, Wellington)</option>
+                            <option value="Te Ihu">Te Ihu (Nelson, Greymouth, Rolleston, Christchurch, Timaru)</option>
+                            <option value="Te Kei">Te Kei (Queenstown, Dunedin, Invercargill)</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="create-brigade-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl">Create Brigade</button>
+                </form>
+                <p id="create-error-message" class="text-red-action-2 text-center mt-4"></p>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const createErrorMessage = document.getElementById('create-error-message');
+        const joinBrigadeRegionSelect = document.getElementById('join-brigade-region');
+        const joinBrigadesListDiv = document.getElementById('join-brigades-list');
+        const joinBrigadeError = document.getElementById('join-brigade-error');
+        const joinBrigadeSuccess = document.getElementById('join-brigade-success');
+        const loadingOverlay = document.getElementById('loading-overlay');
+
+        let currentUser = null;
+
+        function showLoading() {
+            if(loadingOverlay) loadingOverlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            if(loadingOverlay) loadingOverlay.style.display = 'none';
+        }
+
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                console.log("User is signed in:", currentUser.uid);
+                loadUserBrigades();
+            } else {
+                // If no user is signed in, redirect to the login page.
+                window.location.href = '/signin.html';
+            }
+        });
+
+        // --- Create Brigade Logic ---
+        document.getElementById('create-brigade-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                createErrorMessage.textContent = "You must be logged in to create a brigade.";
+                return;
+            }
+
+            const brigadeName = document.getElementById('brigade-name').value;
+            const stationNumber = document.getElementById('station-number').value;
+            const brigadeRegion = document.getElementById('brigade-region').value;
+            const createButton = document.getElementById('create-brigade-btn');
+
+            createButton.disabled = true;
+            createButton.textContent = 'Creating...';
+            createErrorMessage.textContent = '';
+            showLoading();
+
+            try {
+                const token = await currentUser.getIdToken();
+                const response = await fetch('/api/brigades', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        name: brigadeName,
+                        stationNumber: stationNumber,
+                        region: brigadeRegion,
+                        creatorId: currentUser.uid,
+                        creatorName: currentUser.displayName || currentUser.email,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to create brigade.');
+                }
+
+                const result = await response.json();
+                console.log(result.message);
+                
+                // Reset form and reload the list
+                document.getElementById('create-brigade-form').reset();
+                await loadUserBrigades();
+
+            } catch (error) {
+                console.error("Error creating brigade:", error);
+                createErrorMessage.textContent = error.message;
+            } finally {
+                createButton.disabled = false;
+                createButton.textContent = 'Create Brigade';
+                hideLoading();
+            }
+        });
+
+        // --- Load User's Brigades ---
+        async function loadUserBrigades() {
+            if (!currentUser) return;
+
+            const brigadesListDiv = document.getElementById('brigades-list');
+            brigadesListDiv.innerHTML = '<p id="loading-brigades-msg">Loading your brigades...</p>';
+            showLoading();
+
+            try {
+                const userBrigadesRef = db.collection('users').doc(currentUser.uid).collection('userBrigades');
+                const snapshot = await userBrigadesRef.get();
+
+                if (snapshot.empty) {
+                    brigadesListDiv.innerHTML = '<p>You are not a member of any brigades yet.</p>';
+                } else {
+                    brigadesListDiv.innerHTML = ''; // Clear loading message
+                    snapshot.forEach(doc => {
+                        const brigade = doc.data();
+                        const isAdmin = brigade.role === 'Admin';
+                        const brigadeElement = document.createElement('div');
+                        brigadeElement.className = 'bg-gray-100 p-4 rounded-lg flex justify-between items-center';
+                        
+                        let adminDeleteButton = '';
+                        if (isAdmin) {
+                            adminDeleteButton = `<button class="ml-2 bg-red-action-2 p-2 rounded-full" onclick="deleteBrigade('${doc.id}', '${brigade.brigadeName}')">
+                                                    <img src="/design_assets/No Icon.png" alt="Delete Brigade" class="h-6 w-6">
+                                                </button>`;
+                        }
+
+                        brigadeElement.innerHTML = `
+                            <div>
+                                <h3 class="text-xl font-bold">${brigade.brigadeName}</h3>
+                                <p class="text-gray-600">Your Role: <span class="font-semibold">${brigade.role}</span></p>
+                            </div>
+                            <div class="flex items-center">
+                                <button class="bg-blue text-white font-semibold py-2 px-4 rounded-lg" onclick="manageBrigade('${doc.id}')">Manage</button>
+                                <button class="ml-2 bg-red-action-1 text-white font-semibold py-2 px-4 rounded-lg" onclick="leaveBrigade('${doc.id}', '${brigade.brigadeName}')">Leave</button>
+                                ${adminDeleteButton}
+                            </div>
+                        `;
+                        brigadesListDiv.appendChild(brigadeElement);
+                    });
+                }
+
+            } catch (error) {
+                console.error("Error loading brigades:", error);
+                brigadesListDiv.innerHTML = '<p class="text-red-action-2">Could not load your brigades. Please try again later.</p>';
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function manageBrigade(brigadeId) {
+            window.location.href = `/brigade-management.html?id=${brigadeId}`;
+        }
+
+        async function leaveBrigade(brigadeId, brigadeName) {
+            if (!confirm(`Are you sure you want to leave the brigade "${brigadeName}"?`)) {
+                return;
+            }
+
+            joinBrigadeError.textContent = '';
+            joinBrigadeSuccess.textContent = '';
+            showLoading();
+
+            try {
+                const token = await currentUser.getIdToken();
+                const response = await fetch(`/api/brigades/${brigadeId}/leave`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Failed to leave brigade.');
+                }
+
+                joinBrigadeSuccess.textContent = result.message;
+                await loadUserBrigades(); // Refresh the list
+
+            } catch (error) {
+                console.error("Error leaving brigade:", error);
+                joinBrigadeError.textContent = error.message;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function deleteBrigade(brigadeId, brigadeName) {
+            if (!confirm(`Are you absolutely sure you want to permanently delete the brigade "${brigadeName}"? This will remove all members and cannot be undone.`)) {
+                return;
+            }
+            if (!confirm(`Final warning: Deleting "${brigadeName}" is permanent. Are you sure?`)) {
+                return;
+            }
+
+            joinBrigadeError.textContent = '';
+            joinBrigadeSuccess.textContent = '';
+            showLoading();
+
+            try {
+                const token = await currentUser.getIdToken();
+                const response = await fetch(`/api/brigades/${brigadeId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Failed to delete brigade.');
+                }
+
+                joinBrigadeSuccess.textContent = result.message;
+                await loadUserBrigades(); // Refresh the list
+
+            } catch (error) {
+                console.error("Error deleting brigade:", error);
+                joinBrigadeError.textContent = error.message;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // --- Join Brigade Logic ---
+        joinBrigadeRegionSelect.addEventListener('change', async (e) => {
+            const region = e.target.value;
+            if (!region) return;
+
+            joinBrigadesListDiv.innerHTML = '<p>Loading brigades in this region...</p>';
+            joinBrigadeError.textContent = '';
+            joinBrigadeSuccess.textContent = '';
+            showLoading();
+
+            try {
+                const token = await currentUser.getIdToken();
+                const response = await fetch(`/api/brigades/region/${region}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to fetch brigades.');
+                }
+
+                const brigades = await response.json();
+                joinBrigadesListDiv.innerHTML = ''; // Clear loading message
+
+                if (brigades.length === 0) {
+                    joinBrigadesListDiv.innerHTML = '<p>No brigades found in this region.</p>';
+                    return;
+                }
+
+                brigades.forEach(brigade => {
+                    const brigadeElement = document.createElement('div');
+                    brigadeElement.className = 'bg-gray-100 p-4 rounded-lg flex justify-between items-center';
+                    brigadeElement.innerHTML = `
+                        <div>
+                            <h3 class="text-xl font-bold">${brigade.name} (${brigade.stationNumber})</h3>
+                        </div>
+                        <button id="join-btn-${brigade.id}" class="bg-green-action-1 text-white font-semibold py-2 px-4 rounded-lg" onclick="requestToJoin('${brigade.id}')">Request to Join</button>
+                    `;
+                    joinBrigadesListDiv.appendChild(brigadeElement);
+                });
+
+            } catch (error) {
+                console.error("Error fetching regional brigades:", error);
+                joinBrigadesListDiv.innerHTML = '';
+                joinBrigadeError.textContent = error.message;
+            } finally {
+                hideLoading();
+            }
+        });
+
+        async function requestToJoin(brigadeId) {
+            const joinButton = document.getElementById(`join-btn-${brigadeId}`);
+            joinButton.disabled = true;
+            joinButton.textContent = 'Requesting...';
+            joinBrigadeError.textContent = '';
+            joinBrigadeSuccess.textContent = '';
+            showLoading();
+
+            try {
+                const token = await currentUser.getIdToken();
+                const response = await fetch(`/api/brigades/${brigadeId}/join-requests`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Failed to send join request.');
+                }
+
+                joinBrigadeSuccess.textContent = result.message;
+                joinButton.textContent = 'Request Sent';
+                joinButton.classList.replace('bg-green-action-1', 'bg-gray-400');
+
+            } catch (error) {
+                console.error("Error sending join request:", error);
+                joinBrigadeError.textContent = error.message;
+                joinButton.disabled = false;
+                joinButton.textContent = 'Request to Join';
+            } finally {
+                hideLoading();
+            }
+        }
+
+    </script>
+</body>
+</html>

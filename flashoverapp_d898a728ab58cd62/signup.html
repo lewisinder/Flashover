@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-background flex items-center justify-center h-screen p-4">
+    <div class="max-w-md w-full bg-white text-gray-900 rounded-2xl shadow-2xl p-8">
+        <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-20 w-20 mx-auto mb-4">
+        <h1 class="text-3xl font-bold text-center mb-6">Create Account</h1>
+        
+        <!-- Sign Up Form -->
+        <form id="signup-form" class="space-y-4">
+            <input type="text" id="name-input" placeholder="Full Name" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <input type="email" id="email-input" placeholder="Email" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <input type="password" id="password-input" placeholder="Password (at least 6 characters)" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <button type="submit" id="signup-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl">Sign Up</button>
+        </form>
+
+        <p id="message" class="text-red-action-2 text-center mt-4"></p>
+        
+        <div class="text-center mt-6">
+            <a href="/signin.html" class="font-medium text-blue hover:underline">Already have an account? Sign In</a>
+        </div>
+
+        <div class="text-center mt-4 text-sm text-gray-500">
+            <a href="/privacy-policy.html" class="hover:underline">Privacy Policy</a>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+    </script>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/signup.js"></script>
+</body>
+</html>

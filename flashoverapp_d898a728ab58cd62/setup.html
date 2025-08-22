@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Truck Setup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <style>
+        body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+        .screen { display: none; }
+        .screen.active { display: flex; }
+        /* Editor UI Styles */
+        .editor-shelves-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem; /* 16px */
+            flex-grow: 1;
+            min-height: 0;
+        }
+        .shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f3f4f6; border: 2px solid #e5e7eb; border-radius: 0.75rem; padding: 0.75rem; display: flex; flex-direction: column; }
+        .shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
+        .item-editor-box { flex: 1 1 0px; background-color: #e5e7eb; border-radius: 0.5rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.5rem; overflow: hidden; position: relative; }
+        .item-editor-box:hover { background-color: #d1d5db; }
+        .item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
+        .item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
+        .hidden-file-input { display: none; }
+        .custom-file-upload { border: 2px dashed #d1d5db; display: inline-block; padding: 1rem; cursor: pointer; text-align: center; transition: all 0.2s ease; width: 100%; border-radius: 0.5rem; }
+        .custom-file-upload:hover { background-color: #f9fafb; border-color: #9ca3af; }
+        /* Shake animation for validation error */
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+
+        /* New Locker Card Styles */
+        .locker-card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
+            aspect-ratio: 1 / 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s;
+        }
+        .locker-card:hover {
+            transform: translateY(-5px);
+        }
+        .locker-card .locker-name {
+            font-weight: bold;
+            font-size: 1.25rem;
+            text-align: center;
+            padding: 0.5rem;
+        }
+        .locker-card .delete-locker-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            line-height: 1;
+            color: #ef4444; /* red-500 */
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .locker-card.add-new {
+            background-color: #f3f4f6; /* gray-100 */
+            color: #6b7280; /* gray-500 */
+        }
+        .locker-card.add-new:hover {
+            background-color: #e5e7eb; /* gray-200 */
+        }
+
+        /* New Shelf Styles */
+        .shelf-container {
+            background-color: #FFFFFF; /* White */
+            border-radius: 0.75rem; /* 12px */
+            padding: 0.75rem; /* 12px */
+            box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            flex-shrink: 1;
+            flex-basis: 0;
+        }
+
+        .delete-shelf-btn {
+            position: absolute;
+            top: -0.5rem; /* -8px */
+            right: -0.5rem; /* -8px */
+            background-color: #E41E25; /* Red Action 1 */
+            color: white;
+            width: 1.75rem; /* 28px */
+            height: 1.75rem; /* 28px */
+            border-radius: 9999px; /* Full circle */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem; /* 20px */
+            line-height: 1;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .delete-shelf-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .shelf-items-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 0.75rem; /* 12px */
+        }
+
+        /* Locker-specific flex layout */
+        .locker-context .shelf-items-grid {
+            display: flex;
+            flex-grow: 1;
+            align-items: stretch;
+        }
+        .locker-context .item-editor-box,
+        .locker-context .add-item-btn-circle {
+            flex: 1 1 0px;
+            aspect-ratio: unset; /* Override aspect ratio for flex fill */
+        }
+
+        .add-item-btn-circle {
+            background-color: #E5E7EB; /* gray-200 */
+            border-radius: 0.5rem; /* 8px */
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem; /* 40px */
+            color: #9CA3AF; /* gray-400 */
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .add-item-btn-circle:hover {
+            background-color: #D1D5DB; /* gray-300 */
+        }
+        .item-editor-box {
+            aspect-ratio: 1 / 1;
+            background-color: #E5E7EB; /* gray-200 */
+            border-radius: 0.5rem; /* 8px */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
+            position: relative;
+        }
+        .item-editor-box.editing {
+            border: 4px solid #180F5E; /* Blue */
+            box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
+        }
+        .item-editor-box.dragging {
+            opacity: 0.5;
+            border: 2px dashed #180F5E;
+        }
+        .item-editor-box .item-name-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            font-size: 0.75rem;
+            padding: 0.25rem;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .bg-blue-200 {
+            background-color: #bfdbfe;
+        }
+    </style>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#180F5E">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png">
+</head>
+<body class="bg-background flex flex-col h-screen">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center">
+            <button id="back-btn" class="mr-3">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
+        </div>
+        <h1 class="text-white text-2xl font-bold flex-grow text-center">Appliance Setup</h1>
+        <div class="w-20"></div> <!-- Spacer to balance header -->
+    </header>
+    
+    <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col">
+        <!-- =================================================================== -->
+        <!-- SCREEN: SELECT LOCKER TO EDIT                                       -->
+        <!-- =================================================================== -->
+        <div id="select-locker-screen" class="screen active p-6 flex-col h-full">
+            <h1 id="appliance-name-title" class="text-3xl font-bold text-center mb-6">Appliance Name</h1>
+            <div id="locker-list-container" class="flex-grow grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto p-4 content-start">
+                <!-- Locker list generated by JS -->
+            </div>
+        </div>
+
+        <div id="locker-editor-screen" class="screen p-4 flex-col h-full">
+            <!-- Item Editor Section (Initially Hidden) -->
+            <div id="item-editor-section" class="mb-4" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
+                <div class="grid grid-cols-3 gap-4 items-start">
+                    <!-- Image Section -->
+                    <div class="col-span-1 bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col">
+                        <label for="section-file-upload" class="flex-grow flex flex-col items-center justify-center cursor-pointer relative bg-gray-200 rounded text-center aspect-square">
+                            <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                            <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
+                                <span class="font-bold text-lg leading-tight">Item Image</span>
+                                <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
+                            </span>
+                            <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                        </label>
+                    </div>
+                    <!-- Details Section -->
+                    <div class="col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col">
+                        <div class="space-y-2 flex-grow">
+                            <input type="text" id="section-item-name-input" placeholder="Item Name" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500">
+                            <textarea id="section-item-desc-input" rows="2" placeholder="Item Details" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500"></textarea>
+                            <div>
+                                <label class="block text-sm font-medium text-white mb-1">Item Type</label>
+                                <select id="section-item-type-select" class="w-full bg-white text-blue rounded-lg p-2">
+                                    <option value="item">Standard Item</option>
+                                    <option value="container">Container</option>
+                                </select>
+                            </div>
+                            <button id="section-enter-container-btn" class="hidden w-full bg-orange-action-1 text-white font-bold py-2 px-4 rounded-lg">Edit Container Items</button>
+                        </div>
+                        <div class="flex justify-between items-center mt-2">
+                            <button id="section-delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                            <div>
+                                <button id="section-cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                                <button id="section-save-item-btn" class="bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Locker Editor -->
+            <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow min-h-0">
+                <div class="flex items-center justify-center mb-4">
+                    <input type="text" id="locker-editor-name" placeholder="Locker Name" class="bg-transparent text-white text-2xl font-bold w-full text-center uppercase tracking-wider focus:bg-gray-800 rounded p-1">
+                    <img src="/design_assets/Pencil Icon.png" alt="Edit" id="edit-locker-name-icon" class="h-8 w-8 ml-2 cursor-pointer">
+                </div>
+                <div id="locker-editor-shelves" class="flex flex-col flex-grow gap-4 min-h-0">
+                    <!-- Shelves and items generated by JS -->
+                </div>
+            </div>
+            <div class="pt-4 flex-shrink-0">
+                <button id="add-shelf-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 transition-transform transform hover:scale-105">+ Add Shelf</button>
+            </div>
+        </div>
+        
+        <!-- =================================================================== -->
+        <!-- SCREEN: CONTAINER EDITOR                                            -->
+        <!-- =================================================================== -->
+        <div id="container-editor-screen" class="screen p-4 flex-col h-full">
+            <!-- Container's Item Editor Section -->
+            <div id="c-item-editor-section" class="mb-4" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col">
+                        <label for="c-section-file-upload" class="flex-grow flex flex-col items-center justify-center cursor-pointer relative bg-gray-200 rounded p-4 text-center">
+                            <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-cover rounded absolute top-0 left-0 hidden">
+                            <span class="text-blue font-bold text-lg">Item Image</span>
+                            <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
+                            <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                        </label>
+                    </div>
+                    <div class="bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col">
+                        <div class="space-y-4 flex-grow">
+                            <input type="text" id="c-section-item-name-input" placeholder="Item Name" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500">
+                            <textarea id="c-section-item-desc-input" rows="3" placeholder="Item Details" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500"></textarea>
+                        </div>
+                        <div class="flex justify-between mt-4">
+                             <button id="c-section-delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                            <div>
+                                <button id="c-section-cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                                <button id="c-section-save-item-btn" class="bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Container View -->
+            <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow min-h-0">
+                <div class="flex items-center justify-center mb-4">
+                    <h1 id="container-editor-title" class="text-white text-2xl font-bold w-full text-center uppercase tracking-wider">Editing Container</h1>
+                </div>
+                <div class="shelf-container">
+                    <div id="container-editor-items" class="shelf-items-grid flex-grow overflow-y-auto p-1">
+                        <!-- Container sub-items generated here -->
+                    </div>
+                </div>
+            </div>
+            <div class="pt-4 flex-shrink-0">
+                <!-- Add Sub-Item button removed -->
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- MODALS (Pop-up windows)                                             -->
+        <!-- =================================================================== -->
+        <div id="modals-container">
+            <!-- Item Editor Modal -->
+            <div id="item-editor-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="item-editor-title" class="text-xl font-bold mb-4">Edit Item</h3>
+                    <div class="space-y-4">
+                        <label for="file-upload" class="cursor-pointer bg-gray-200 rounded p-4 text-center">
+                            <img id="image-preview" src="" alt="Preview" class="mx-auto mb-2 h-24 object-contain hidden">
+                            <span class="text-blue font-bold">Item Image</span>
+                            <span class="text-gray-600 text-sm block">Click to upload or change</span>
+                        </label>
+                        <input id="file-upload" type="file" accept="image/*" class="hidden-file-input">
+                        <input type="text" id="item-name-input" placeholder="Item Name" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+                        <textarea id="item-desc-input" rows="3" placeholder="Description" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500"></textarea>
+                        <div id="item-type-selector-container">
+                            <label class="block text-sm font-medium text-gray-700">Item Type</label>
+                            <select id="item-type-select" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 mt-1">
+                                <option value="item">Standard Item</option>
+                                <option value="container">Container</option>
+                            </select>
+                        </div>
+                        <button id="enter-container-btn" class="hidden w-full bg-blue text-white font-bold py-2 px-4 rounded-lg">Edit Container Items</button>
+                    </div>
+                    <div class="flex justify-between mt-6">
+                        <button id="delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                        <div><button id="cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button><button id="save-item-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Save</button></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Name Locker Modal -->
+            <div id="name-locker-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 class="text-xl font-bold mb-4">Create New Locker</h3>
+                    <input type="text" id="new-locker-name-input" placeholder="Enter locker name..." class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+                    <div class="flex justify-end mt-6">
+                        <button id="cancel-create-locker-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                        <button id="save-new-locker-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Create</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete Confirmation Modal -->
+            <div id="delete-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="delete-confirm-title" class="text-xl font-bold mb-2">Are you sure?</h3>
+                    <p id="delete-confirm-text" class="text-gray-600 mb-6">This action cannot be undone.</p>
+                    <div class="flex justify-end">
+                        <button id="cancel-delete-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+                        <button id="confirm-delete-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Modal -->
+            <div id="progress-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 60;">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                    <h3 id="progress-title" class="text-xl font-bold mb-4">Processing...</h3>
+                    <p id="progress-text" class="text-gray-600 mb-4 text-center">Starting...</p>
+                    <div class="w-full bg-gray-200 rounded-full h-4">
+                        <div id="progress-bar" class="bg-blue h-4 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+         </div>
+     </div>
+ 
+     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+     <script>
+         // --- Firebase Initialization ---
+         const firebaseConfig = {
+           apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+           authDomain: "flashoverapp.firebaseapp.com",
+           projectId: "flashoverapp",
+           storageBucket: "flashoverapp.firebasestorage.app",
+           messagingSenderId: "1064926411912",
+           appId: "1:1064926411912:web:421f69368967f0e162333d",
+           measurementId: "G-Z6JLYL05W2"
+         };
+         firebase.initializeApp(firebaseConfig);
+     </script>
+     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@latest/dist/browser-image-compression.js"></script>
+     <script src="/js/setup.js"></script>
+ </body>
+ </html>

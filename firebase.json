@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "flashoverapp_d898a728ab58cd62",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Select Appliance - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <style>
+        body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+        .appliance-list-item {
+            background-color: #EDE5E5;
+            border-radius: 0.75rem; /* rounded-xl */
+            padding: 1rem; /* p-4 */
+            display: flex;
+            align-items: center;
+            position: relative;
+            cursor: pointer;
+            box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.25);
+        }
+        .appliance-list-item:hover {
+            background-color: #dcd6d6;
+        }
+    </style>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#180F5E">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png">
+</head>
+<body class="bg-background flex flex-col h-screen">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center">
+            <button id="back-btn" class="mr-3">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
+        </div>
+        <h1 class="text-white text-2xl font-bold flex-grow text-center">Select Appliance for Check</h1>
+        <div class="w-20"></div> <!-- Spacer to balance header -->
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow p-6 flex flex-col max-w-4xl mx-auto w-full">
+        <div id="appliance-list-for-check" class="flex-grow space-y-4 overflow-y-auto pt-4 px-2">
+            <!-- Appliance list will be populated by JavaScript -->
+        </div>
+    </main>
+
+    <!-- Modal for Check in Progress -->
+    <div id="check-in-progress-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center">
+            <h3 class="text-xl font-bold mb-4">Check Already in Progress</h3>
+            <p id="modal-text" class="text-gray-600 mb-6">A check was started by [User]. Would you like to resume or start a new check?</p>
+            <div class="flex flex-col space-y-3">
+                <button id="resume-check-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg">Resume Check</button>
+                <button id="start-new-check-btn" class="w-full bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg">Start New Check</button>
+                <button id="cancel-modal-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-2">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+    </script>
+    <script src="/js/select-appliance-for-check.js"></script>
+</body>
+</html>
