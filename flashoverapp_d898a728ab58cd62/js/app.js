@@ -1316,11 +1316,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const idToken = await getAuthToken();
         if (!idToken) return;
 
+        const user = auth.currentUser;
+        if (!user) {
+            alert("You must be signed in to save a report.");
+            hideLoader();
+            return;
+        }
+
         try {
             const reportPayload = {
                 date: new Date().toISOString(),
                 applianceId: appliance.id,
                 applianceName: appliance.name,
+                userName: user.displayName || user.email || 'Unknown User', // Add user's name
                 lockers: generateFullReportData().lockers
             };
 
@@ -1410,59 +1418,79 @@ document.addEventListener('DOMContentLoaded', () => {
             const modal = getElement('report-detail-modal');
             if (!modal) return;
 
-            getElement('report-detail-title').textContent = `Report for ${reportData.applianceName || ''} - ${date}`;
+            // Update modal title to be more generic, as details are in the content now
+            getElement('report-detail-title').textContent = `Report for ${reportData.applianceName || ''}`;
             const content = getElement('report-detail-content');
             
             const statusStyles = {
-                present: { icon: '●', color: 'text-green-action-1' },
-                missing: { icon: '●', color: 'text-red-action-1' },
-                note: { icon: '●', color: 'text-orange-action-1' },
-                partial: { icon: '●', color: 'text-purple-500' },
-                untouched: { icon: '○', color: 'text-gray-400' }
+                present: { icon: 'Tick Icon.png', text: 'PRESENT' },
+                missing: { icon: 'No Icon.png', text: 'MISSING' },
+                note: { icon: 'Note Icon.png', text: 'NOTE' },
+                partial: { icon: 'Note Icon.png', text: 'PARTIAL' }, // Assuming partial is like a note
+                untouched: { icon: '', text: 'UNCHECKED' }
             };
 
-            let finalHtml = '';
+            // Build the new detailed HTML structure
+            let finalHtml = `
+                <div class="text-center mb-4 p-2 bg-gray-100 rounded-lg">
+                    <p class="font-semibold">Checked by: <span class="font-normal">${reportData.userName || 'N/A'}</span></p>
+                    <p class="font-semibold">Date: <span class="font-normal">${new Date(reportData.date).toLocaleString()}</span></p>
+                </div>
+            `;
+
             reportData.lockers.forEach(locker => {
                 finalHtml += `
-                    <div class="bg-blue rounded-lg p-4 mb-4">
+                    <div class="bg-blue rounded-lg p-4 mb-4 shadow-lg">
                         <h3 class="text-white text-xl font-bold uppercase text-center mb-3">${locker.name}</h3>
                         <div class="space-y-2">
                 `;
 
-                locker.shelves.flatMap(s => s.items).forEach(item => {
+                // Combine items from all shelves in a locker
+                const allItems = locker.shelves.flatMap(s => s.items);
+
+                allItems.forEach(item => {
                     const style = statusStyles[item.status] || statusStyles.untouched;
+                    
                     finalHtml += `
-                        <div style="background-color: #EDEAE5;" class="rounded p-3">
+                        <div class="bg-background rounded-lg p-3 shadow-md">
                             <div class="flex items-center">
-                                <span class="${style.color} mr-3 text-2xl">${style.icon}</span>
-                                <span class="font-semibold">${item.name}</span>
-                            </div>`;
+                                <img src="/design_assets/${style.icon}" alt="${style.text}" class="h-6 w-6 mr-3">
+                                <span class="font-semibold flex-grow">${item.name}</span>
+                                <span class="text-sm font-bold text-gray-600">${style.text}</span>
+                            </div>
+                    `;
 
                     if (item.note) {
-                        finalHtml += `<div class="ml-9 mt-1 text-sm text-gray-600"><em>Note: ${item.note}</em></div>`;
+                        finalHtml += `<div class="pl-9 mt-1 text-sm text-gray-700"><em>Note: ${item.note}</em></div>`;
                     }
 
-                    if (item.type === 'container' && item.subItems) {
-                        finalHtml += `<div class="ml-6 mt-2 space-y-1">`;
+                    // If item is a container, render its sub-items
+                    if (item.type === 'container' && item.subItems && item.subItems.length > 0) {
+                        finalHtml += `<div class="ml-6 mt-2 space-y-2 border-l-2 border-gray-300 pl-4">`;
                         item.subItems.forEach(subItem => {
                             const subStyle = statusStyles[subItem.status] || statusStyles.untouched;
                             finalHtml += `
-                                <div class="bg-white rounded p-2 shadow-md flex items-center">
-                                    <span class="${subStyle.color} mr-3 text-xl">${subStyle.icon}</span>
-                                    <span>${subItem.name}</span>
-                                </div>`;
+                                <div class="bg-white rounded p-2 shadow">
+                                    <div class="flex items-center">
+                                        <img src="/design_assets/${subStyle.icon}" alt="${subStyle.text}" class="h-5 w-5 mr-2">
+                                        <span class="flex-grow">${subItem.name}</span>
+                                        <span class="text-xs font-bold text-gray-500">${subStyle.text}</span>
+                                    </div>
+                            `;
                             if (subItem.note) {
-                                finalHtml += `<div class="pl-8 text-sm text-gray-600"><em>Note: ${subItem.note}</em></div>`;
+                                finalHtml += `<div class="pl-7 mt-1 text-xs text-gray-600"><em>Note: ${subItem.note}</em></div>`;
                             }
+                            finalHtml += `</div>`; // Close sub-item container
                         });
-                        finalHtml += `</div>`;
+                        finalHtml += `</div>`; // Close sub-items container
                     }
-                    finalHtml += `</div>`;
+                    finalHtml += `</div>`; // Close item container
                 });
-                finalHtml += `</div></div>`;
+
+                finalHtml += `</div></div>`; // Close locker container
             });
 
-            content.innerHTML = finalHtml || '<p class="text-center text-gray-500">No issues found in this report.</p>';
+            content.innerHTML = finalHtml || '<p class="text-center text-gray-500">No items were checked in this report.</p>';
             modal.classList.remove('hidden');
 
         } catch (error) {
