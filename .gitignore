@@ -20,3 +20,6 @@ yarn-error.log*
 npm-debug.log*
 .idea
 .vscode
+
+serviceAccountKey.json
+backups/
