@@ -14,4 +14,4 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPP }}'
           channelId: live
           projectId: flashoverapp
-          cli-version: 14.0.0
+          firebaseToolsVersion: 14.0.0
