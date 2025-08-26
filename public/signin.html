@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .provider-btn {
+            background-color: #FFFFFF;
+            color: #5E5E5E;
+            border: 1px solid #8c8c8c;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        .provider-btn:hover {
+            background-color: #f2f2f2;
+            border-color: #5E5E5E;
+        }
+    </style>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#180F5E">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png">
+</head>
+<body class="bg-background flex items-center justify-center h-screen p-4">
+    <div class="max-w-md w-full bg-white text-gray-900 rounded-2xl shadow-2xl p-8">
+        <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-20 w-20 mx-auto mb-4">
+        <h1 class="text-3xl font-bold text-center mb-6">Login</h1>
+        
+        <!-- Provider Buttons -->
+        <div class="space-y-3 mb-4">
+            <button id="login-with-google-btn" class="provider-btn w-full font-bold py-3 px-4 rounded-lg text-lg flex items-center justify-center">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google Logo" class="h-6 w-6 mr-3">
+                Sign in with Google
+            </button>
+            <button id="login-with-microsoft-btn" class="provider-btn w-full font-bold py-3 px-4 rounded-lg text-lg flex items-center justify-center">
+                <img src="https://learn.microsoft.com/en-us/media/logos/logo-ms-social.png" alt="Microsoft Logo" class="h-6 w-6 mr-3">
+                Sign in with Microsoft
+            </button>
+        </div>
+
+        <div class="relative flex py-4 items-center">
+            <div class="flex-grow border-t border-gray-300"></div>
+            <span class="flex-shrink mx-4 text-gray-400">Or</span>
+            <div class="flex-grow border-t border-gray-300"></div>
+        </div>
+
+        <!-- Email/Password Form -->
+        <form id="login-form" class="space-y-4">
+            <input type="email" id="email-input" placeholder="Email" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <input type="password" id="password-input" placeholder="Password" class="w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+            <button type="submit" id="login-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl">Sign In</button>
+        </form>
+
+        <p id="message" class="text-red-action-2 text-center mt-4"></p>
+        
+        <div class="text-center mt-6">
+            <a href="/signup.html" class="font-medium text-blue hover:underline">Don't have an account? Sign Up</a>
+        </div>
+
+        <div class="text-center mt-4 text-sm text-gray-500">
+            <a href="/privacy-policy.html" class="hover:underline">Privacy Policy</a>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+            console.log("Auth: Using local emulator");
+            auth.useEmulator('http://localhost:9099');
+        }
+    </script>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/signin.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "name": "Flashover",
   "short_name": "Flashover",
-  "start_url": "/login.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#EDE5E5",
   "theme_color": "#180F5E",

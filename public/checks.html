@@ -10,57 +10,77 @@
         body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
         .screen { display: none; }
         .screen.active { display: flex; }
+        
+        /* Custom styles from setup.html that are relevant */
         .item-box { 
             transition: all 0.2s ease-in-out; 
             cursor: pointer; 
-            background-color: #E5E7EB;
-            border-radius: 0.5rem;
+            background-color: #E5E7EB; /* gray-200 */
+            border-radius: 0.5rem; /* 8px */
             display: flex;
-            flex-direction: column;
+            flex-direction: column; /* Align content vertically */
             align-items: center;
             justify-content: center;
             box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
             position: relative;
-            overflow: hidden;
+            overflow: hidden; /* Prevents content from spilling out */
+            flex-grow: 1; /* Allow item to grow to fill space */
+            flex-basis: 0; /* Distribute space evenly */
         }
-        .item-box img { width: 100%; height: 100%; object-fit: cover; }
+        .item-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Ensure image covers the box */
+        }
         .item-box:hover { background-color: #d1d5db; }
-        .item-box.is-active { border: 4px solid #180F5E; box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25); }
-        .item-box.status-present { background-color: var(--green-action-1); color: white; }
-        .item-box.status-missing { background-color: var(--red-action-1); color: white; }
-        .item-box.status-note { background-color: var(--orange-action-1); color: white; }
-        .item-box.status-partial { background-color: #a855f7; color: white; }
-        .item-name-overlay { position: absolute; bottom: 0; left: 0; right: 0; background-color: rgba(0,0,0,0.5); color: white; font-size: 0.75rem; padding: 0.25rem; text-align: center; word-break: break-word; }
-        .shelf-container { background-color: #FFFFFF; border-radius: 0.75rem; padding: 0.75rem; box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 0.75rem; flex-grow: 1; }
-        .shelf-items-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 0.75rem; flex-grow: 1; }
-        /* Container Check specific styles */
-        .container-check-context .shelf-items-grid {
-            display: flex;
-            flex-grow: 1;
-            align-items: stretch;
+        .item-box.is-active { 
+            border: 4px solid #180F5E; /* Blue */
+            box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
         }
-        .container-check-context .item-box {
-            flex: 1 1 0px;
-            aspect-ratio: unset; /* Override aspect ratio for flex fill */
-            /* Ensure content is still centered and image fits */
-            padding: 0.5rem; /* Add padding similar to setup.html's item-editor-box */
-        }
-        .container-check-context .item-box img {
-            max-width: 100%;
-            max-height: 60px; /* Limit image height to prevent overflow */
-            object-fit: contain;
-            border-radius: 0.25rem;
-        }
-        .container-check-context .item-box .item-name-overlay {
-            position: static; /* Allow name to flow naturally within flex item */
-            background-color: transparent; /* Remove overlay background */
-            color: inherit; /* Use inherited text color */
+        .item-box.status-present, .item-box .status-present { background-color: var(--green-action-1); color: white; }
+        .item-box.status-missing, .item-box .status-missing { background-color: var(--red-action-1); color: white; }
+        .item-box.status-note, .item-box .status-note { background-color: var(--orange-action-1); color: white; }
+        .item-box.status-partial, .item-box .status-partial { background-color: #a855f7; color: white; } /* Purple for Partial */
+
+        .item-name-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
             font-size: 0.75rem;
-            font-weight: 500;
+            padding: 0.25rem;
             text-align: center;
-            margin-top: 0.5rem;
             word-break: break-word;
-            padding: 0; /* Remove padding from overlay */
+        }
+
+        .shelf-container {
+            background-color: #FFFFFF; /* White */
+            border-radius: 0.75rem; /* 12px */
+            padding: 0.75rem; /* 12px */
+            box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            flex-grow: 1; /* Allow shelf to grow vertically */
+            min-height: 6rem; /* Set a minimum height */
+        }
+        .shelf-items-grid {
+            display: flex;
+            flex-wrap: nowrap; /* Ensure items stay on a single line */
+            gap: 0.75rem; /* 12px */
+            flex-grow: 1;
+            align-items: stretch; /* Make items fill the shelf height */
+        }
+        .container-items-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            padding: 0.75rem;
+        }
+        .container-items-grid .item-box {
+            min-height: 6rem; /* Or any other suitable value */
         }
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -71,69 +91,121 @@
 </head>
 <body class="bg-background flex flex-col h-screen">
 
-    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0 z-20">
         <div class="flex items-center">
-            <button id="back-btn" class="mr-3"><img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8"></button>
+            <button id="back-btn" class="mr-3">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
         </div>
         <h1 id="header-title" class="text-white text-2xl font-bold flex-grow text-center">Locker Name</h1>
         <div class="w-20 flex justify-end">
-            <button id="go-to-locker-status-btn"><img src="/design_assets/Truck Icon White.png" alt="Locker Status" class="h-10 w-10"></button>
-        </div>
+            <button id="go-to-locker-status-btn">
+                <img src="/design_assets/Truck Icon White.png" alt="Locker Status" class="h-10 w-10">
+            </button>
+        </div> <!-- Spacer to balance header -->
     </header>
     
-    <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col">
-        <div id="locker-check-screen" class="screen active p-4 flex-col h-full">
-            <main class="flex flex-col flex-grow min-h-0">
-                <div class="mb-4 grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div class="col-span-1 bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col aspect-square">
-                        <div class="flex-grow relative bg-gray-200 rounded">
-                            <img id="item-image" src="/design_assets/Flashover Logo.png" alt="Item Image" class="w-full h-full object-cover rounded absolute top-0 left-0">
+    <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col min-h-0">
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: LOCKER CHECK (Mirrors setup.html layout)              -->
+        <!-- =================================================================== -->
+        <div id="locker-check-screen" class="screen active flex-col h-full">
+            <!-- Item Display Section (Sticky Header) -->
+            <div class="flex-shrink-0 bg-background">
+                <div class="p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <!-- Image Section -->
+                        <div class="col-span-1 bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col aspect-square">
+                            <div class="flex-grow relative bg-gray-200 rounded">
+                                <img id="item-image" src="/design_assets/Flashover Logo.png" alt="Item Image" class="w-full h-full object-cover rounded absolute top-0 left-0">
+                            </div>
+                        </div>
+                        <!-- Details Section -->
+                        <div class="col-span-1 md:col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col text-white">
+                            <h2 id="item-name" class="text-2xl font-bold mb-2">Item Name</h2>
+                            <p id="item-desc" class="text-base whitespace-pre-wrap flex-grow overflow-y-auto">Item description.</p>
                         </div>
                     </div>
-                    <div class="col-span-1 md:col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col text-white">
-                        <h2 id="item-name" class="text-2xl font-bold mb-2">Item Name</h2>
-                        <p id="item-desc" class="text-base whitespace-pre-wrap flex-grow overflow-y-auto">Item description.</p>
-                    </div>
                 </div>
-                <div class="flex-grow bg-blue rounded-lg p-4 flex flex-col min-h-0">
-                    <div class="flex items-center justify-center mb-4">
+            </div>
+
+            <!-- Locker Layout (Scrollable Content) -->
+            <main class="flex-grow p-4 min-h-0 overflow-y-auto">
+                <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow h-full">
+                    <div class="flex items-center justify-center mb-4 flex-shrink-0">
                         <h2 id="locker-editor-name" class="text-white text-2xl font-bold uppercase tracking-wider">Locker Name</h2>
                     </div>
-                    <div id="locker-layout" class="flex flex-col flex-grow gap-4 min-h-0"></div>
+                    <div id="locker-layout" class="flex flex-col flex-grow gap-6 min-h-0 overflow-y-auto">
+                        <!-- Shelves and items generated by JS -->
+                    </div>
                 </div>
             </main>
-            <footer class="pt-4 flex-shrink-0">
-                <div id="controls" class="flex justify-around items-center">
-                    <button id="btn-missing"><img src="/design_assets/No Icon.png" alt="Missing" class="h-16 w-16"></button>
-                    <button id="btn-note"><img src="/design_assets/Note Icon.png" alt="Note" class="h-16 w-16"></button>
-                    <button id="btn-present"><img src="/design_assets/Yes Icon.png" alt="Present" class="h-16 w-16"></button>
+
+            <!-- Footer Controls (Sticky Footer) -->
+            <footer class="flex-shrink-0 bg-background border-t border-gray-200">
+                <div class="p-4">
+                    <div id="controls" class="flex justify-around items-center">
+                        <button id="btn-missing" class="control-btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/No Icon.png" alt="Missing" class="h-16 w-16">
+                        </button>
+                        <button id="btn-note" class="control-btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/Note Icon.png" alt="Note" class="h-16 w-16">
+                        </button>
+                        <button id="btn-present" class="control--btn flex flex-col items-center justify-center p-2">
+                            <img src="/design_assets/Yes Icon.png" alt="Present" class="h-16 w-16">
+                        </button>
+                    </div>
+                    <div id="container-controls" class="hidden flex justify-around items-center gap-4">
+                        <button id="btn-container-missing" class="w-1/2 bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Container Missing</button>
+                        <button id="btn-check-contents" class="w-1/2 bg-orange-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Check Contents</button>
+                    </div>
+                    <button id="go-to-next-locker-btn" class="hidden w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Go to Next Locker</button>
+                    <button id="back-to-summary-btn" class="hidden w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Back to Summary</button>
                 </div>
-                <div id="container-controls" class="hidden flex justify-around items-center gap-4">
-                    <button id="btn-container-missing" class="w-1/2 bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Container Missing</button>
-                    <button id="btn-check-contents" class="w-1/2 bg-orange-action-1 text-white font-bold py-3 px-4 rounded-lg text-lg h-20 flex items-center justify-center">Check Contents</button>
-                </div>
-                <button id="go-to-next-locker-btn" class="hidden w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Go to Next Locker</button>
-                <button id="back-to-summary-btn" class="hidden w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2">Back to Summary</button>
             </footer>
         </div>
+        
+        <!-- =================================================================== -->
+        <!-- SCREEN: NEXT LOCKER CHOICE                                          -->
+        <!-- =================================================================== -->
         <div id="next-locker-choice-screen" class="screen p-6 flex-col h-full">
             <h1 class="text-3xl font-bold text-center mb-6">Locker Status</h1>
-            <div id="next-locker-list-container" class="flex-grow grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto p-4 content-start"></div>
+            <div id="next-locker-list-container" class="flex-grow grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto p-4 content-start">
+                <!-- Next locker choices generated by JS -->
+            </div>
             <div class="pt-4 flex-shrink-0 space-y-3">
                  <button id="go-to-selected-locker-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg">Go to Selected Locker</button>
                 <button id="finish-checks-early-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg">Finish & View Summary</button>
             </div>
         </div>
+
+        <!-- =================================================================== -->
+        <!-- SCREEN: CHECK SUMMARY                                               -->
+        <!-- =================================================================== -->
         <div id="summary-screen" class="screen p-6 flex-col h-full">
             <h1 class="text-3xl font-bold text-center mb-4">Check Summary</h1>
-            <div id="summary-list-container" class="flex-grow space-y-4 overflow-y-auto"></div>
+            <div id="summary-list-container" class="flex-grow space-y-4 overflow-y-auto">
+                <!-- Summary items generated by JS -->
+            </div>
              <div class="pt-4 flex-shrink-0 grid grid-cols-3 gap-4">
                 <button id="edit-report-btn" class="w-full bg-orange-action-1 text-white font-bold py-3 px-4 rounded-lg">Edit</button>
                 <button id="save-report-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg">Save</button>
                 <button id="exit-summary-btn" class="w-full bg-red-action-2 text-white font-bold py-3 px-4 rounded-lg">Exit</button>
             </div>
         </div>
+
+        <!-- =================================================================== -->
+        <!-- MODALS (Pop-up windows)                                             -->
+        <!-- =================================================================== -->
         <div id="modals-container">
+            <!-- Note Taking Modal -->
             <div id="note-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
                 <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
                     <h3 id="note-modal-title" class="text-xl font-bold mb-4">Add Note</h3>
@@ -144,22 +216,25 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Simplified Exit Confirmation Modal -->
             <div id="exit-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
-                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-                    <h3 class="text-xl font-bold mb-2">Exit Without Saving?</h3>
-                    <p class="text-gray-600 mb-6">Are you sure you want to exit? Your report has not been saved.</p>
-                    <div class="flex flex-col space-y-2">
-                        <button id="confirm-save-and-exit-btn" class="w-full bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg">Save and Exit</button>
-                        <button id="confirm-exit-anyway-btn" class="w-full bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Exit Without Saving</button>
-                        <button id="cancel-exit-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-4">Cancel</button>
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center">
+                    <h3 class="text-xl font-bold mb-4">Are you sure?</h3>
+                    <p class="text-gray-600 mb-6">You will lose your current check progress.</p>
+                    <div class="flex flex-col space-y-3">
+                        <button id="confirm-exit-anyway-btn" class="w-full bg-red-action-2 text-white font-bold py-3 px-4 rounded-lg">Yes, I'm Sure</button>
+                        <button id="cancel-exit-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-4 rounded-lg">Continue Check</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-
+    
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+
     <script>
         const firebaseConfig = {
           apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
@@ -171,382 +246,27 @@
           measurementId: "G-Z6JLYL05W2"
         };
         firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
 
-        let currentUser = null;
-        let truckData = { appliances: [] };
-        let checkReport = {};
-        let activeBrigadeId = null;
-        let activeApplianceId = null;
-        let activeAppliance = null;
-        let currentItemIterator = null;
-        let activeItemId = null;
-
-        const allScreens = document.querySelectorAll('.screen');
-        const checkerUI = {
-            headerTitle: document.getElementById('header-title'),
-            itemImage: document.getElementById('item-image'),
-            itemName: document.getElementById('item-name'),
-            itemDesc: document.getElementById('item-desc'),
-            lockerLayout: document.getElementById('locker-layout'),
-            lockerEditorName: document.getElementById('locker-editor-name'),
-            controls: document.getElementById('controls'),
-            containerControls: document.getElementById('container-controls'),
-            nextLockerBtn: document.getElementById('go-to-next-locker-btn'),
-            backToSummaryBtn: document.getElementById('back-to-summary-btn')
-        };
-        const noteModal = {
-            overlay: document.getElementById('note-modal'),
-            title: document.getElementById('note-modal-title'),
-            input: document.getElementById('note-input'),
-            saveBtn: document.getElementById('btn-save-note'),
-            cancelBtn: document.getElementById('cancel-note-btn')
-        };
-        const exitConfirmModal = {
-            overlay: document.getElementById('exit-confirm-modal'),
-            saveAndExitBtn: document.getElementById('confirm-save-and-exit-btn'),
-            exitAnywayBtn: document.getElementById('confirm-exit-anyway-btn'),
-            cancelBtn: document.getElementById('cancel-exit-btn')
-        };
-
-        document.addEventListener('DOMContentLoaded', () => {
-            auth.onAuthStateChanged(user => {
-                if (user) {
-                    currentUser = user;
-                    activeBrigadeId = localStorage.getItem('selectedBrigadeId');
-                    activeApplianceId = localStorage.getItem('selectedApplianceId');
-                    if (!activeBrigadeId || !activeApplianceId) {
-                        alert("Appliance not selected. Redirecting.");
-                        window.location.href = '/select-appliance-for-check.html';
-                        return;
-                    }
-                    loadBrigadeDataAndStart();
-                } else {
-                    window.location.href = '/signin.html';
-                }
-            });
-            addEventListeners();
-        });
-
-        async function loadBrigadeDataAndStart() {
-            try {
-                const token = await currentUser.getIdToken();
-                const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, { headers: { 'Authorization': `Bearer ${token}` } });
-                if (!response.ok) throw new Error('Failed to load appliance data');
-                truckData = await response.json();
-                activeAppliance = truckData.appliances.find(a => a.id === activeApplianceId);
-                if (activeAppliance) {
-                    startNewCheck();
-                } else {
-                    alert('Selected appliance not found in brigade data.');
-                    window.location.href = '/select-appliance-for-check.html';
-                }
-            } catch (error) {
-                console.error("Error loading data:", error);
-                alert("Error loading data. Please try again.");
-            }
-        }
-
-        function startNewCheck() {
-            checkReport = {
-                applianceId: activeAppliance.id,
-                applianceName: activeAppliance.name,
-                date: new Date().toISOString(),
-                username: currentUser.displayName || currentUser.email,
-                uid: currentUser.uid,
-                issues: []
-            };
-            const firstLocker = activeAppliance.lockers[0];
-            if (firstLocker) {
-                loadLocker(firstLocker.id);
-            } else {
-                showSummary();
-            }
-        }
-
-        function* createItemIterator(locker) {
-            for (const shelf of locker.shelves) {
-                for (const item of shelf.items) {
-                    yield item;
-                }
-            }
-        }
-
-        function loadLocker(lockerId) {
-            const locker = activeAppliance.lockers.find(l => l.id === lockerId);
-            if (!locker) {
-                showSummary();
-                return;
-            }
-            checkerUI.headerTitle.textContent = locker.name;
-            checkerUI.lockerEditorName.textContent = locker.name;
-            currentItemIterator = createItemIterator(locker);
-            renderLockerLayout(locker);
-            showNextItem();
-            switchScreen('locker-check-screen');
-        }
-
-        function showNextItem() {
-            const next = currentItemIterator.next();
-            if (next.done) {
-                checkerUI.controls.classList.add('hidden');
-                checkerUI.containerControls.classList.add('hidden');
-                checkerUI.nextLockerBtn.classList.remove('hidden');
-            } else {
-                const item = next.value;
-                activeItemId = item.id;
-                updateItemDisplay(item);
-                updateItemBoxStyles();
-            }
-        }
-
-        function renderLockerLayout(locker, isContainerView = false) {
-            checkerUI.lockerLayout.innerHTML = '';
-            locker.shelves.forEach(shelf => {
-                const shelfDiv = document.createElement('div');
-                shelfDiv.className = 'shelf-container';
-                if (isContainerView) {
-                    shelfDiv.classList.add('container-check-context');
-                }
-                const itemsGrid = document.createElement('div');
-                itemsGrid.className = 'shelf-items-grid';
-                shelf.items.forEach(item => {
-                    const itemBox = document.createElement('div');
-                    itemBox.className = 'item-box aspect-square';
-                    itemBox.dataset.itemId = item.id;
-                    // Add image only if in container view
-                    itemBox.innerHTML = (isContainerView && item.img ? `<img src="${item.img}" alt="${item.name}" class="w-full h-full object-contain">` : '') +
-                                        `<div class="item-name-overlay">${item.name}</div>`;
-                    itemsGrid.appendChild(itemBox);
-                });
-                shelfDiv.appendChild(itemsGrid);
-                checkerUI.lockerLayout.appendChild(shelfDiv);
-            });
-        }
-
-        function updateItemDisplay(item) {
-            checkerUI.itemName.textContent = item.name;
-            checkerUI.itemDesc.textContent = item.desc;
-            // Ensure the image is displayed correctly, falling back to a placeholder if none exists
-            checkerUI.itemImage.src = item.img || '/design_assets/Flashover Logo.png';
-            checkerUI.controls.classList.toggle('hidden', item.type === 'container');
-            checkerUI.containerControls.classList.toggle('hidden', item.type !== 'container');
-        }
-
-        function updateItemBoxStyles() {
-            document.querySelectorAll('.item-box').forEach(box => {
-                box.classList.remove('is-active');
-                const issue = checkReport.issues.find(i => i.id === box.dataset.itemId);
-                box.classList.remove('status-present', 'status-missing', 'status-note');
-                if (issue) {
-                    box.classList.add(`status-${issue.status}`);
-                }
-            });
-            const activeBox = document.querySelector(`.item-box[data-item-id="${activeItemId}"]`);
-            if (activeBox) activeBox.classList.add('is-active');
-        }
-
-        function switchScreen(screenId) {
-            allScreens.forEach(s => s.classList.remove('active'));
-            document.getElementById(screenId).classList.add('active');
-        }
-
-        function addEventListeners() {
-            document.getElementById('btn-present').addEventListener('click', () => setItemStatus('present'));
-            document.getElementById('btn-missing').addEventListener('click', () => setItemStatus('missing'));
-            document.getElementById('btn-note').addEventListener('click', () => {
-                const item = findItemInTruckData(activeItemId);
-                noteModal.title.textContent = `Add Note for ${item.name}`;
-                noteModal.input.value = checkReport.issues.find(i => i.id === activeItemId)?.note || '';
-                noteModal.overlay.classList.remove('hidden');
-            });
-            noteModal.saveBtn.addEventListener('click', () => {
-                setItemStatus('note', noteModal.input.value);
-                noteModal.overlay.classList.add('hidden');
-            });
-            noteModal.cancelBtn.addEventListener('click', () => noteModal.overlay.classList.add('hidden'));
+        // --- Emulator Connection ---
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+            console.log("Connecting to Firebase Emulators");
+            const auth = firebase.auth();
+            auth.useEmulator('http://localhost:9099');
             
-            // Container buttons
-            document.getElementById('btn-check-contents').addEventListener('click', startContainerCheck);
-            document.getElementById('btn-container-missing').addEventListener('click', () => setItemStatus('missing'));
+            const db = firebase.firestore();
+            db.useEmulator('localhost', 8080);
 
-            checkerUI.nextLockerBtn.addEventListener('click', showLockerStatusScreen);
-            document.getElementById('go-to-locker-status-btn').addEventListener('click', showLockerStatusScreen);
-            document.getElementById('finish-checks-early-btn').addEventListener('click', showSummary);
-            document.getElementById('go-to-selected-locker-btn').addEventListener('click', () => {
-                const selected = document.querySelector('#next-locker-list-container .is-active');
-                if (selected) {
-                    const nextLockerId = selected.dataset.lockerId;
-                    loadLocker(nextLockerId);
-                }
-            });
-            document.getElementById('save-report-btn').addEventListener('click', saveReport);
-            document.getElementById('exit-summary-btn').addEventListener('click', () => exitConfirmModal.overlay.classList.remove('hidden'));
-            exitConfirmModal.cancelBtn.addEventListener('click', () => exitConfirmModal.overlay.classList.add('hidden'));
-            exitConfirmModal.exitAnywayBtn.addEventListener('click', () => window.location.href = '/menu.html');
-            exitConfirmModal.saveAndExitBtn.addEventListener('click', () => {
-                saveReport().then(() => window.location.href = '/menu.html');
-            });
-            document.getElementById('back-btn').addEventListener('click', () => {
-                if (confirm("Exit check? Your progress will not be saved.")) {
-                    window.location.href = '/select-appliance-for-check.html';
-                }
-            });
-        }
-
-        function startContainerCheck() {
-            const container = findItemInTruckData(activeItemId);
-            if (!container || !container.subItems || container.subItems.length === 0) {
-                alert("This container has no items to check.");
-                setItemStatus('present'); // Mark as present and move on
-                return;
-            }
+            const functions = firebase.functions();
+            functions.useEmulator('localhost', 5001);
             
-            // Create a sub-item iterator
-            currentItemIterator = (function* (items) {
-                for (const item of items) {
-                    yield item;
-                }
-            })(container.subItems);
-
-            loadContainerUI(container);
-            showNextItem(); // Show the first sub-item
+            const storage = firebase.storage();
+            storage.useEmulator('localhost', 9199);
         }
-
-        function loadContainerUI(container) {
-            checkerUI.headerTitle.textContent = `Container: ${container.name}`;
-            
-            // Change the background of the main content area to off-white for container view
-            const mainContentDiv = document.querySelector('#locker-check-screen main > div.flex-grow.bg-blue');
-            if (mainContentDiv) {
-                mainContentDiv.classList.remove('bg-blue');
-                mainContentDiv.classList.add('bg-background'); // Assuming bg-background is off-white
-            }
-
-            renderLockerLayout(container, true); // true indicates it's a container view
-            
-            const finishBtn = document.createElement('button');
-            finishBtn.id = 'finish-container-check-btn';
-            finishBtn.textContent = 'Finish Container';
-            finishBtn.className = 'w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg text-xl mt-2';
-            finishBtn.onclick = finishContainerCheck;
-            checkerUI.nextLockerBtn.parentElement.insertBefore(finishBtn, checkerUI.nextLockerBtn);
-        }
-
-        function finishContainerCheck() {
-            const parentItemId = activeItemId; // The container itself
-            const parentItem = findItemInTruckData(parentItemId);
-            const subItemIssues = checkReport.issues.filter(issue => parentItem.subItems.some(si => si.id === issue.id));
-
-            let newStatus = 'present';
-            if (subItemIssues.some(i => i.status === 'missing')) {
-                newStatus = 'partial';
-            } else if (subItemIssues.some(i => i.status === 'note')) {
-                newStatus = 'note';
-            }
-            
-            setItemStatus(newStatus, '', true); // true to signal this is the parent container status
-
-            // Restore main locker iterator and UI
-            const locker = activeAppliance.lockers.find(l => l.shelves.some(s => s.items.some(i => i.id === parentItemId)));
-            loadLocker(locker.id);
-            showNextItem(); // Continue from where we left off in the main locker
-        }
-
-        function checkIfContainerIsComplete() {
-            const parentItem = findItemInTruckData(activeItemId);
-            if (!parentItem || !parentItem.subItems) return false;
-
-            const allSubItemsChecked = parentItem.subItems.every(subItem => 
-                checkReport.issues.some(issue => issue.id === subItem.id)
-            );
-
-            const finishBtn = document.getElementById('finish-container-check-btn');
-            if (finishBtn) {
-                finishBtn.classList.toggle('hidden', !allSubItemsChecked);
-            }
-            if(allSubItemsChecked) {
-                 checkerUI.controls.classList.add('hidden');
-                 checkerUI.containerControls.classList.add('hidden');
-            }
-            return allSubItemsChecked;
-        }
-
-        function setItemStatus(status, note = '', isParentContainerUpdate = false) {
-            const item = findItemInTruckData(activeItemId);
-            if (!item) return;
-
-            let issueIndex = checkReport.issues.findIndex(i => i.id === activeItemId);
-            if (issueIndex > -1) {
-                checkReport.issues[issueIndex].status = status;
-                if (note) checkReport.issues[issueIndex].note = note;
-            } else {
-                checkReport.issues.push({ id: item.id, name: item.name, status, note });
-            }
-            
-            if (!isParentContainerUpdate) {
-                 showNextItem();
-            }
-        }
-
-        function findItemInTruckData(itemId) {
-            for (const locker of activeAppliance.lockers) {
-                for (const shelf of locker.shelves) {
-                    const item = shelf.items.find(i => i.id === itemId);
-                    if (item) return item;
-                }
-            }
-            return null;
-        }
-
-        function showLockerStatusScreen() {
-            const container = document.getElementById('next-locker-list-container');
-            container.innerHTML = '';
-            activeAppliance.lockers.forEach((locker, index) => {
-                const card = document.createElement('div');
-                card.className = 'locker-card p-4 border-2 rounded-lg cursor-pointer';
-                card.dataset.lockerId = locker.id;
-                card.innerHTML = `<div class="locker-name text-lg font-bold">${locker.name}</div>`;
-                card.addEventListener('click', () => {
-                    document.querySelectorAll('.locker-card').forEach(c => c.classList.remove('is-active', 'border-blue-500'));
-                    card.classList.add('is-active', 'border-blue-500');
-                });
-                container.appendChild(card);
-            });
-            switchScreen('next-locker-choice-screen');
-        }
-
-        function showSummary() {
-            const summaryListContainer = document.getElementById('summary-list-container');
-            summaryListContainer.innerHTML = '';
-            if (checkReport.issues.length === 0) {
-                summaryListContainer.innerHTML = '<p class="text-center text-gray-500">No issues found. Great job!</p>';
-            } else {
-                checkReport.issues.forEach(issue => {
-                    const div = document.createElement('div');
-                    div.className = `p-4 rounded-lg text-white status-${issue.status}`;
-                    div.textContent = `${issue.name}: ${issue.status}` + (issue.note ? ` - ${issue.note}` : '');
-                    summaryListContainer.appendChild(div);
-                });
-            }
-            switchScreen('summary-screen');
-        }
-
-        async function saveReport() {
-            try {
-                const token = await currentUser.getIdToken();
-                const response = await fetch(`/api/reports/${currentUser.uid}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify(checkReport)
-                });
-                if (!response.ok) throw new Error('Failed to save report');
-                alert('Report saved successfully!');
-            } catch (error) {
-                console.error('Error saving report:', error);
-                alert('Failed to save report.');
-            }
-        }
+        // --- End Emulator Connection ---
     </script>
+    <script src="/js/checks.js"></script>
+</body>
+</html>
+
 </body>
 </html>

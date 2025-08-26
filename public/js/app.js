@@ -1,14 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const auth = firebase.auth();
 
     // ===================================================================
     // JAVASCRIPT - THE BRAIN OF THE APP
     // ===================================================================
-    const username = localStorage.getItem('username');
-    // If not logged in and not on a public page, redirect to login.
-    if (!username && !['/login.html', '/signup.html', '/welcome.html', '/'].includes(window.location.pathname)) {
-        window.location.href = '/login.html';
-        return; 
-    }
+    
+    // The user's ID is stored, but the token is fetched fresh each time.
+    const userId = localStorage.getItem('userId');
 
     // -------------------------------------------------------------------
     // SECTION A: DATA MANAGEMENT
@@ -23,17 +21,45 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loadingOverlay) loadingOverlay.classList.add('hidden');
     }
 
+    /**
+     * A helper function to get a fresh, valid Firebase Auth token.
+     * Redirects to signin page if no user is found or token fails.
+     * @returns {Promise<string|null>} The Firebase ID token or null.
+     */
+    async function getAuthToken() {
+        // The 'auth' object is made global by auth.js
+        if (!auth.currentUser) {
+            console.log("Auth state not ready or user logged out. Redirecting.");
+            window.location.href = '/signin.html';
+            return null;
+        }
+        try {
+            // Passing 'true' forces a refresh if the token is expired.
+            return await auth.currentUser.getIdToken(true);
+        } catch (error) {
+            console.error("Error getting auth token:", error);
+            window.location.href = '/signin.html';
+            return null;
+        }
+    }
+
     let userAppData = { appliances: [] };
 
     async function loadData() {
-        if (!username) return;
-        showLoader();
+        if (!userId) return;
+        const idToken = await getAuthToken();
+        if (!idToken) return; // Redirect will happen in getAuthToken
+
+        // showLoader(); // Removed from here
         try {
-            const response = await fetch(`/api/data/${username}`);
+            const cacheBust = `?t=${new Date().getTime()}`;
+            const response = await fetch(`/api/data/${userId}${cacheBust}`, {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            // Migration: If old data structure is found, convert it.
-            if (data.lockers) {
+            
+            if (data.lockers) { // Migration for very old data structure
                 userAppData = {
                     appliances: [{
                         id: 'default-appliance',
@@ -41,31 +67,39 @@ document.addEventListener('DOMContentLoaded', () => {
                         lockers: data.lockers
                     }]
                 };
-                await saveData(); // Save the new structure
+                await saveData();
             } else {
                 userAppData = data;
             }
         } catch (error) {
             console.error("Could not load user data:", error);
+            alert("Could not load your profile. You may need to sign in again.");
+            window.location.href = '/signin.html';
         } finally {
-            hideLoader();
+            // hideLoader(); // Removed from here
         }
     }
 
     async function saveData() {
-        if (!username) return;
+        if (!userId) return;
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+
         showLoader();
         try {
-            const response = await fetch(`/api/data/${username}`, {
+            const response = await fetch(`/api/data/${userId}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
                 body: JSON.stringify(userAppData),
             });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             console.log('Data saved successfully');
         } catch (error) {
             console.error('Failed to save data:', error);
-            alert('Failed to save data to the server.');
+            alert('Failed to save data to the server. You may be signed out.');
         } finally {
             hideLoader();
         }
@@ -102,9 +136,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function deleteImage(imageUrl) {
         if (!imageUrl || !imageUrl.startsWith('/uploads/')) return;
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+
         const fileName = imageUrl.split('/').pop();
         try {
-            await fetch(`/api/image/${fileName}`, { method: 'DELETE' });
+            await fetch(`/api/image/${fileName}`, { 
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
         } catch (error) {
             console.error('Failed to delete image:', error);
         }
@@ -691,13 +731,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = e.target.files[0];
         if (!file) return;
 
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+
         const editor = currentlyEditing.isSubItem ? containerEditorUI.itemEditor : editorSectionUI;
         const saveBtn = editor.saveBtn;
         const imagePreview = editor.imagePreview;
         const imageContainer = imagePreview.parentElement;
         const textSpans = imageContainer.querySelectorAll('span');
 
-        // Disable save button and show loader
         saveBtn.disabled = true;
         saveBtn.textContent = 'Uploading...';
         showLoader();
@@ -705,7 +747,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const compressedBlob = await compressImage(file);
             
-            // Show local preview immediately
             const previewUrl = URL.createObjectURL(compressedBlob);
             imagePreview.src = previewUrl;
             imagePreview.classList.remove('hidden');
@@ -718,12 +759,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('oldImagePath', item.img);
             }
 
-            const response = await fetch('/api/upload', { method: 'POST', body: formData });
+            const response = await fetch('/api/upload', { 
+                method: 'POST', 
+                headers: { 'Authorization': `Bearer ${idToken}` },
+                body: formData 
+            });
             const data = await response.json();
 
             if (data.filePath) {
                 tempImageSrc = data.filePath;
-                imagePreview.src = tempImageSrc; // Update with the final server path
+                imagePreview.src = tempImageSrc;
             } else {
                 throw new Error(data.message || 'Image upload failed.');
             }
@@ -731,14 +776,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("Image upload error:", error);
             alert('An error occurred during image upload.');
-            // Revert UI on failure
             imagePreview.src = tempImageSrc || '';
             if (!tempImageSrc) {
                 imagePreview.classList.add('hidden');
                 textSpans.forEach(s => s.classList.remove('hidden'));
             }
         } finally {
-            // Re-enable save button
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save';
             hideLoader();
@@ -1270,17 +1313,23 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoader();
             return;
         }
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+
         try {
             const reportPayload = {
                 date: new Date().toISOString(),
                 applianceId: appliance.id,
-                applianceName: appliance.name, // Storing appliance name in the report
+                applianceName: appliance.name,
                 lockers: generateFullReportData().lockers
             };
 
-            const response = await fetch(`/api/reports/${username}`, {
+            const response = await fetch(`/api/reports`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
                 body: JSON.stringify(reportPayload)
             });
 
@@ -1306,17 +1355,26 @@ document.addEventListener('DOMContentLoaded', () => {
     async function showReportsScreen() {
         const container = getElement('reports-list-container');
         if (!container) return;
+        
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+        
         showLoader();
         try {
-            const response = await fetch(`/api/reports/${username}`);
+            const response = await fetch(`/api/reports/user/${userId}`, {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
             const reports = await response.json();
             if (reports.length === 0) {
                 container.innerHTML = '<p class="text-center text-gray-500">No past reports found.</p>';
                 return;
             }
             
-            // Fetch full details for each report to get the appliance name
-            const reportDetailsPromises = reports.map(r => fetch(`/api/report/${username}/${r.fileName}`).then(res => res.json()));
+            const reportDetailsPromises = reports.map(r => 
+                fetch(`/api/report/${r.fileName}`, { 
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                }).then(res => res.json())
+            );
             const detailedReports = await Promise.all(reportDetailsPromises);
 
             container.innerHTML = detailedReports.map((report, index) => {
@@ -1341,8 +1399,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function showReportDetails(fileName, date) {
         showLoader();
+        const idToken = await getAuthToken();
+        if (!idToken) return;
+
         try {
-            const response = await fetch(`/api/report/${username}/${fileName}`);
+            const response = await fetch(`/api/report/${fileName}`, {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
             const reportData = await response.json();
             const modal = getElement('report-detail-modal');
             if (!modal) return;
@@ -1434,13 +1497,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     addSafeEventListener('view-reports-btn', 'click', () => window.location.href = '/reports.html');
     addSafeEventListener('logout-btn', 'click', () => {
-        localStorage.removeItem('username');
-        sessionStorage.clear();
-        window.location.href = '/login.html';
+        auth.signOut().then(() => {
+            localStorage.removeItem('userId');
+            sessionStorage.clear();
+            window.location.href = '/signin.html';
+        }).catch(error => {
+            console.error('Sign out error', error);
+            // Still clear and redirect even if signout fails
+            localStorage.removeItem('userId');
+            sessionStorage.clear();
+            window.location.href = '/signin.html';
+        });
     });
     addSafeEventListener('back-btn', 'click', () => {
         const path = window.location.pathname;
-
+        
         // --- Main Navigation Hierarchy ---
         if (path.includes('/menu.html')) {
             window.location.href = '/welcome.html';
@@ -1505,10 +1576,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addSafeEventListener('save-appliance-btn', 'click', saveAppliance);
     addSafeEventListener('cancel-appliance-btn', 'click', closeApplianceModal);
     delegateEvent('appliance-list', 'click', '.appliance-list-item', (e, item) => {
-        // Clicks on buttons should not trigger navigation
-        if (e.target.closest('button')) {
-            return;
-        }
+        if (e.target.closest('button')) return;
         localStorage.setItem('selectedApplianceId', item.dataset.applianceId);
         window.location.href = '/setup.html';
     });
@@ -1569,7 +1637,6 @@ document.addEventListener('DOMContentLoaded', () => {
     delegateEvent('locker-editor-shelves', 'click', '.delete-shelf-btn', (e, btn) => confirmDelete('shelf', parseInt(btn.dataset.shelfId), null, null, currentlyEditing.lockerId));
     delegateEvent('locker-editor-shelves', 'click', '.item-editor-box', (e, box) => {
         if (e.target.closest('.delete-item-btn')) {
-            // Pass the currently editing locker's ID to the confirmation
             confirmDelete('item', parseInt(box.dataset.itemId), null, parseInt(box.dataset.shelfId), currentlyEditing.lockerId);
             return;
         }
@@ -1583,7 +1650,6 @@ document.addEventListener('DOMContentLoaded', () => {
             itemId: parseInt(box.dataset.itemId),
             originalShelfId: parseInt(box.dataset.shelfId)
         };
-        // Add a class to the dragged item for visual feedback
         setTimeout(() => box.classList.add('opacity-50'), 0);
     });
 
@@ -1592,7 +1658,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     delegateEvent('locker-editor-shelves', 'dragover', '.shelf-editor-container', (e, shelf) => {
-        e.preventDefault(); // Necessary to allow dropping
+        e.preventDefault();
         shelf.classList.add('bg-blue-200');
     });
 
@@ -1625,10 +1691,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let touchDragGhost = null;
 
     delegateEvent('locker-editor-shelves', 'touchstart', '.item-editor-box', (e, box) => {
-        // Don't drag if a button was clicked
         if (e.target.closest('button')) return;
         
-        e.preventDefault(); // Prevent text selection/scrolling
+        e.preventDefault();
 
         const rect = box.getBoundingClientRect();
         touchDraggedItem = {
@@ -1808,50 +1873,64 @@ document.addEventListener('DOMContentLoaded', () => {
     addSafeEventListener('close-report-detail-btn', 'click', () => getElement('report-detail-modal')?.classList.add('hidden'));
 
     // --- INITIALIZATION ---
-    async function initializeApp() {
-        const applianceId = localStorage.getItem('selectedApplianceId');
-        // Re-initialize state from sessionStorage every time the app starts or the page is shown.
-        checkResults = JSON.parse(sessionStorage.getItem('checkResults')) || [];
-        currentCheckState = JSON.parse(sessionStorage.getItem('currentCheckState')) || { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
-        checkInProgress = sessionStorage.getItem('checkInProgress') === 'true';
+    function main() {
+        auth.onAuthStateChanged(async (user) => {
+            const path = window.location.pathname;
+            const publicPaths = ['/signin.html', '/signup.html', '/welcome.html', '/'];
 
-        const path = window.location.pathname;
+            if (user) {
+                // User is signed in.
+                if (publicPaths.includes(path)) {
+                    // Don't run full app logic on public pages, but can show welcome message etc.
+                    return;
+                }
+                
+                // For all protected pages, load data and then render the specific page content.
+                showLoader(); // Show loader before loading data
+                await loadData();
 
-        // Disable buttons on menu/appliance-checks page while loading
-        if (path.includes('/menu.html') || path.includes('/appliance-checks.html')) {
-            const buttons = document.querySelectorAll('button');
-            buttons.forEach(b => b.disabled = true);
-            await loadData();
-            buttons.forEach(b => b.disabled = false);
-        } else {
-            await loadData();
-        }
-        
-        if (path.includes('/select-appliance.html')) {
-            renderApplianceSelection();
-        } else if (path.includes('/select-appliance-for-check.html')) {
-            renderApplianceSelectionForCheck();
-        } else if (path.includes('/setup.html')) {
-            renderLockerSelection();
-            showScreen('selectLocker');
-        } else if (path.includes('/checks.html')) {
-            if (!checkInProgress) { // If somehow got here without starting a check
-                window.location.href = '/menu.html';
-                return;
+                // Re-initialize state from sessionStorage every time the app starts or the page is shown.
+                checkResults = JSON.parse(sessionStorage.getItem('checkResults')) || [];
+                currentCheckState = JSON.parse(sessionStorage.getItem('currentCheckState')) || { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
+                checkInProgress = sessionStorage.getItem('checkInProgress') === 'true';
+
+                if (path.includes('/select-appliance.html')) {
+                    renderApplianceSelection();
+                } else if (path.includes('/select-appliance-for-check.html')) {
+                    renderApplianceSelectionForCheck();
+                } else if (path.includes('/setup.html')) {
+                    renderLockerSelection();
+                    showScreen('selectLocker');
+                } else if (path.includes('/checks.html')) {
+                    if (!checkInProgress) {
+                        window.location.href = '/menu.html';
+                        return; // Exit before hiding loader
+                    }
+                    loadLockerUI();
+                    showScreen('lockerCheck');
+                } else if (path.includes('/reports.html')) {
+                    await showReportsScreen();
+                }
+                
+                hideLoader(); // Hide loader after all page-specific rendering is done
+
+            } else {
+                // User is signed out.
+                if (!publicPaths.includes(path)) {
+                    console.log("User is not signed in, redirecting from a protected page.");
+                    window.location.href = '/signin.html';
+                }
             }
-            loadLockerUI();
-            showScreen('lockerCheck');
-        } else if (path.includes('/reports.html')) {
-            showReportsScreen();
-        }
+        });
     }
 
-    initializeApp();
+    main();
 
     // This event ensures the UI is correct even when navigating back from the browser's cache
     window.addEventListener('pageshow', function(event) {
         if (event.persisted) {
-            initializeApp();
+            // Re-run main logic if the page was loaded from cache
+            main();
         }
     });
 });

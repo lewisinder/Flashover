@@ -17,24 +17,30 @@
 </head>
 <body class="bg-background flex flex-col h-screen">
 
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
     <!-- Header -->
     <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
         <div class="flex items-center">
             <button id="back-btn" class="mr-3">
                 <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
             </button>
+            <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-10 w-10 object-contain">
         </div>
-        <h1 class="text-white text-2xl font-bold flex-grow text-center">Appliance Checks</h1>
+        <h1 id="header-title" class="text-white text-2xl font-bold flex-grow text-center">Appliance Checks</h1>
         <div class="w-20"></div> <!-- Spacer to balance header -->
     </header>
 
     <!-- Main Content -->
     <main class="flex-grow flex flex-col items-center justify-center p-6 space-y-4 max-w-md mx-auto w-full">
-        <button id="start-checks-btn" onclick="window.location.href='/select-appliance-for-check.html'" class="w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3">
+        <button id="start-checks-btn" class="w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3">
             <img src="/design_assets/Tick Icon.png" alt="Tick" class="h-7 w-7">
             <span>Start Full Check</span>
         </button>
-        <button id="setup-truck-btn" onclick="window.location.href='/select-appliance.html'" class="w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3">
+        <button id="setup-truck-btn" class="w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3">
             <img src="/design_assets/Gear Icon.png" alt="Setup" class="h-7 w-7">
             <span>Set Up Appliances</span>
         </button>
@@ -48,10 +54,37 @@
         <button id="logout-btn" class="text-gray-500 hover:text-gray-700 hover:underline">Logout</button>
     </footer>
 
-    <div id="loading-overlay" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(255,255,255,0.8); backdrop-filter: blur(4px); z-index: 9999;">
-        <div class="w-16 h-16 border-4 border-blue-500 border-solid rounded-full animate-spin" style="border-top-color: transparent;"></div>
-    </div>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
+          authDomain: "flashoverapp.firebaseapp.com",
+          projectId: "flashoverapp",
+          storageBucket: "flashoverapp.firebasestorage.app",
+          messagingSenderId: "1064926411912",
+          appId: "1:1064926411912:web:421f69368967f0e162333d",
+          measurementId: "G-Z6JLYL05W2"
+        };
 
-    <script src="/js/app.js"></script>
+        firebase.initializeApp(firebaseConfig);
+
+        // --- Emulator Connection ---
+        if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+            console.log("Connecting to Firebase Emulators from appliance-checks.html");
+            const auth = firebase.auth();
+            auth.useEmulator('http://localhost:9099');
+            
+            const db = firebase.firestore();
+            db.useEmulator('localhost', 8080);
+
+            const functions = firebase.functions();
+            functions.useEmulator('localhost', 5001);
+        }
+        // --- End Emulator Connection ---
+    </script>
+    <script src="/js/appliance-checks.js"></script>
 </body>
 </html>

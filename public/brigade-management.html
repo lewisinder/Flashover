@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brigade Management - Flashover</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/css/custom-styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-background">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center">
+            <button id="back-btn" class="mr-3" onclick="window.location.href='/manage-brigades.html'">
+                <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+            </button>
+            <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-10 w-10 object-contain">
+        </div>
+        <h1 id="brigade-name-header" class="text-white text-2xl font-bold flex-grow text-center">Loading Brigade...</h1>
+        <div class="w-20"></div> <!-- Spacer to balance header -->
+    </header>
+
+    <main class="p-4">
+        <div class="max-w-4xl mx-auto bg-white rounded-2xl shadow-lg p-6">
+
+            <!-- Join Requests Section (for Admins) -->
+            <div id="join-requests-section" class="hidden mb-8">
+                <h2 class="text-2xl font-bold mb-4">Join Requests</h2>
+                <div id="join-requests-list" class="space-y-3">
+                    <!-- Request items will be dynamically inserted here -->
+                </div>
+                <p id="join-requests-error" class="text-red-action-2 text-center mt-4"></p>
+            </div>
+
+            <!-- Member List Section -->
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold mb-4">Brigade Members</h2>
+                <div id="member-list" class="space-y-3">
+                    <!-- Member items will be dynamically inserted here -->
+                    <p id="loading-members-msg">Loading members...</p>
+                </div>
+            </div>
+
+            <hr class="my-8">
+
+            <!-- Add Member Section (for Admins) -->
+            <div id="admin-section" class="hidden">
+                <h2 class="text-2xl font-bold mb-4">Add a New Member</h2>
+                <form id="add-member-form" class="space-y-4">
+                    <div>
+                        <label for="member-email" class="block text-lg font-medium text-gray-700">User's Email</label>
+                        <input type="email" id="member-email" placeholder="user@example.com" class="mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500" required>
+                    </div>
+                    <button type="submit" id="add-member-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl">Add Member</button>
+                </form>
+                <p id="add-member-error" class="text-red-action-2 text-center mt-4"></p>
+                <p id="add-member-success" class="text-green-action-1 text-center mt-4"></p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="/js/brigade-management.js"></script>
+</body>
+</html>
