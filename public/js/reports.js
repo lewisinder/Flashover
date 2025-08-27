@@ -101,30 +101,78 @@ async function viewReportDetails(reportId) {
 
         const report = await response.json();
         
-        reportDetailTitle.textContent = `Report for ${report.applianceName} - ${new Date(report.date).toLocaleDateString()}`;
+        // Set main report title
+        reportDetailTitle.textContent = `Report for ${report.applianceName}`;
 
-        let contentHtml = `
-            <p><strong>Checked by:</strong> ${report.username}</p>
-            <p><strong>Total Items Checked:</strong> ${report.totalItems}</p>
-            <p><strong>Duration:</strong> ${report.duration}</p>
+        let contentHtml = `<div class="p-4 space-y-6 bg-gray-100">`;
+
+        // Add metadata section
+        contentHtml += `
+            <div class="bg-white p-3 rounded-lg shadow">
+                <h3 class="text-lg font-bold text-gray-800 mb-2">Report Details</h3>
+                <p><strong>Checked by:</strong> ${report.username}</p>
+                <p><strong>Date:</strong> ${new Date(report.date).toLocaleString()}</p>
+            </div>
         `;
 
-        if (report.issues && report.issues.length > 0) {
-            contentHtml += '<h4 class="text-xl font-bold mt-4 text-red-action-2">Issues Found</h4>';
-            contentHtml += '<ul class="list-disc list-inside space-y-2">';
-            report.issues.forEach(issue => {
-                contentHtml += `<li class="p-2 bg-red-100 rounded-md"><strong>${issue.name}</strong> (${issue.location}): ${issue.status} - ${issue.notes || 'No notes'}</li>`;
+        const statusIcons = {
+            present: '/design_assets/Yes Icon.png',
+            missing: '/design_assets/No Icon.png',
+            note: '/design_assets/Note Icon.png',
+            partial: '/design_assets/Note Icon.png' 
+        };
+
+        const renderItem = (item, isSubItem) => {
+            const iconSrc = statusIcons[item.status] || '/design_assets/No Icon.png';
+            let itemHtml = `
+                <div class="${isSubItem ? 'ml-6' : ''}">
+                    <div class="bg-white p-3 rounded-lg shadow-sm flex items-center">
+                        <img src="${iconSrc}" alt="${item.status}" class="h-6 w-6 mr-3">
+                        <span class="font-semibold">${item.name}</span>
+                    </div>
+            `;
+            if (item.note) {
+                itemHtml += `<div class="text-sm text-gray-600 italic pl-10 py-1">Note: ${item.note}</div>`;
+            }
+            
+            if (item.type === 'container' && item.subItems && item.subItems.length > 0) {
+                itemHtml += '<div class="mt-2 space-y-2">';
+                item.subItems.forEach(subItem => {
+                    itemHtml += renderItem(subItem, true);
+                });
+                itemHtml += '</div>';
+            }
+
+            itemHtml += '</div>';
+            return itemHtml;
+        };
+
+        if (report.lockers && report.lockers.length > 0) {
+            report.lockers.forEach(locker => {
+                contentHtml += `
+                    <div class="bg-blue p-4 rounded-xl shadow-lg">
+                        <h4 class="text-white text-center text-xl font-bold mb-3 uppercase">${locker.name}</h4>
+                        <div class="space-y-3">
+                `;
+                
+                locker.shelves.forEach(shelf => {
+                    shelf.items.forEach(item => {
+                        contentHtml += renderItem(item, false);
+                    });
+                });
+
+                contentHtml += `</div></div>`;
             });
-            contentHtml += '</ul>';
         } else {
-            contentHtml += '<p class="mt-4 text-green-action-1 font-bold">No issues were found during this check.</p>';
+            contentHtml += '<p>This report contains no locker data.</p>';
         }
 
+        contentHtml += `</div>`;
         reportDetailContent.innerHTML = contentHtml;
 
     } catch (error) {
         console.error("Error loading report details:", error);
-        reportDetailContent.innerHTML = `<p class="text-red-action-2">${error.message}</p>`;
+        reportDetailContent.innerHTML = `<p class="text-red-action-2 p-4">${error.message}</p>`;
     } finally {
         hideLoading();
     }
