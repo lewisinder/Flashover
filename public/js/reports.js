@@ -89,8 +89,12 @@ async function viewReportDetails(reportId) {
     reportDetailModal.classList.remove('hidden');
 
     try {
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        if (!brigadeId) {
+            throw new Error("No active brigade selected.");
+        }
         const token = await currentUser.getIdToken();
-        const response = await fetch(`/api/reports/${reportId}`, {
+        const response = await fetch(`/api/brigades/${brigadeId}/reports/${reportId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 

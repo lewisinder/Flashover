@@ -494,6 +494,34 @@ brigadeRouter.get('/:brigadeId/data', async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch appliance data.' });
     }
 });
+
+// GET /api/brigades/:brigadeId/reports/:reportId - Get a specific report
+brigadeRouter.get('/:brigadeId/reports/:reportId', async (req, res) => {
+    try {
+        const { brigadeId, reportId } = req.params;
+        const userId = req.user.uid;
+
+        // Optional: Verify the user is a member of the brigade to authorize access
+        const memberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(userId);
+        const memberDoc = await memberRef.get();
+        if (!memberDoc.exists) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        // Fetch the report
+        const reportRef = db.collection('brigades').doc(brigadeId).collection('reports').doc(reportId);
+        const reportDoc = await reportRef.get();
+
+        if (!reportDoc.exists) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        res.status(200).json({ id: reportDoc.id, ...reportDoc.data() });
+
+    } catch (error) {        console.error(`Error fetching report ${req.params.reportId}:`, error);
+        res.status(500).json({ message: 'Failed to fetch report.' });
+    }
+});
 // POST /api/brigades/:brigadeId/data
 brigadeRouter.post('/:brigadeId/data', async (req, res) => {
     try {
@@ -761,27 +789,17 @@ reportRouter.post('/', async (req, res) => {
     try {
         const reportData = req.body;
         const { brigadeId, applianceId, applianceName, date, username } = reportData;
-        const uid = req.user.uid;
 
         if (!brigadeId || !applianceId || !date || !username) {
             return res.status(400).json({ message: 'Missing required report data.' });
         }
 
+        // Create a new document in the reports subcollection and set its data to the full report
         const reportRef = db.collection('brigades').doc(brigadeId).collection('reports').doc();
+        await reportRef.set(reportData);
         const reportId = reportRef.id;
 
-        const reportFileName = `${reportId}.json`;
-        const reportFilePath = path.join(os.tmpdir(), reportFileName);
-        await fs.writeFile(reportFilePath, JSON.stringify(reportData, null, 2));
-
-        await reportRef.set({
-            date: date,
-            applianceName: applianceName,
-            creatorName: username,
-            creatorId: uid,
-            fileName: reportFileName
-        });
-
+        // Clear the in-progress check status from the appliance
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const brigadeDoc = await brigadeRef.get();
         if (brigadeDoc.exists) {
@@ -793,7 +811,7 @@ reportRouter.post('/', async (req, res) => {
             }
         }
 
-        // --- Start of Email Notification Logic ---
+        // --- Start of Email Notification Logic (unchanged) ---
         try {
             const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
             if (!membersSnapshot.empty) {
@@ -834,27 +852,6 @@ reportRouter.post('/', async (req, res) => {
     } catch (err) {
         console.error('Error saving report:', err);
         res.status(500).json({ message: 'Error saving report.' });
-    }
-});
-
-reportRouter.get('/:reportId', async (req, res) => {
-    try {
-        const { reportId } = req.params;
-        const reportFileName = `${reportId}.json`;
-        
-        if (reportFileName.includes('..')) {
-            return res.status(400).json({ message: 'Invalid report ID.' });
-        }
-
-        const filePath = path.join(os.tmpdir(), reportFileName);
-        const data = await fs.readFile(filePath, 'utf8');
-        res.json(JSON.parse(data));
-    } catch (err) {
-        console.error('Error reading report file:', err);
-        if (err.code === 'ENOENT') {
-            return res.status(404).json({ message: 'Report not found.' });
-        }
-        res.status(500).json({ message: 'Error loading report.' });
     }
 });
 
