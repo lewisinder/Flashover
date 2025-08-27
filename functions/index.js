@@ -793,6 +793,42 @@ reportRouter.post('/', async (req, res) => {
             }
         }
 
+        // --- Start of Email Notification Logic ---
+        try {
+            const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
+            if (!membersSnapshot.empty) {
+                const memberIds = membersSnapshot.docs.map(doc => doc.id);
+
+                const userPromises = memberIds.map(uid => admin.auth().getUser(uid));
+                const userRecords = await Promise.all(userPromises);
+
+                const recipients = userRecords.map(userRecord => userRecord.email).filter(email => !!email);
+
+                if (recipients.length > 0) {
+                    const mailCollection = db.collection('mail');
+                    const emailPromises = recipients.map(email => {
+                        return mailCollection.add({
+                            to: email,
+                            message: {
+                                subject: `New Report Submitted for ${applianceName}`,
+                                html: `
+                                    <p>Hello,</p>
+                                    <p>A new report for appliance <strong>${applianceName}</strong> was completed by <strong>${username}</strong> on ${new Date(date).toLocaleString()}.</p>
+                                    <p>You can view the report in the Flashover app.</p>
+                                `,
+                            },
+                        });
+                    });
+                    await Promise.all(emailPromises);
+                    console.log(`Successfully queued emails for ${recipients.length} brigade members.`);
+                }
+            }
+        } catch (emailError) {
+            console.error("Failed to send email notifications:", emailError);
+            // We do not block the main response for email errors.
+        }
+        // --- End of Email Notification Logic ---
+
         res.status(201).json({ message: 'Report saved successfully.', reportId: reportId });
 
     } catch (err) {
