@@ -1,11 +1,10 @@
 const firebaseConfig = {
-  apiKey: "AIzaSyBpWwg4qYIbKWkAJzjDgvJYABtOoyhVw6M",
-  authDomain: "flashoverapp.firebaseapp.com",
-  projectId: "flashoverapp",
-  storageBucket: "flashoverapp.firebasestorage.app",
-  messagingSenderId: "1064926411912",
-  appId: "1:1064926411912:web:421f69368967f0e162333d",
-  measurementId: "G-Z6JLYL05W2"
+  apiKey: "AIzaSyC-fTzW4YzTTSyCtXSIgxZCZAb7a14t3N4",
+  authDomain: "flashoverapplication.firebaseapp.com",
+  projectId: "flashoverapplication",
+  storageBucket: "flashoverapplication.firebasestorage.app",
+  messagingSenderId: "74889025348",
+  appId: "1:74889025348:web:baaec1803ade7ffbd06911"
 };
 
 firebase.initializeApp(firebaseConfig);
