@@ -1,1 +1,0 @@
-When uploading to GitHub, provide a comprehensive report of any changes made.
