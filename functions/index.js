@@ -1,4 +1,5 @@
 const functions = require('firebase-functions');
+functions.setGlobalOptions({ serviceAccount: 'flashoverapplication@appspot.gserviceaccount.com' });
 const os = require('os');
 const express = require('express');
 const path = require('path');
