@@ -864,6 +864,4 @@ apiRouter.use('/reports', reportRouter);
 app.use('/api', apiRouter);
 
 // Export the Express app as a single Cloud Function
-exports.api = functions
-    .runWith({ serviceAccount: 'cloud-functions-agent@flashoverapp.iam.gserviceaccount.com' })
-    .https.onRequest(app);
+exports.api = functions.https.onRequest(app);
