@@ -11,10 +11,11 @@ jobs:
           credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}'
       - run: npm --prefix functions install
       - name: Deploy Cloud Functions
-        run: npx firebase-tools@14.0.0 deploy --only functions --project flashoverapplication --non-interactive --debug
+        run: npx firebase-tools@14.0.0 deploy --only functions --project flashoverapplication --non-interactive
       - name: Deploy to Hosting Preview Channel
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}'
           projectId: flashoverapplication
           firebaseToolsVersion: 14.0.0
