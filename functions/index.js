@@ -603,9 +603,20 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
 });
 // A helper function to generate the rich HTML for the report email
 const generateReportHtml = (reportData) => {
-    const { applianceName, date, username, sections } = reportData;
+    // Safely destructure with default values
+    const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', sections = [] } = reportData || {};
 
-    // Basic inline styles for email client compatibility
+    // --- Safe Date Formatting ---
+    let formattedDate = 'an unknown date';
+    try {
+        if (date) {
+            formattedDate = new Date(date).toLocaleString();
+        }
+    } catch (e) {
+        console.error('Could not parse date:', date);
+    }
+
+    // --- Inline Styles ---
     const styles = {
         body: `font-family: sans-serif; color: #333;`,
         h2: `color: #333;`,
@@ -614,54 +625,56 @@ const generateReportHtml = (reportData) => {
         th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #f2f2f2;`,
         td: `border: 1px solid #ddd; padding: 10px; vertical-align: top;`,
         notes: `font-style: italic; color: #666;`,
-        locker: `background-color: #f9f9f9; font-weight: bold;`,
-        subItem: `padding-left: 30px;`
+        locker: `background-color: #f0f0f0; font-weight: bold;`,
+        subItem: `padding-left: 30px; background-color: #f9f9f9;`
     };
 
-    // Helper to get status color
-    const getStatusStyle = (status) => {
-        switch (status) {
-            case 'Yes':
-                return `color: green;`;
-            case 'No':
-                return `color: red; font-weight: bold;`;
-            default:
-                return `color: #555;`;
-        }
+    // --- Status Styling Helper ---
+    const getStatusHtml = (status) => {
+        const s = status || 'N/A';
+        let style = 'color: #555;';
+        if (s === 'Yes') style = 'color: green; font-weight: bold;';
+        if (s === 'No') style = 'color: red; font-weight: bold;';
+        return `<span style="${style}">${s}</span>`;
     };
 
+    // --- Main HTML Body Construction ---
     let html = `<div style="${styles.body}">`;
     html += `<h2 style="${styles.h2}">New Report for ${applianceName}</h2>`;
-    html += `<p>A new report was completed by <strong>${username}</strong> on ${new Date(date).toLocaleString()}.</p>`;
+    html += `<p>A new report was completed by <strong>${username}</strong> on ${formattedDate}.</p>`;
 
-    if (sections && sections.length > 0) {
+    if (Array.isArray(sections) && sections.length > 0) {
         sections.forEach(section => {
-            html += `<h3 style="${styles.h3}">${section.title}</h3>`;
+            html += `<h3 style="${styles.h3}">${section.title || 'Untitled Section'}</h3>`;
             html += `<table style="${styles.table}">`;
             html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
             html += `<tbody>`;
 
-            if (section.items && section.items.length > 0) {
-                section.items.forEach(item => {
-                    // Check if the item is a "locker" with sub-items
-                    if (item.items && item.items.length > 0) {
+            const items = section.items || [];
+            if (Array.isArray(items) && items.length > 0) {
+                items.forEach(item => {
+                    // A "locker" is an item that has its own 'items' array.
+                    const isLocker = item && Array.isArray(item.items) && item.items.length > 0;
+
+                    if (isLocker) {
+                        // Render the locker title row
                         html += `<tr>`;
-                        html += `<td colspan="3" style="${styles.td} ${styles.locker}">${item.name}</td>`;
+                        html += `<td colspan="3" style="${styles.td} ${styles.locker}">${item.name || 'Unnamed Locker'}</td>`;
                         html += `</tr>`;
 
-                        // Loop through sub-items
+                        // Render the sub-items
                         item.items.forEach(subItem => {
                             html += `<tr>`;
-                            html += `<td style="${styles.td} ${styles.subItem}">${subItem.name}</td>`;
-                            html += `<td style="${styles.td}"><span style="${getStatusStyle(subItem.status)}">${subItem.status || 'N/A'}</span></td>`;
+                            html += `<td style="${styles.td} ${styles.subItem}">${subItem.name || 'Unnamed Sub-item'}</td>`;
+                            html += `<td style="${styles.td}">${getStatusHtml(subItem.status)}</td>`;
                             html += `<td style="${styles.td}"><span style="${styles.notes}">${subItem.notes || ''}</span></td>`;
                             html += `</tr>`;
                         });
-                    } else {
-                        // Regular item
+                    } else if (item) {
+                        // Render a regular item
                         html += `<tr>`;
-                        html += `<td style="${styles.td}">${item.name}</td>`;
-                        html += `<td style="${styles.td}"><span style="${getStatusStyle(item.status)}">${item.status || 'N/A'}</span></td>`;
+                        html += `<td style="${styles.td}">${item.name || 'Unnamed Item'}</td>`;
+                        html += `<td style="${styles.td}">${getStatusHtml(item.status)}</td>`;
                         html += `<td style="${styles.td}"><span style="${styles.notes}">${item.notes || ''}</span></td>`;
                         html += `</tr>`;
                     }
