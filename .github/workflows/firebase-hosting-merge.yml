@@ -1,4 +1,4 @@
-name: Deploy to Firebase Hosting on merge
+name: Deploy to Firebase on merge
 'on':
   push:
     branches:
@@ -7,11 +7,19 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+      - uses: actions/checkout@v4
+
+      - name: Install Function Dependencies
+        run: npm ci
+        working-directory: ./functions
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}'
           channelId: live
           projectId: flashoverapplication
-          firebaseToolsVersion: 14.0.0
+          # By removing the default '--only hosting' behavior and letting the command
+          # respect firebase.json, this will now deploy both hosting and functions.
+          args: deploy --except functions:processEmail
