@@ -603,18 +603,15 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
 });
 // A helper function to generate the rich HTML for the report email
 const generateReportHtml = (reportData) => {
-    // --- TEMPORARY DEBUGGING ---
-    const rawDataForDebug = `<p><strong>DEBUG DATA:</strong></p><pre style="background-color:#eee; padding:10px; border:1px solid #ccc; white-space:pre-wrap; word-wrap:break-word;">${JSON.stringify(reportData, null, 2)}</pre><hr>`;
-    // --- END DEBUGGING ---
-
     // Safely destructure with default values
-    const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', sections = [] } = reportData || {};
+    const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', lockers = [] } = reportData || {};
 
     // --- Safe Date Formatting ---
     let formattedDate = 'an unknown date';
     try {
         if (date) {
-            formattedDate = new Date(date).toLocaleString();
+            // Assuming date is an ISO string e.g., "2025-09-12T05:09:25.452Z"
+            formattedDate = new Date(date).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' });
         }
     } catch (e) {
         console.error('Could not parse date:', date);
@@ -622,70 +619,76 @@ const generateReportHtml = (reportData) => {
 
     // --- Inline Styles ---
     const styles = {
-        body: `font-family: sans-serif; color: #333;`,
+        body: `font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; color: #333;`,
         h2: `color: #333;`,
-        h3: `color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;`,
+        h3: `color: #555; background-color: #f0f0f0; padding: 10px; margin-top: 20px; font-weight: bold; border-top: 2px solid #ccc;`,
+        h4: `color: #666; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-left: 10px;`,
         table: `width: 100%; border-collapse: collapse; margin-bottom: 20px;`,
-        th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #f2f2f2;`,
+        th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #f9f9f9;`,
         td: `border: 1px solid #ddd; padding: 10px; vertical-align: top;`,
         notes: `font-style: italic; color: #666;`,
-        locker: `background-color: #f0f0f0; font-weight: bold;`,
-        subItem: `padding-left: 30px; background-color: #f9f9f9;`
+        container: `background-color: #f9f9f9; font-style: italic;`,
+        subItem: `padding-left: 40px;`
     };
 
     // --- Status Styling Helper ---
     const getStatusHtml = (status) => {
         const s = status || 'N/A';
         let style = 'color: #555;';
-        if (s === 'Yes') style = 'color: green; font-weight: bold;';
-        if (s === 'No') style = 'color: red; font-weight: bold;';
-        return `<span style="${style}">${s}</span>`;
+        if (s === 'present') style = 'color: green; font-weight: bold;';
+        if (s === 'defect') style = 'color: red; font-weight: bold;';
+        // Capitalize first letter for display
+        const displayStatus = s.charAt(0).toUpperCase() + s.slice(1);
+        return `<span style="${style}">${displayStatus}</span>`;
     };
 
     // --- Main HTML Body Construction ---
     let html = `<div style="${styles.body}">`;
-    html += rawDataForDebug; // Add the debug data here
     html += `<h2 style="${styles.h2}">New Report for ${applianceName}</h2>`;
     html += `<p>A new report was completed by <strong>${username}</strong> on ${formattedDate}.</p>`;
 
-    if (Array.isArray(sections) && sections.length > 0) {
-        sections.forEach(section => {
-            html += `<h3 style="${styles.h3}">${section.title || 'Untitled Section'}</h3>`;
-            html += `<table style="${styles.table}">`;
-            html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
-            html += `<tbody>`;
+    if (Array.isArray(lockers) && lockers.length > 0) {
+        lockers.forEach(locker => {
+            html += `<h3 style="${styles.h3}">Locker ${locker.name || 'Unnamed'}</h3>`;
+            
+            const shelves = locker.shelves || [];
+            if (Array.isArray(shelves) && shelves.length > 0) {
+                shelves.forEach(shelf => {
+                    html += `<h4 style="${styles.h4}">${shelf.name || 'Unnamed Shelf'}</h4>`;
+                    html += `<table style="${styles.table}">`;
+                    html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
+                    html += `<tbody>`;
 
-            const items = section.items || [];
-            if (Array.isArray(items) && items.length > 0) {
-                items.forEach(item => {
-                    // A "locker" is an item that has its own 'items' array.
-                    const isLocker = item && Array.isArray(item.items) && item.items.length > 0;
+                    const items = shelf.items || [];
+                    items.forEach(item => {
+                        if (!item) return; // Skip if item is null or undefined
 
-                    if (isLocker) {
-                        // Render the locker title row
-                        html += `<tr>`;
-                        html += `<td colspan="3" style="${styles.td} ${styles.locker}">${item.name || 'Unnamed Locker'}</td>`;
-                        html += `</tr>`;
-
-                        // Render the sub-items
-                        item.items.forEach(subItem => {
-                            html += `<tr>`;
-                            html += `<td style="${styles.td} ${styles.subItem}">${subItem.name || 'Unnamed Sub-item'}</td>`;
-                            html += `<td style="${styles.td}">${getStatusHtml(subItem.status)}</td>`;
-                            html += `<td style="${styles.td}"><span style="${styles.notes}">${subItem.notes || ''}</span></td>`;
-                            html += `</tr>`;
-                        });
-                    } else if (item) {
                         // Render a regular item
                         html += `<tr>`;
                         html += `<td style="${styles.td}">${item.name || 'Unnamed Item'}</td>`;
                         html += `<td style="${styles.td}">${getStatusHtml(item.status)}</td>`;
-                        html += `<td style="${styles.td}"><span style="${styles.notes}">${item.notes || ''}</span></td>`;
+                        html += `<td style="${styles.td}"><span style="${styles.notes}">${item.note || ''}</span></td>`;
                         html += `</tr>`;
-                    }
+
+                        // Check for sub-items (for containers)
+                        const subItems = item.subItems || [];
+                        if (item.type === 'container' && Array.isArray(subItems) && subItems.length > 0) {
+                             html += `<tr>`;
+                             html += `<td colspan="3" style="${styles.td} ${styles.container}">Contains:</td>`;
+                             html += `</tr>`;
+                            subItems.forEach(subItem => {
+                                if (!subItem) return;
+                                html += `<tr>`;
+                                html += `<td style="${styles.td} ${styles.subItem}">${subItem.name || 'Unnamed Sub-item'}</td>`;
+                                html += `<td style="${styles.td}">${getStatusHtml(subItem.status)}</td>`;
+                                html += `<td style="${styles.td}"><span style="${styles.notes}">${subItem.note || ''}</span></td>`;
+                                html += `</tr>`;
+                            });
+                        }
+                    });
+                    html += `</tbody></table>`;
                 });
             }
-            html += `</tbody></table>`;
         });
     } else {
         html += `<p>This report does not contain any checklist items.</p>`;
@@ -698,7 +701,6 @@ const generateReportHtml = (reportData) => {
 reportRouter.post('/', async (req, res) => {
     try {
         const reportData = req.body;
-        console.log("Number of sections received:", reportData.sections ? reportData.sections.length : "sections property is missing");
         const { brigadeId, applianceId, applianceName, date, username } = reportData;
         if (!brigadeId || !applianceId || !date || !username) {
             return res.status(400).json({ message: 'Missing required report data.' });
