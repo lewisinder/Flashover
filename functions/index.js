@@ -603,6 +603,10 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
 });
 // A helper function to generate the rich HTML for the report email
 const generateReportHtml = (reportData) => {
+    // --- TEMPORARY DEBUGGING ---
+    const rawDataForDebug = `<p><strong>DEBUG DATA:</strong></p><pre style="background-color:#eee; padding:10px; border:1px solid #ccc; white-space:pre-wrap; word-wrap:break-word;">${JSON.stringify(reportData, null, 2)}</pre><hr>`;
+    // --- END DEBUGGING ---
+
     // Safely destructure with default values
     const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', sections = [] } = reportData || {};
 
@@ -640,6 +644,7 @@ const generateReportHtml = (reportData) => {
 
     // --- Main HTML Body Construction ---
     let html = `<div style="${styles.body}">`;
+    html += rawDataForDebug; // Add the debug data here
     html += `<h2 style="${styles.h2}">New Report for ${applianceName}</h2>`;
     html += `<p>A new report was completed by <strong>${username}</strong> on ${formattedDate}.</p>`;
 
