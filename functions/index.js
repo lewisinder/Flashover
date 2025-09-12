@@ -693,7 +693,7 @@ const generateReportHtml = (reportData) => {
 reportRouter.post('/', async (req, res) => {
     try {
         const reportData = req.body;
-        console.log("Received report data:", JSON.stringify(reportData, null, 2));
+        console.log("Number of sections received:", reportData.sections ? reportData.sections.length : "sections property is missing");
         const { brigadeId, applianceId, applianceName, date, username } = reportData;
         if (!brigadeId || !applianceId || !date || !username) {
             return res.status(400).json({ message: 'Missing required report data.' });
