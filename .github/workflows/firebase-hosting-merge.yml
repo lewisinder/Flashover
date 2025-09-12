@@ -27,5 +27,10 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
+      - name: Create Extension Env File
+        run: |
+          mkdir -p extensions
+          echo "${{ secrets.FIRESTORE_SEND_EMAIL_ENV }}" > extensions/firestore-send-email.env
+
       - name: Deploy to Firebase
         run: firebase deploy --project flashoverapplication --non-interactive
