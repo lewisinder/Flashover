@@ -8,17 +8,21 @@ jobs:
       checks: write
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: google-github-actions/auth@v2
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}'
-      - run: npm --prefix functions install
-      - name: Deploy Cloud Functions
-        run: npx firebase-tools@14.0.0 deploy --only functions --project flashoverapplication --non-interactive
-      - name: Deploy to Hosting Preview Channel
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}'
-          projectId: flashoverapplication
-          firebaseToolsVersion: 14.0.0
+          node-version: '20'
+
+      - name: Install Function Dependencies
+        run: npm ci
+        working-directory: ./functions
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy to Firebase Preview Channel
+        run: |
+          firebase deploy --project flashoverapplication --token "${{ secrets.FIREBASE_SERVICE_ACCOUNT_FLASHOVERAPPLICATION }}" --non-interactive

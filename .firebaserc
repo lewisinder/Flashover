@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "flashoverapplication"
+  },
+  "targets": {},
+  "etags": {
+    "flashoverapplication": {
+      "extensionInstances": {
+        "firestore-send-email": "253178372c549e6f9d5809b685ea3c1e08748b5e8bfbc7860a0e7e7fde952896"
+      }
+    }
   }
 }
