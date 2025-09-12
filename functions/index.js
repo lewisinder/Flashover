@@ -601,6 +601,50 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch reports.' });
     }
 });
+// A helper function to generate the rich HTML for the report email
+const generateReportHtml = (reportData) => {
+    const { applianceName, date, username, sections } = reportData;
+
+    // Basic inline styles for email client compatibility
+    const styles = {
+        body: `font-family: sans-serif;`,
+        h2: `color: #333;`,
+        h3: `color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;`,
+        table: `width: 100%; border-collapse: collapse; margin-bottom: 20px;`,
+        th: `border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;`,
+        td: `border: 1px solid #ddd; padding: 8px;`,
+        notes: `font-style: italic; color: #666;`
+    };
+
+    let html = `<div style="${styles.body}">`;
+    html += `<h2 style="${styles.h2}">New Report for ${applianceName}</h2>`;
+    html += `<p>A new report was completed by <strong>${username}</strong> on ${new Date(date).toLocaleString()}.</p>`;
+
+    if (sections && sections.length > 0) {
+        sections.forEach(section => {
+            html += `<h3 style="${styles.h3}">${section.title}</h3>`;
+            html += `<table style="${styles.table}">`;
+            html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
+            html += `<tbody>`;
+            if (section.items && section.items.length > 0) {
+                section.items.forEach(item => {
+                    html += `<tr>`;
+                    html += `<td style="${styles.td}">${item.name}</td>`;
+                    html += `<td style="${styles.td}">${item.status || 'N/A'}</td>`;
+                    html += `<td style="${styles.td}"><span style="${styles.notes}">${item.notes || ''}</span></td>`;
+                    html += `</tr>`;
+                });
+            }
+            html += `</tbody></table>`;
+        });
+    } else {
+        html += `<p>This report does not contain any checklist items.</p>`;
+    }
+
+    html += `</div>`;
+    return html;
+};
+
 reportRouter.post('/', async (req, res) => {
     try {
         const reportData = req.body;
@@ -629,13 +673,17 @@ reportRouter.post('/', async (req, res) => {
                 const userRecords = await Promise.all(userPromises);
                 const recipients = userRecords.map(userRecord => userRecord.email).filter(email => !!email);
                 if (recipients.length > 0) {
+                    
+                    // Generate the rich HTML content for the email
+                    const emailHtml = generateReportHtml(reportData);
+
                     const mailCollection = db.collection('mail');
                     const emailPromises = recipients.map(email => {
                         return mailCollection.add({
                             to: email,
                             message: {
                                 subject: `New Report Submitted for ${applianceName}`,
-                                html: `<p>Hello,</p><p>A new report for appliance <strong>${applianceName}</strong> was completed by <strong>${username}</strong> on ${new Date(date).toLocaleString()}.</p><p>You can view the report in the Flashover app.</p>`,
+                                html: emailHtml, // Use the new, detailed HTML
                             },
                         });
                     });
