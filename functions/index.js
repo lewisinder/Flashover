@@ -607,13 +607,27 @@ const generateReportHtml = (reportData) => {
 
     // Basic inline styles for email client compatibility
     const styles = {
-        body: `font-family: sans-serif;`,
+        body: `font-family: sans-serif; color: #333;`,
         h2: `color: #333;`,
         h3: `color: #555; border-bottom: 1px solid #ddd; padding-bottom: 5px;`,
         table: `width: 100%; border-collapse: collapse; margin-bottom: 20px;`,
-        th: `border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #f2f2f2;`,
-        td: `border: 1px solid #ddd; padding: 8px;`,
-        notes: `font-style: italic; color: #666;`
+        th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #f2f2f2;`,
+        td: `border: 1px solid #ddd; padding: 10px; vertical-align: top;`,
+        notes: `font-style: italic; color: #666;`,
+        locker: `background-color: #f9f9f9; font-weight: bold;`,
+        subItem: `padding-left: 30px;`
+    };
+
+    // Helper to get status color
+    const getStatusStyle = (status) => {
+        switch (status) {
+            case 'Yes':
+                return `color: green;`;
+            case 'No':
+                return `color: red; font-weight: bold;`;
+            default:
+                return `color: #555;`;
+        }
     };
 
     let html = `<div style="${styles.body}">`;
@@ -626,13 +640,31 @@ const generateReportHtml = (reportData) => {
             html += `<table style="${styles.table}">`;
             html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
             html += `<tbody>`;
+
             if (section.items && section.items.length > 0) {
                 section.items.forEach(item => {
-                    html += `<tr>`;
-                    html += `<td style="${styles.td}">${item.name}</td>`;
-                    html += `<td style="${styles.td}">${item.status || 'N/A'}</td>`;
-                    html += `<td style="${styles.td}"><span style="${styles.notes}">${item.notes || ''}</span></td>`;
-                    html += `</tr>`;
+                    // Check if the item is a "locker" with sub-items
+                    if (item.items && item.items.length > 0) {
+                        html += `<tr>`;
+                        html += `<td colspan="3" style="${styles.td} ${styles.locker}">${item.name}</td>`;
+                        html += `</tr>`;
+
+                        // Loop through sub-items
+                        item.items.forEach(subItem => {
+                            html += `<tr>`;
+                            html += `<td style="${styles.td} ${styles.subItem}">${subItem.name}</td>`;
+                            html += `<td style="${styles.td}"><span style="${getStatusStyle(subItem.status)}">${subItem.status || 'N/A'}</span></td>`;
+                            html += `<td style="${styles.td}"><span style="${styles.notes}">${subItem.notes || ''}</span></td>`;
+                            html += `</tr>`;
+                        });
+                    } else {
+                        // Regular item
+                        html += `<tr>`;
+                        html += `<td style="${styles.td}">${item.name}</td>`;
+                        html += `<td style="${styles.td}"><span style="${getStatusStyle(item.status)}">${item.status || 'N/A'}</span></td>`;
+                        html += `<td style="${styles.td}"><span style="${styles.notes}">${item.notes || ''}</span></td>`;
+                        html += `</tr>`;
+                    }
                 });
             }
             html += `</tbody></table>`;
