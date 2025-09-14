@@ -249,10 +249,13 @@ async function saveBrigadeData(operation) {
                     formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
                     const token = await currentUser.getIdToken();
                     
-                    const responseText = await uploadWithProgress(`/api/upload`, token, formData, (p) => {
-                        const overallProgress = ((index + (p / 100)) / itemsWithPendingUploads.length) * 100;
+                    const responseText = await uploadWithProgress(`/api/upload`, token, formData, (event) => {
+                        const percentage = (event.loaded / event.total) * 100;
+                        const overallProgress = ((index + (event.loaded / event.total)) / itemsWithPendingUploads.length) * 100;
                         progressBar.style.width = `${overallProgress}%`;
-                        progressText.textContent = `Uploading image ${index + 1} of ${itemsWithPendingUploads.length}... ${Math.round(p)}%`;
+                        progressText.textContent = 
+                            `Uploading image ${index + 1} of ${itemsWithPendingUploads.length}: ` +
+                            `${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round(percentage)}%)`;
                     });
 
                     const result = JSON.parse(responseText);
@@ -760,7 +763,7 @@ function uploadWithProgress(url, token, formData, onProgress) {
         xhr.open('POST', url, true);
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) onProgress((event.loaded / event.total) * 100);
+            if (event.lengthComputable) onProgress(event);
         };
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
@@ -769,4 +772,13 @@ function uploadWithProgress(url, token, formData, onProgress) {
         xhr.onerror = () => reject(new Error("Network request failed"));
         xhr.send(formData);
     });
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
