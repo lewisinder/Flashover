@@ -14,7 +14,7 @@ let activeContainerId = null;
 let isNewItem = false;
 let currentEditingContext = 'locker'; // 'locker' or 'container'
 let draggedItemInfo = null; // { itemId, fromShelfId, fromContext }
-let navigationResolver = null; // For handling async navigation prompts
+let pendingNavigation = null; // For handling async navigation prompts
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -39,6 +39,7 @@ const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
 const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
 const saveUnsavedBtn = document.getElementById('save-unsaved-btn');
+const discardUnsavedBtn = document.getElementById('discard-unsaved-btn');
 const cancelUnsavedBtn = document.getElementById('cancel-unsaved-btn');
 
 const containerEditorTitle = document.getElementById('container-editor-title');
@@ -152,13 +153,25 @@ function addEventListeners() {
     
     // Unsaved Changes Modal
     saveUnsavedBtn.addEventListener('click', async () => {
-        await saveBrigadeData('promptedSave');
         unsavedChangesModal.classList.add('hidden');
-        if (navigationResolver) navigationResolver(true); // Proceed with navigation
+        try {
+            await saveBrigadeData('promptedSave');
+            if (pendingNavigation) pendingNavigation();
+        } finally {
+            pendingNavigation = null;
+        }
+    });
+    discardUnsavedBtn.addEventListener('click', () => {
+        unsavedChangesModal.classList.add('hidden');
+        truckData = JSON.parse(JSON.stringify(lastSavedTruckData)); // Revert changes
+        setUnsavedChanges(false);
+        refreshCurrentView();
+        if (pendingNavigation) pendingNavigation();
+        pendingNavigation = null;
     });
     cancelUnsavedBtn.addEventListener('click', () => {
         unsavedChangesModal.classList.add('hidden');
-        if (navigationResolver) navigationResolver(false); // Cancel navigation
+        pendingNavigation = null;
     });
 
     // Browser-level navigation guard
@@ -178,7 +191,7 @@ async function loadBrigadeData() {
         const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (!response.ok) throw new Error('Failed to load brigade data');
         truckData = await response.json();
-        lastSavedTruckData = JSON.parse(JSON.stringify(truckData)); // Deep copy for discard functionality
+        lastSavedTruckData = JSON.parse(JSON.stringify(truckData)); // Deep copy
         if (!truckData.appliances) truckData.appliances = [];
         
         const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
@@ -215,19 +228,17 @@ async function saveBrigadeData(operation) {
     } catch (error) {
         console.error("Error saving data:", error);
         alert("Error saving data. Your changes may not be persisted.");
-        throw error; // Re-throw to handle in calling function
+        throw error; // Re-throw to allow promise rejection
     } finally {
         hideLoading();
     }
 }
 
 // --- Navigation ---
-async function handleNavigation(navigationFn) {
+function handleNavigation(navigationFn) {
     if (hasUnsavedChanges) {
-        const shouldProceed = await promptToSave();
-        if (shouldProceed) {
-            navigationFn();
-        }
+        pendingNavigation = navigationFn;
+        unsavedChangesModal.classList.remove('hidden');
     } else {
         navigationFn();
     }
@@ -249,13 +260,6 @@ function navigateBack() {
     } else {
         window.location.href = 'select-appliance.html';
     }
-}
-
-function promptToSave() {
-    return new Promise(resolve => {
-        navigationResolver = resolve;
-        unsavedChangesModal.classList.remove('hidden');
-    });
 }
 
 // --- Locker Management ---
@@ -282,14 +286,14 @@ function renderLockerList() {
 }
 
 function openLockerEditor(lockerId) {
+    closeItemEditor();
     activeLockerId = lockerId;
     const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === lockerId);
     if (!locker) return;
 
     if (!locker.shelves) locker.shelves = [];
     
-    // This logic is now batched, so no immediate save
-    while (locker.shelves.length < 2) {
+    if (locker.shelves.length < 2) {
         locker.shelves.push({ id: String(Date.now() + locker.shelves.length), name: `Shelf ${locker.shelves.length + 1}`, items: [] });
         setUnsavedChanges(true);
     }
@@ -400,20 +404,35 @@ function createItemElement(item, shelfId, context) {
 function openItemEditor(shelfId, itemId, context) {
     currentEditingContext = context;
     activeShelfId = shelfId;
-    activeItemId = itemId;
     isNewItem = !itemId;
 
     let item;
     if (isNewItem) {
-        item = { id: String(Date.now()), name: '', desc: '', type: 'item', img: '' };
-        activeItemId = item.id;
+        activeItemId = String(Date.now());
+        item = { id: activeItemId, name: 'New Item', desc: '', type: 'item', img: '' };
+        const shelf = findShelf(shelfId, context);
+        if (shelf) {
+            if (!shelf.items) shelf.items = [];
+            shelf.items.push(item);
+            setUnsavedChanges(true);
+            refreshCurrentView();
+        }
     } else {
+        activeItemId = itemId;
         item = findItem(shelfId, itemId, context);
     }
 
+    if (!item) {
+        console.error("Item not found for editing");
+        return;
+    }
+
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
-    const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
-    if (activeBox) activeBox.classList.add('editing');
+    // Use requestAnimationFrame to ensure the DOM has updated after refreshCurrentView
+    requestAnimationFrame(() => {
+        const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
+        if (activeBox) activeBox.classList.add('editing');
+    });
 
     if (context === 'locker') {
        sectionItemNameInput.value = item.name;
@@ -436,12 +455,15 @@ function openItemEditor(shelfId, itemId, context) {
 
 function closeItemEditor() {
     if (isNewItem) {
-        // If a new item was cancelled, remove it from the local data
         const shelf = findShelf(activeShelfId, currentEditingContext);
         if (shelf) {
-            shelf.items = shelf.items.filter(i => i.id !== activeItemId);
-            // No need to set unsaved changes, as we are reverting the addition
-            refreshCurrentView();
+            const item = findItem(activeShelfId, activeItemId, currentEditingContext);
+            // If a new item was cancelled and it still has the default name, remove it.
+            if (item && item.name === 'New Item') {
+                 shelf.items = shelf.items.filter(i => i.id !== activeItemId);
+                 setUnsavedChanges(true);
+                 refreshCurrentView();
+            }
         }
     }
     activeItemId = null;
@@ -456,18 +478,14 @@ function closeItemEditor() {
 function saveItem() {
     if (!activeItemId) return;
     
-    let item, name;
     const context = currentEditingContext;
-    const shelf = findShelf(activeShelfId, context);
-
-    if (isNewItem) {
-        item = { id: activeItemId, name: '', desc: '', type: 'item', img: '' };
-        if (!shelf.items) shelf.items = [];
-        shelf.items.push(item);
-    } else {
-        item = findItem(activeShelfId, activeItemId, context);
+    const item = findItem(activeShelfId, activeItemId, context);
+    if (!item) {
+        console.error("Could not find item to save.");
+        return;
     }
 
+    let name;
     if (context === 'locker') {
        name = sectionItemNameInput.value.trim();
        if (!name) { alert('Item name is required.'); return; }
@@ -485,21 +503,22 @@ function saveItem() {
     }
 
     setUnsavedChanges(true);
-    isNewItem = false;
+    isNewItem = false; // It's no longer a new item
     refreshCurrentView();
     
-    // Keep the editor open and the item highlighted
-    const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
-    if (activeBox) activeBox.classList.add('editing');
+    requestAnimationFrame(() => {
+        const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
+        if (activeBox) activeBox.classList.add('editing');
+    });
 }
 
 function openContainerEditor() {
     const name = sectionItemNameInput.value.trim();
-    if (!name) {
-        alert('Please enter an item name before editing the container.');
+    if (!name || (isNewItem && name === 'New Item')) {
+        alert('Please give the container a name before adding items to it.');
         return;
     }
-    // Ensure the item is saved locally before switching context
+    
     saveItem(); 
     activeContainerId = activeItemId;
 
