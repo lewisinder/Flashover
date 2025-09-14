@@ -5,6 +5,8 @@ let currentUser = null;
 let truckData = { appliances: [] };
 let lastSavedTruckData = null; // For discarding changes
 let hasUnsavedChanges = false;
+let pendingUploads = new Map(); // blobUrl -> File object
+
 let activeBrigadeId = null;
 let activeApplianceId = null;
 let activeLockerId = null;
@@ -164,6 +166,7 @@ function addEventListeners() {
     discardUnsavedBtn.addEventListener('click', () => {
         unsavedChangesModal.classList.add('hidden');
         truckData = JSON.parse(JSON.stringify(lastSavedTruckData)); // Revert changes
+        cleanupPendingUploads();
         setUnsavedChanges(false);
         refreshCurrentView();
         if (pendingNavigation) pendingNavigation();
@@ -213,8 +216,59 @@ async function loadBrigadeData() {
 
 async function saveBrigadeData(operation) {
     if (!currentUser || !activeBrigadeId) return;
-    showLoading();
+
+    progressModal.classList.remove('hidden');
+    progressTitle.textContent = 'Saving...';
+    progressText.textContent = 'Preparing to save...';
+    progressBar.style.width = '0%';
+
     try {
+        // --- Stage 1: Upload all pending images ---
+        const itemsWithPendingUploads = [];
+        const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+        appliance.lockers.forEach(l => l.shelves.forEach(s => s.items.forEach(i => {
+            if (i.img && i.img.startsWith('blob:')) itemsWithPendingUploads.push(i);
+            if (i.subItems) i.subItems.forEach(si => {
+                if (si.img && si.img.startsWith('blob:')) itemsWithPendingUploads.push(si);
+            });
+        })));
+
+        if (itemsWithPendingUploads.length > 0) {
+            progressTitle.textContent = 'Uploading Images...';
+            const uploadPromises = itemsWithPendingUploads.map((item, index) => {
+                const file = pendingUploads.get(item.img);
+                if (!file) return Promise.resolve();
+
+                return (async () => {
+                    progressText.textContent = `Compressing image ${index + 1} of ${itemsWithPendingUploads.length}`;
+                    const compressedFile = await imageCompression(file, {
+                        maxSizeMB: 1, maxWidthOrHeight: 800, useWebWorker: true
+                    });
+
+                    const formData = new FormData();
+                    formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
+                    const token = await currentUser.getIdToken();
+                    
+                    const responseText = await uploadWithProgress(`/api/upload`, token, formData, (p) => {
+                        const overallProgress = ((index + (p / 100)) / itemsWithPendingUploads.length) * 100;
+                        progressBar.style.width = `${overallProgress}%`;
+                        progressText.textContent = `Uploading image ${index + 1} of ${itemsWithPendingUploads.length}... ${Math.round(p)}%`;
+                    });
+
+                    const result = JSON.parse(responseText);
+                    URL.revokeObjectURL(item.img); // Clean up blob URL
+                    pendingUploads.delete(item.img);
+                    item.img = result.filePath; // Replace blob with permanent URL
+                })();
+            });
+            await Promise.all(uploadPromises);
+        }
+
+        // --- Stage 2: Save the final data ---
+        progressTitle.textContent = 'Saving Data...';
+        progressText.textContent = 'Finalizing...';
+        progressBar.style.width = '100%';
+
         const token = await currentUser.getIdToken();
         const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, {
             method: 'POST',
@@ -222,15 +276,17 @@ async function saveBrigadeData(operation) {
             body: JSON.stringify(truckData)
         });
         if (!response.ok) throw new Error('Failed to save data');
+        
         console.log(`Data saved after: ${operation}`);
         lastSavedTruckData = JSON.parse(JSON.stringify(truckData));
         setUnsavedChanges(false);
+
     } catch (error) {
         console.error("Error saving data:", error);
         alert("Error saving data. Your changes may not be persisted.");
         throw error; // Re-throw to allow promise rejection
     } finally {
-        hideLoading();
+        progressModal.classList.add('hidden');
     }
 }
 
@@ -428,7 +484,6 @@ function openItemEditor(shelfId, itemId, context) {
     }
 
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
-    // Use requestAnimationFrame to ensure the DOM has updated after refreshCurrentView
     requestAnimationFrame(() => {
         const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
         if (activeBox) activeBox.classList.add('editing');
@@ -458,9 +513,12 @@ function closeItemEditor() {
         const shelf = findShelf(activeShelfId, currentEditingContext);
         if (shelf) {
             const item = findItem(activeShelfId, activeItemId, currentEditingContext);
-            // If a new item was cancelled and it still has the default name, remove it.
             if (item && item.name === 'New Item') {
                  shelf.items = shelf.items.filter(i => i.id !== activeItemId);
+                 if (item.img && item.img.startsWith('blob:')) {
+                    URL.revokeObjectURL(item.img);
+                    pendingUploads.delete(item.img);
+                 }
                  setUnsavedChanges(true);
                  refreshCurrentView();
             }
@@ -480,10 +538,7 @@ function saveItem() {
     
     const context = currentEditingContext;
     const item = findItem(activeShelfId, activeItemId, context);
-    if (!item) {
-        console.error("Could not find item to save.");
-        return;
-    }
+    if (!item) { console.error("Could not find item to save."); return; }
 
     let name;
     if (context === 'locker') {
@@ -626,6 +681,13 @@ function refreshCurrentView() {
     }
 }
 
+function cleanupPendingUploads() {
+    for (const blobUrl of pendingUploads.keys()) {
+        URL.revokeObjectURL(blobUrl);
+    }
+    pendingUploads.clear();
+}
+
 function confirmDelete(type, id, name, parentId = null) {
     document.getElementById('delete-confirm-text').textContent = `This will permanently delete the ${type} "${name}" and all its contents. This action cannot be undone.`;
     deleteConfirmModal.classList.remove('hidden');
@@ -642,6 +704,11 @@ function confirmDelete(type, id, name, parentId = null) {
             const context = parentId ? 'container' : 'locker';
             const shelf = findShelf(parentId || activeShelfId, context);
             if (shelf && shelf.items) {
+                const itemToDelete = shelf.items.find(i => i.id === id);
+                if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
+                    URL.revokeObjectURL(itemToDelete.img);
+                    pendingUploads.delete(itemToDelete.img);
+                }
                 shelf.items = shelf.items.filter(i => i.id !== id);
             }
             closeItemEditor();
@@ -658,61 +725,33 @@ function confirmDelete(type, id, name, parentId = null) {
     };
 }
 
-async function handleImageUpload(e, context) {
+function handleImageUpload(e, context) {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !activeItemId) return;
 
-    progressModal.classList.remove('hidden');
-    progressTitle.textContent = 'Optimizing Image...';
-    progressText.textContent = 'Starting...';
-    progressBar.style.width = '0%';
+    const item = findItem(activeShelfId, activeItemId, context);
+    if (!item) return;
 
-    const compressionOptions = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 800,
-        useWebWorker: true,
-        onProgress: (p) => {
-            const pc = Math.round(p);
-            progressBar.style.width = pc + '%';
-            progressText.textContent = `Compressing: ${pc}%`;
-        }
-    };
-
-    try {
-        const compressedFile = await imageCompression(file, compressionOptions);
-        progressTitle.textContent = 'Uploading...';
-        progressBar.style.width = '0%';
-
-        const formData = new FormData();
-        formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
-        const token = await currentUser.getIdToken();
-
-        const responseText = await uploadWithProgress('/api/upload', token, formData, (p) => {
-            const pc = Math.round(p);
-            progressBar.style.width = pc + '%';
-            progressText.textContent = `Uploading: ${pc}%`;
-        });
-
-        if (!responseText) throw new Error("Received empty response from server.");
-        const result = JSON.parse(responseText);
-
-        const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
-        previewEl.src = result.filePath;
-        previewEl.classList.remove('hidden');
-
-        const item = findItem(activeShelfId, activeItemId, context);
-        if (item) {
-            item.img = result.filePath;
-            setUnsavedChanges(true); // Mark as dirty, but don't save
-        }
-
-    } catch (error) {
-        console.error('Error during image compression or upload:', error);
-        alert(`Operation failed: ${error.message}`);
-    } finally {
-        progressModal.classList.add('hidden');
-        e.target.value = '';
+    // If there's an old image, clean it up.
+    if (item.img) {
+        if (item.img.startsWith('blob:')) {
+            URL.revokeObjectURL(item.img);
+            pendingUploads.delete(item.img);
+        } 
     }
+
+    const blobUrl = URL.createObjectURL(file);
+    pendingUploads.set(blobUrl, file);
+
+    item.img = blobUrl;
+    setUnsavedChanges(true);
+
+    const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
+    previewEl.src = blobUrl;
+    previewEl.classList.remove('hidden');
+    
+    refreshCurrentView();
+    e.target.value = '';
 }
 
 function uploadWithProgress(url, token, formData, onProgress) {
