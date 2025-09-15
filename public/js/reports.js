@@ -7,6 +7,11 @@ const reportDetailTitle = document.getElementById('report-detail-title');
 const reportDetailContent = document.getElementById('report-detail-content');
 const closeReportDetailBtn = document.getElementById('close-report-detail-btn');
 
+// Signature display elements
+const signatureDisplayArea = document.getElementById('signature-display-area');
+const signerNameDisplay = document.getElementById('signer-name-display');
+const signatureImageDisplay = document.getElementById('signature-image-display');
+
 let currentUser = null;
 
 function showLoading() {
@@ -86,13 +91,13 @@ async function viewReportDetails(reportId) {
     showLoading();
     reportDetailTitle.textContent = 'Loading Report...';
     reportDetailContent.innerHTML = '';
+    signatureDisplayArea.classList.add('hidden'); // Hide signature area by default
     reportDetailModal.classList.remove('hidden');
 
     try {
         const brigadeId = localStorage.getItem('activeBrigadeId');
-        if (!brigadeId) {
-            throw new Error("No active brigade selected.");
-        }
+        if (!brigadeId) throw new Error("No active brigade selected.");
+        
         const token = await currentUser.getIdToken();
         const response = await fetch(`/api/brigades/${brigadeId}/reports/${reportId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -105,12 +110,9 @@ async function viewReportDetails(reportId) {
 
         const report = await response.json();
         
-        // Set main report title
         reportDetailTitle.textContent = `Report for ${report.applianceName}`;
 
         let contentHtml = `<div class="p-4 space-y-6 bg-gray-100">`;
-
-        // Add metadata section
         contentHtml += `
             <div class="bg-white p-3 rounded-lg shadow">
                 <h3 class="text-lg font-bold text-gray-800 mb-2">Report Details</h3>
@@ -119,12 +121,7 @@ async function viewReportDetails(reportId) {
             </div>
         `;
 
-        const statusIcons = {
-            present: '/design_assets/Yes Icon.png',
-            missing: '/design_assets/No Icon.png',
-            note: '/design_assets/Note Icon.png',
-            partial: '/design_assets/Note Icon.png' 
-        };
+        const statusIcons = { present: '/design_assets/Yes Icon.png', missing: '/design_assets/No Icon.png', note: '/design_assets/Note Icon.png', partial: '/design_assets/Note Icon.png' };
 
         const renderItem = (item, isSubItem) => {
             const iconSrc = statusIcons[item.status] || '/design_assets/No Icon.png';
@@ -135,18 +132,12 @@ async function viewReportDetails(reportId) {
                         <span class="font-semibold">${item.name}</span>
                     </div>
             `;
-            if (item.note) {
-                itemHtml += `<div class="text-sm text-gray-600 italic pl-10 py-1">Note: ${item.note}</div>`;
-            }
-            
+            if (item.note) itemHtml += `<div class="text-sm text-gray-600 italic pl-10 py-1">Note: ${item.note}</div>`;
             if (item.type === 'container' && item.subItems && item.subItems.length > 0) {
                 itemHtml += '<div class="mt-2 space-y-2">';
-                item.subItems.forEach(subItem => {
-                    itemHtml += renderItem(subItem, true);
-                });
+                item.subItems.forEach(subItem => { itemHtml += renderItem(subItem, true); });
                 itemHtml += '</div>';
             }
-
             itemHtml += '</div>';
             return itemHtml;
         };
@@ -158,13 +149,7 @@ async function viewReportDetails(reportId) {
                         <h4 class="text-white text-center text-xl font-bold mb-3 uppercase">${locker.name}</h4>
                         <div class="space-y-3">
                 `;
-                
-                locker.shelves.forEach(shelf => {
-                    shelf.items.forEach(item => {
-                        contentHtml += renderItem(item, false);
-                    });
-                });
-
+                locker.shelves.forEach(shelf => { shelf.items.forEach(item => { contentHtml += renderItem(item, false); }); });
                 contentHtml += `</div></div>`;
             });
         } else {
@@ -173,6 +158,13 @@ async function viewReportDetails(reportId) {
 
         contentHtml += `</div>`;
         reportDetailContent.innerHTML = contentHtml;
+
+        // Handle signature display
+        if (report.signedBy && report.signatureDataUrl) {
+            signerNameDisplay.textContent = report.signedBy;
+            signatureImageDisplay.src = report.signatureDataUrl;
+            signatureDisplayArea.classList.remove('hidden');
+        }
 
     } catch (error) {
         console.error("Error loading report details:", error);
