@@ -99,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let checkInProgress = false;
     let isReportSaved = false;
     let nextLockerToStartId = null;
+    let signaturePad = null;
 
     function loadStateFromSession() {
         checkResults = JSON.parse(sessionStorage.getItem('checkResults')) || [];
@@ -148,6 +149,15 @@ document.addEventListener('DOMContentLoaded', () => {
         overlay: getElement('exit-confirm-modal'),
         exitAnywayBtn: getElement('confirm-exit-anyway-btn'),
         cancelBtn: getElement('cancel-exit-btn')
+    };
+
+    const signatureModal = {
+        overlay: getElement('signature-modal'),
+        canvas: getElement('signature-canvas'),
+        nameInput: getElement('signer-name-input'),
+        clearBtn: getElement('clear-signature-btn'),
+        cancelBtn: getElement('cancel-signature-btn'),
+        confirmBtn: getElement('confirm-signature-btn')
     };
 
     const checkButtons = {
@@ -720,6 +730,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function openSignatureModal() {
+        signatureModal.overlay.classList.remove('hidden');
+        if (!signaturePad) {
+            signaturePad = new SignaturePad(signatureModal.canvas, {
+                backgroundColor: 'rgb(229, 231, 235)', // gray-200
+                penColor: 'rgb(0, 0, 0)'
+            });
+        }
+        resizeCanvas();
+    }
+
+    function resizeCanvas() {
+        if (!signaturePad) return;
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        signatureModal.canvas.width = signatureModal.canvas.offsetWidth * ratio;
+        signatureModal.canvas.height = signatureModal.canvas.offsetHeight * ratio;
+        signatureModal.canvas.getContext("2d").scale(ratio, ratio);
+        signaturePad.clear(); // otherwise isEmpty() might return incorrect value
+    }
+
+    async function saveReportWithSignature() {
+        if (signaturePad.isEmpty()) {
+            return alert("Please provide a signature first.");
+        }
+        const signerName = signatureModal.nameInput.value.trim();
+        if (!signerName) {
+            return alert("Please enter your full name.");
+        }
+
+        showLoading();
+        const appliance = getActiveAppliance();
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        if (!appliance || !brigadeId) {
+            alert("Could not find active appliance or brigade.");
+            hideLoading();
+            return;
+        }
+
+        try {
+            const signatureDataUrl = signaturePad.toDataURL('image/png');
+            const reportPayload = {
+                date: new Date().toISOString(),
+                applianceId: appliance.id,
+                applianceName: appliance.name,
+                brigadeId: brigadeId,
+                lockers: generateFullReportData().lockers,
+                username: currentUser.displayName || currentUser.email,
+                uid: currentUser.uid,
+                signedBy: signerName,
+                signatureDataUrl: signatureDataUrl
+            };
+            
+            const token = await currentUser.getIdToken();
+            const response = await fetch(`/api/reports`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(reportPayload)
+            });
+
+            if (response.ok) {
+                isReportSaved = true;
+                alert('Report saved successfully!');
+                sessionStorage.removeItem('checkResults');
+                sessionStorage.removeItem('checkInProgress');
+                sessionStorage.removeItem('currentCheckState');
+                window.location.href = '/appliance-checks.html';
+            } else {
+                alert(`Failed to save report: ${(await response.json()).message}`);
+            }
+        } catch (error) {
+            console.error("Error saving report:", error);
+            alert('An error occurred while saving the report.');
+        } finally {
+            hideLoading();
+            signatureModal.overlay.classList.add('hidden');
+        }
+    }
+
     function addSafeEventListener(selector, event, handler) {
         const element = typeof selector === 'string' ? getElement(selector) : selector;
         if (element) element.addEventListener(event, handler);
@@ -798,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderNextLockerChoices();
             showScreen('nextLockerChoice');
         });
-        addSafeEventListener('save-report-btn', 'click', saveReport);
+        addSafeEventListener('save-report-btn', 'click', openSignatureModal);
         addSafeEventListener('exit-summary-btn', 'click', () => {
             if (isReportSaved) {
                 window.location.href = '/menu.html';
@@ -808,6 +899,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         addSafeEventListener(exitConfirmModal.cancelBtn, 'click', () => exitConfirmModal.overlay.classList.add('hidden'));
         addSafeEventListener(exitConfirmModal.exitAnywayBtn, 'click', () => exitCheck(false));
+
+        // Add listeners for the new signature modal
+        addSafeEventListener(signatureModal.clearBtn, 'click', () => signaturePad.clear());
+        addSafeEventListener(signatureModal.cancelBtn, 'click', () => signatureModal.overlay.classList.add('hidden'));
+        addSafeEventListener(signatureModal.confirmBtn, 'click', saveReportWithSignature);
+        window.addEventListener('resize', resizeCanvas);
     }
 
     async function exitCheck(shouldSave) {
