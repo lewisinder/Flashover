@@ -1,3 +1,4 @@
+// Trigger deployment
 document.addEventListener('DOMContentLoaded', () => {
     const firebaseConfig = {
           apiKey: "AIzaSyC-fTzW4YzTTSyCtXSIgxZCZAb7a14t3N4",
