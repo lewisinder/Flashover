@@ -629,15 +629,21 @@ const generateReportHtml = (reportData) => {
         sub: `margin: 4px 0 16px 0; color: #4b5563;`,
         summary: `display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px 0;`,
         pill: `background: #e5e7eb; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #111827;`,
-        section: `margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;`,
-        sectionHeader: `background: #f3f4f6; padding: 10px 12px; font-weight: 700; color: #111827;`,
-        shelfHeader: `padding: 10px 12px; font-weight: 600; color: #374151; background: #f9fafb; border-top: 1px solid #e5e7eb;`,
+        section: `margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;`,
+        sectionHeader: `background: #111827; padding: 12px 14px; font-weight: 800; color: #ffffff; font-size: 15px; letter-spacing: 0.2px;`,
+        shelfHeader: `padding: 10px 14px; font-weight: 700; color: #ffffff; background: #374151; border-top: 1px solid #111827; font-size: 13px;`,
         table: `width: 100%; border-collapse: collapse;`,
-        th: `text-align: left; padding: 10px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #e5e7eb;`,
-        td: `padding: 10px 12px; font-size: 14px; color: #1f2933; border-bottom: 1px solid #f1f3f5; vertical-align: top;`,
-        note: `display: inline-block; background: #fff7ed; color: #9a3412; padding: 4px 8px; border-radius: 8px; font-size: 13px;`,
-        subItemRow: `background: #f9fafb;`,
-        subItemPad: `padding-left: 32px;`,
+        td: `padding: 10px 14px; font-size: 14px; color: #111827; border-bottom: 1px solid #eef2f7; vertical-align: top;`,
+        name: `font-weight: 700;`,
+        subtle: `color: #6b7280; font-weight: 600; font-size: 12px;`,
+        note: `display: inline-block; background: #fff7ed; color: #9a3412; padding: 4px 8px; border-radius: 8px; font-size: 13px; border: 1px solid #fed7aa;`,
+        rowAlt: `background: #fafbfc;`,
+        rowIssue: `border-left: 4px solid #ef4444;`,
+        rowContainer: `background: #eef2ff; border-left: 4px solid #6366f1;`,
+        rowSubItem: `background: #f8fafc;`,
+        subItemPad: `padding-left: 36px;`,
+        typePillBase: `display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; margin-right: 8px; vertical-align: 1px;`,
+        typeContainer: `background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;`,
         badge: {
             base: `display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;`,
             present: `background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0;`,
@@ -657,6 +663,11 @@ const generateReportHtml = (reportData) => {
         else if (s === 'defect') { style = styles.badge.defect; label = 'Defect'; }
         else if (s === 'untouched') { style = styles.badge.untouched; label = 'Untouched'; }
         return `<span style="${styles.badge.base} ${style}">${label}</span>`;
+    };
+
+    const isIssueStatus = (status) => {
+        const s = (status || '').toLowerCase();
+        return s === 'missing' || s === 'defect';
     };
 
     let issuesCount = 0;
@@ -694,14 +705,42 @@ const generateReportHtml = (reportData) => {
             } else {
                 shelves.forEach(shelf => {
                     html += `<div style="${styles.shelfHeader}">${shelf.name || 'Shelf'}</div>`;
-                    html += `<table style="${styles.table}"><thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead><tbody>`;
-                    (shelf.items || []).forEach(item => {
+                    html += `<table style="${styles.table}"><tbody>`;
+                    (shelf.items || []).forEach((item, itemIndex) => {
                         if (!item) return;
-                        html += `<tr><td style="${styles.td}">${item.name || 'Item'}</td><td style="${styles.td}">${statusBadge(item.status)}</td><td style="${styles.td}">${item.note ? `<span style="${styles.note}">${item.note}</span>` : ''}</td></tr>`;
+
+                        const itemIsIssue = isIssueStatus(item.status);
+                        const rowStyleParts = [];
+                        if (itemIndex % 2 === 1) rowStyleParts.push(styles.rowAlt);
+                        if (itemIsIssue) rowStyleParts.push(styles.rowIssue);
+                        if ((item.type || '').toLowerCase() === 'container') rowStyleParts.push(styles.rowContainer);
+                        const rowStyle = rowStyleParts.length ? ` style="${rowStyleParts.join(' ')}"` : '';
+
+                        const typePill = (item.type || '').toLowerCase() === 'container'
+                            ? `<span style="${styles.typePillBase} ${styles.typeContainer}">CONTAINER</span>`
+                            : '';
+                        const noteHtml = item.note ? `<span style="${styles.note}">${item.note}</span>` : '';
+
+                        html += `<tr${rowStyle}>`;
+                        html += `<td style="${styles.td}"><span style="${styles.name}">${typePill}${item.name || 'Item'}</span></td>`;
+                        html += `<td style="${styles.td}">${statusBadge(item.status)}</td>`;
+                        html += `<td style="${styles.td}">${noteHtml}</td>`;
+                        html += `</tr>`;
+
                         if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
-                            item.subItems.forEach(sub => {
+                            item.subItems.forEach((sub, subIndex) => {
                                 if (!sub) return;
-                                html += `<tr style="${styles.subItemRow}"><td style="${styles.td} ${styles.subItemPad}">${sub.name || 'Sub-item'}</td><td style="${styles.td}">${statusBadge(sub.status)}</td><td style="${styles.td}">${sub.note ? `<span style="${styles.note}">${sub.note}</span>` : ''}</td></tr>`;
+                                const subIsIssue = isIssueStatus(sub.status);
+                                const subRowStyleParts = [styles.rowSubItem];
+                                if (subIsIssue) subRowStyleParts.push(styles.rowIssue);
+                                if ((subIndex + itemIndex) % 2 === 1) subRowStyleParts.push(styles.rowAlt);
+                                const subRowStyle = ` style="${subRowStyleParts.join(' ')}"`;
+                                const subNoteHtml = sub.note ? `<span style="${styles.note}">${sub.note}</span>` : '';
+                                html += `<tr${subRowStyle}>`;
+                                html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> <span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;
+                                html += `<td style="${styles.td}">${statusBadge(sub.status)}</td>`;
+                                html += `<td style="${styles.td}">${subNoteHtml}</td>`;
+                                html += `</tr>`;
                             });
                         }
                     });
