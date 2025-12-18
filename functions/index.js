@@ -609,100 +609,112 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch reports.' });
     }
 });
-// A helper function to generate the rich HTML for the report email
+// A helper function to generate a clearer HTML email for the report
 const generateReportHtml = (reportData) => {
-    // Safely destructure with default values
     const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', lockers = [] } = reportData || {};
 
-    // --- Safe Date Formatting ---
     let formattedDate = 'an unknown date';
     try {
         if (date) {
-            // Assuming date is an ISO string e.g., "2025-09-12T05:09:25.452Z"
             formattedDate = new Date(date).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' });
         }
     } catch (e) {
         console.error('Could not parse date:', date);
     }
 
-    // --- Inline Styles ---
     const styles = {
-        body: `font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; color: #333;`,
-        h2: `color: #333;`,
-        h3: `color: #555; background-color: #f0f0f0; padding: 10px; margin-top: 20px; font-weight: bold; border-top: 2px solid #ccc;`,
-        h4: `color: #666; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-left: 10px;`,
-        table: `width: 100%; border-collapse: collapse; margin-bottom: 20px;`,
-        th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #f9f9f9;`,
-        td: `border: 1px solid #ddd; padding: 10px; vertical-align: top;`,
-        notes: `font-style: italic; color: #666;`,
-        container: `background-color: #f9f9f9; font-style: italic;`,
-        subItem: `padding-left: 40px;`
+        body: `font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2933; background: #f7f9fc; padding: 16px;`,
+        card: `max-width: 720px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); padding: 20px;`,
+        header: `margin: 0 0 12px 0; color: #111827;`,
+        sub: `margin: 4px 0 16px 0; color: #4b5563;`,
+        summary: `display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px 0;`,
+        pill: `background: #e5e7eb; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #111827;`,
+        section: `margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;`,
+        sectionHeader: `background: #f3f4f6; padding: 10px 12px; font-weight: 700; color: #111827;`,
+        shelfHeader: `padding: 10px 12px; font-weight: 600; color: #374151; background: #f9fafb; border-top: 1px solid #e5e7eb;`,
+        table: `width: 100%; border-collapse: collapse;`,
+        th: `text-align: left; padding: 10px 12px; font-size: 13px; color: #6b7280; border-bottom: 1px solid #e5e7eb;`,
+        td: `padding: 10px 12px; font-size: 14px; color: #1f2933; border-bottom: 1px solid #f1f3f5; vertical-align: top;`,
+        note: `display: inline-block; background: #fff7ed; color: #9a3412; padding: 4px 8px; border-radius: 8px; font-size: 13px;`,
+        subItemRow: `background: #f9fafb;`,
+        subItemPad: `padding-left: 32px;`,
+        badge: {
+            base: `display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;`,
+            present: `background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0;`,
+            missing: `background: #fef2f2; color: #b91c1c; border: 1px solid #fecdd3;`,
+            defect: `background: #fef2f2; color: #b91c1c; border: 1px solid #fecdd3;`,
+            untouched: `background: #eef2ff; color: #312e81; border: 1px solid #c7d2fe;`,
+            na: `background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb;`
+        }
     };
 
-    // --- Status Styling Helper ---
-    const getStatusHtml = (status) => {
-        const s = status || 'N/A';
-        let style = 'color: #555;';
-        if (s === 'present') style = 'color: green; font-weight: bold;';
-        if (s === 'defect') style = 'color: red; font-weight: bold;';
-        // Capitalize first letter for display
-        const displayStatus = s.charAt(0).toUpperCase() + s.slice(1);
-        return `<span style="${style}">${displayStatus}</span>`;
+    const statusBadge = (status) => {
+        const s = (status || 'N/A').toLowerCase();
+        let style = styles.badge.na;
+        let label = 'N/A';
+        if (s === 'present') { style = styles.badge.present; label = 'Present'; }
+        else if (s === 'missing') { style = styles.badge.missing; label = 'Missing'; }
+        else if (s === 'defect') { style = styles.badge.defect; label = 'Defect'; }
+        else if (s === 'untouched') { style = styles.badge.untouched; label = 'Untouched'; }
+        return `<span style="${styles.badge.base} ${style}">${label}</span>`;
     };
 
-    // --- Main HTML Body Construction ---
-    let html = `<div style="${styles.body}">`;
-    html += `<h2 style="${styles.h2}">New Report for ${applianceName}</h2>`;
-    html += `<p>A new report was completed by <strong>${username}</strong> on ${formattedDate}.</p>`;
+    let issuesCount = 0;
+    if (Array.isArray(lockers)) {
+        lockers.forEach(locker => {
+            (locker.shelves || []).forEach(shelf => {
+                (shelf.items || []).forEach(item => {
+                    const s = (item && item.status || '').toLowerCase();
+                    if (s === 'missing' || s === 'defect') issuesCount += 1;
+                    (item && item.subItems || []).forEach(sub => {
+                        const ss = (sub && sub.status || '').toLowerCase();
+                        if (ss === 'missing' || ss === 'defect') issuesCount += 1;
+                    });
+                });
+            });
+        });
+    }
+
+    let html = `<div style="${styles.body}"><div style="${styles.card}">`;
+    html += `<h2 style="${styles.header}">Report for ${applianceName}</h2>`;
+    html += `<p style="${styles.sub}">Completed by <strong>${username}</strong> on ${formattedDate}</p>`;
+    html += `<div style="${styles.summary}">`;
+    html += `<span style="${styles.pill}">Issues: ${issuesCount}</span>`;
+    html += `<span style="${styles.pill}">Lockers: ${Array.isArray(lockers) ? lockers.length : 0}</span>`;
+    html += `</div>`;
 
     if (Array.isArray(lockers) && lockers.length > 0) {
         lockers.forEach(locker => {
-            html += `<h3 style="${styles.h3}">Locker ${locker.name || 'Unnamed'}</h3>`;
-            
+            html += `<div style="${styles.section}">`;
+            html += `<div style="${styles.sectionHeader}">${locker.name || 'Locker'}</div>`;
+
             const shelves = locker.shelves || [];
-            if (Array.isArray(shelves) && shelves.length > 0) {
+            if (shelves.length === 0) {
+                html += `<div style="${styles.shelfHeader}">No shelves/items recorded.</div>`;
+            } else {
                 shelves.forEach(shelf => {
-                    html += `<h4 style="${styles.h4}">${shelf.name || 'Unnamed Shelf'}</h4>`;
-                    html += `<table style="${styles.table}">`;
-                    html += `<thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead>`;
-                    html += `<tbody>`;
-
-                    const items = shelf.items || [];
-                    items.forEach(item => {
-                        if (!item) return; // Skip if item is null or undefined
-
-                        // Render a regular item
-                        html += `<tr>`;
-                        html += `<td style="${styles.td}">${item.name || 'Unnamed Item'}</td>`;
-                        html += `<td style="${styles.td}">${getStatusHtml(item.status)}</td>`;
-                        html += `<td style="${styles.td}"><span style="${styles.notes}">${item.note || ''}</span></td>`;
-                        html += `</tr>`;
-
-                        // Check for sub-items (for containers)
-                        const subItems = item.subItems || [];
-                        if (item.type === 'container' && Array.isArray(subItems) && subItems.length > 0) {
-                             html += `<tr>`;
-                             html += `<td colspan="3" style="${styles.td} ${styles.container}">Contains:</td>`;
-                             html += `</tr>`;
-                            subItems.forEach(subItem => {
-                                if (!subItem) return;
-                                html += `<tr>`;
-                                html += `<td style="${styles.td} ${styles.subItem}">${subItem.name || 'Unnamed Sub-item'}</td>`;
-                                html += `<td style="${styles.td}">${getStatusHtml(subItem.status)}</td>`;
-                                html += `<td style="${styles.td}"><span style="${styles.notes}">${subItem.note || ''}</span></td>`;
-                                html += `</tr>`;
+                    html += `<div style="${styles.shelfHeader}">${shelf.name || 'Shelf'}</div>`;
+                    html += `<table style="${styles.table}"><thead><tr><th style="${styles.th}">Item</th><th style="${styles.th}">Status</th><th style="${styles.th}">Notes</th></tr></thead><tbody>`;
+                    (shelf.items || []).forEach(item => {
+                        if (!item) return;
+                        html += `<tr><td style="${styles.td}">${item.name || 'Item'}</td><td style="${styles.td}">${statusBadge(item.status)}</td><td style="${styles.td}">${item.note ? `<span style="${styles.note}">${item.note}</span>` : ''}</td></tr>`;
+                        if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
+                            item.subItems.forEach(sub => {
+                                if (!sub) return;
+                                html += `<tr style="${styles.subItemRow}"><td style="${styles.td} ${styles.subItemPad}">${sub.name || 'Sub-item'}</td><td style="${styles.td}">${statusBadge(sub.status)}</td><td style="${styles.td}">${sub.note ? `<span style="${styles.note}">${sub.note}</span>` : ''}</td></tr>`;
                             });
                         }
                     });
                     html += `</tbody></table>`;
                 });
             }
+            html += `</div>`;
         });
     } else {
-        html += `<p>This report does not contain any checklist items.</p>`;
+        html += `<p>No checklist items in this report.</p>`;
     }
 
-    html += `</div>`;
+    html += `</div></div>`;
     return html;
 };
 
