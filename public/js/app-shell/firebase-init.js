@@ -20,14 +20,24 @@ export function initFirebase() {
     window.location.hostname === "127.0.0.1";
 
   if (isLocalhost) {
+    const emulatorHost = window.location.hostname;
     try {
-      auth.useEmulator("http://localhost:9099");
+      auth.useEmulator(`http://${emulatorHost}:9099`);
     } catch (e) {}
     try {
-      db.useEmulator("localhost", 8080);
+      db.useEmulator(emulatorHost, 8080);
     } catch (e) {}
+  }
+
+  try {
+    window.__authReady = auth
+      .setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .catch((err) => {
+        console.error("Auth persistence failed (app shell):", err);
+      });
+  } catch (e) {
+    window.__authReady = Promise.resolve();
   }
 
   return { auth, db };
 }
-

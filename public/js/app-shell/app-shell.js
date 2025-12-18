@@ -59,7 +59,7 @@ const routes = {
   },
   "/brigades": async () => {
     setHeader({ title: "Brigades", showBack: true, showLogout: true });
-    await renderBrigades({ root: appRoot });
+    await renderBrigades({ root: appRoot, auth, db, showLoading, hideLoading });
   },
 };
 
@@ -75,11 +75,31 @@ const router = createRouter({
   },
 });
 
-auth.onAuthStateChanged((user) => {
-  if (!user) {
-    window.location.href = "/signin.html";
-    return;
-  }
-  router.start();
-});
+Promise.resolve(window.__authReady).finally(() => {
+  const isLocal =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+  let hasStarted = false;
 
+  auth.onAuthStateChanged((user) => {
+    if (user) {
+      if (!hasStarted) {
+        hasStarted = true;
+        router.start();
+      }
+      return;
+    }
+
+    // On local emulators, auth state can briefly appear as null during init.
+    setTimeout(() => {
+      if (auth.currentUser) {
+        if (!hasStarted) {
+          hasStarted = true;
+          router.start();
+        }
+        return;
+      }
+      window.location.href = "/signin.html";
+    }, isLocal ? 1500 : 0);
+  });
+});
