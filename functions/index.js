@@ -631,7 +631,6 @@ const generateReportHtml = (reportData) => {
         pill: `background: #e5e7eb; border-radius: 999px; padding: 6px 10px; font-size: 13px; color: #111827;`,
         section: `margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;`,
         sectionHeader: `background: #111827; padding: 12px 14px; font-weight: 800; color: #ffffff; font-size: 15px; letter-spacing: 0.2px;`,
-        shelfHeader: `padding: 10px 14px; font-weight: 700; color: #ffffff; background: #374151; border-top: 1px solid #111827; font-size: 13px;`,
         table: `width: 100%; border-collapse: collapse;`,
         td: `padding: 10px 14px; font-size: 14px; color: #111827; border-bottom: 1px solid #eef2f7; vertical-align: top;`,
         name: `font-weight: 700;`,
@@ -676,6 +675,18 @@ const generateReportHtml = (reportData) => {
         return s === 'missing' || s === 'defect';
     };
 
+    const effectiveContainerStatus = (item) => {
+        const type = (item && item.type || '').toLowerCase();
+        if (type !== 'container') return item && item.status;
+
+        const raw = (item && item.status || 'untouched').toLowerCase();
+        if (raw === 'missing' || raw === 'defect') return raw;
+
+        // In the app UX, "check contents" implies the container itself is present,
+        // even if the container item wasn't explicitly marked.
+        return 'present';
+    };
+
     const statusTagHtml = (status) => {
         const s = (status || 'N/A').toLowerCase();
         let style = styles.statusTag.na;
@@ -717,50 +728,51 @@ const generateReportHtml = (reportData) => {
 
             const shelves = locker.shelves || [];
             if (shelves.length === 0) {
-                html += `<div style="${styles.shelfHeader}">No shelves/items recorded.</div>`;
+                html += `<div style="padding: 12px 14px; color: #6b7280; font-size: 13px;">No items recorded.</div>`;
             } else {
-                shelves.forEach(shelf => {
-                    html += `<div style="${styles.shelfHeader}">${shelf.name || 'Shelf'}</div>`;
-                    html += `<table style="${styles.table}"><tbody>`;
-                    (shelf.items || []).forEach((item, itemIndex) => {
-                        if (!item) return;
+                html += `<table style="${styles.table}"><tbody>`;
 
-                        const itemIsIssue = isIssueStatus(item.status);
-                        const rowStyleParts = [];
-                        if (itemIndex % 2 === 1) rowStyleParts.push(styles.rowAlt);
-                        if (itemIsIssue) rowStyleParts.push(styles.rowIssue);
-                        if ((item.type || '').toLowerCase() === 'container') rowStyleParts.push(styles.rowContainer);
-                        const rowStyle = rowStyleParts.length ? ` style="${rowStyleParts.join(' ')}"` : '';
+                const orderedItems = shelves.flatMap((shelf) => Array.isArray(shelf.items) ? shelf.items : []);
+                orderedItems.forEach((item, itemIndex) => {
+                    if (!item) return;
 
-                        const noteHtml = item.note ? `<span style="${styles.note}">${item.note}</span>` : '';
-                        const tagHtml = statusTagHtml(item.status);
+                    const status = effectiveContainerStatus(item);
+                    const itemIsIssue = isIssueStatus(status);
+                    const rowStyleParts = [];
+                    if (itemIndex % 2 === 1) rowStyleParts.push(styles.rowAlt);
+                    if (itemIsIssue) rowStyleParts.push(styles.rowIssue);
+                    if ((item.type || '').toLowerCase() === 'container') rowStyleParts.push(styles.rowContainer);
+                    const rowStyle = rowStyleParts.length ? ` style="${rowStyleParts.join(' ')}"` : '';
 
-                        html += `<tr${rowStyle}>`;
-                        html += `<td style="${styles.td}">${tagHtml}<span style="${styles.name}">${item.name || 'Item'}</span></td>`;
-                        html += `<td style="${styles.td}">${statusBadge(item.status)}</td>`;
-                        html += `<td style="${styles.td}">${noteHtml}</td>`;
-                        html += `</tr>`;
+                    const noteHtml = item.note ? `<span style="${styles.note}">${item.note}</span>` : '';
+                    const tagHtml = statusTagHtml(status);
 
-                        if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
-                            item.subItems.forEach((sub, subIndex) => {
-                                if (!sub) return;
-                                const subIsIssue = isIssueStatus(sub.status);
-                                const subRowStyleParts = [styles.rowSubItem];
-                                if (subIsIssue) subRowStyleParts.push(styles.rowIssue);
-                                if ((subIndex + itemIndex) % 2 === 1) subRowStyleParts.push(styles.rowAlt);
-                                const subRowStyle = ` style="${subRowStyleParts.join(' ')}"`;
-                                const subNoteHtml = sub.note ? `<span style="${styles.note}">${sub.note}</span>` : '';
-                                const subTagHtml = statusTagHtml(sub.status);
-                                html += `<tr${subRowStyle}>`;
-                                html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> ${subTagHtml}<span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;
-                                html += `<td style="${styles.td}">${statusBadge(sub.status)}</td>`;
-                                html += `<td style="${styles.td}">${subNoteHtml}</td>`;
-                                html += `</tr>`;
-                            });
-                        }
-                    });
-                    html += `</tbody></table>`;
+                    html += `<tr${rowStyle}>`;
+                    html += `<td style="${styles.td}">${tagHtml}<span style="${styles.name}">${item.name || 'Item'}</span></td>`;
+                    html += `<td style="${styles.td}">${statusBadge(status)}</td>`;
+                    html += `<td style="${styles.td}">${noteHtml}</td>`;
+                    html += `</tr>`;
+
+                    if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
+                        item.subItems.forEach((sub, subIndex) => {
+                            if (!sub) return;
+                            const subIsIssue = isIssueStatus(sub.status);
+                            const subRowStyleParts = [styles.rowSubItem];
+                            if (subIsIssue) subRowStyleParts.push(styles.rowIssue);
+                            if ((subIndex + itemIndex) % 2 === 1) subRowStyleParts.push(styles.rowAlt);
+                            const subRowStyle = ` style="${subRowStyleParts.join(' ')}"`;
+                            const subNoteHtml = sub.note ? `<span style="${styles.note}">${sub.note}</span>` : '';
+                            const subTagHtml = statusTagHtml(sub.status);
+                            html += `<tr${subRowStyle}>`;
+                            html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> ${subTagHtml}<span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;
+                            html += `<td style="${styles.td}">${statusBadge(sub.status)}</td>`;
+                            html += `<td style="${styles.td}">${subNoteHtml}</td>`;
+                            html += `</tr>`;
+                        });
+                    }
                 });
+
+                html += `</tbody></table>`;
             }
             html += `</div>`;
         });
