@@ -139,6 +139,22 @@ firebase emulators:start
 
 Many pages contain optional “connect to emulator” logic when running on `localhost`.
 
+### Testing the New App Shell Locally
+
+The app shell is available at `public/app.html` and uses hash-based routes so it can run without changing Hosting rewrites.
+
+1. Start emulators (recommended so Auth/Firestore work locally):
+
+```bash
+firebase emulators:start
+```
+
+2. Open the Hosting emulator URL (usually `http://localhost:5000`) and go to:
+
+- `http://localhost:5000/app.html#/menu`
+
+If you are not signed in, it redirects you to `signin.html`. Sign in, then return to `app.html`.
+
 ## Notes
 
 - This repo’s primary runtime is Firebase Hosting + Functions. The top-level `package.json` is not used for production hosting; backend code lives in `functions/`.
