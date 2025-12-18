@@ -29,3 +29,6 @@ backups/
 
 .firebase/
 extensions/
+
+# Local-only email preview artifacts
+.tmp_email_preview/
