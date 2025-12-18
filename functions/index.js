@@ -1,6 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 const os = require('os');
 const express = require('express');
 const path = require('path');
@@ -12,10 +12,18 @@ const Busboy = require('busboy');
 // --- Firebase Admin SDK Initialization ---
 admin.initializeApp();
 
-// --- SendGrid Initialization ---
-const SENDGRID_API_KEY = functions.config().sendgrid.key;
-sgMail.setApiKey(SENDGRID_API_KEY);
-const DEFAULT_FROM_EMAIL = "hello@theblueprintcollective.co.nz";
+// --- SMTP Initialization (Gmail/Outlook via nodemailer) ---
+const smtpConfig = functions.config().smtp || {};
+const transporter = nodemailer.createTransport({
+  host: smtpConfig.host,
+  port: Number(smtpConfig.port),
+  secure: Number(smtpConfig.port) === 465,
+  auth: {
+    user: smtpConfig.user,
+    pass: smtpConfig.pass,
+  },
+});
+const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.nz";
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -36,7 +44,7 @@ exports.processEmail = functions.region("australia-southeast1").firestore
         html: mailData.message.html,
       };
       try {
-        await sgMail.send(msg);
+        await transporter.sendMail(msg);
         console.log("Email sent successfully to:", msg.to);
         return snap.ref.set({status: "sent"}, {merge: true});
       } catch (error) {
