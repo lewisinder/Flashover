@@ -638,12 +638,18 @@ const generateReportHtml = (reportData) => {
         subtle: `color: #6b7280; font-weight: 600; font-size: 12px;`,
         note: `display: inline-block; background: #fff7ed; color: #9a3412; padding: 4px 8px; border-radius: 8px; font-size: 13px; border: 1px solid #fed7aa;`,
         rowAlt: `background: #fafbfc;`,
-        rowIssue: `border-left: 4px solid #ef4444;`,
-        rowContainer: `background: #eef2ff; border-left: 4px solid #6366f1;`,
+        rowIssue: `background: #fff5f5;`,
+        rowContainer: `background: #f2f6ff;`,
         rowSubItem: `background: #f8fafc;`,
         subItemPad: `padding-left: 36px;`,
-        typePillBase: `display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.3px; margin-right: 8px; vertical-align: 1px;`,
-        typeContainer: `background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;`,
+        statusTagBase: `display: inline-block; width: 6px; height: 14px; border-radius: 999px; margin-right: 10px; vertical-align: -2px;`,
+        statusTag: {
+            present: `background: #22c55e;`,
+            missing: `background: #ef4444;`,
+            defect: `background: #ef4444;`,
+            untouched: `background: #6366f1;`,
+            na: `background: #9ca3af;`,
+        },
         badge: {
             base: `display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;`,
             present: `background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0;`,
@@ -668,6 +674,16 @@ const generateReportHtml = (reportData) => {
     const isIssueStatus = (status) => {
         const s = (status || '').toLowerCase();
         return s === 'missing' || s === 'defect';
+    };
+
+    const statusTagHtml = (status) => {
+        const s = (status || 'N/A').toLowerCase();
+        let style = styles.statusTag.na;
+        if (s === 'present') style = styles.statusTag.present;
+        else if (s === 'missing') style = styles.statusTag.missing;
+        else if (s === 'defect') style = styles.statusTag.defect;
+        else if (s === 'untouched') style = styles.statusTag.untouched;
+        return `<span style="${styles.statusTagBase} ${style}"></span>`;
     };
 
     let issuesCount = 0;
@@ -716,13 +732,11 @@ const generateReportHtml = (reportData) => {
                         if ((item.type || '').toLowerCase() === 'container') rowStyleParts.push(styles.rowContainer);
                         const rowStyle = rowStyleParts.length ? ` style="${rowStyleParts.join(' ')}"` : '';
 
-                        const typePill = (item.type || '').toLowerCase() === 'container'
-                            ? `<span style="${styles.typePillBase} ${styles.typeContainer}">CONTAINER</span>`
-                            : '';
                         const noteHtml = item.note ? `<span style="${styles.note}">${item.note}</span>` : '';
+                        const tagHtml = statusTagHtml(item.status);
 
                         html += `<tr${rowStyle}>`;
-                        html += `<td style="${styles.td}"><span style="${styles.name}">${typePill}${item.name || 'Item'}</span></td>`;
+                        html += `<td style="${styles.td}">${tagHtml}<span style="${styles.name}">${item.name || 'Item'}</span></td>`;
                         html += `<td style="${styles.td}">${statusBadge(item.status)}</td>`;
                         html += `<td style="${styles.td}">${noteHtml}</td>`;
                         html += `</tr>`;
@@ -736,8 +750,9 @@ const generateReportHtml = (reportData) => {
                                 if ((subIndex + itemIndex) % 2 === 1) subRowStyleParts.push(styles.rowAlt);
                                 const subRowStyle = ` style="${subRowStyleParts.join(' ')}"`;
                                 const subNoteHtml = sub.note ? `<span style="${styles.note}">${sub.note}</span>` : '';
+                                const subTagHtml = statusTagHtml(sub.status);
                                 html += `<tr${subRowStyle}>`;
-                                html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> <span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;
+                                html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> ${subTagHtml}<span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;
                                 html += `<td style="${styles.td}">${statusBadge(sub.status)}</td>`;
                                 html += `<td style="${styles.td}">${subNoteHtml}</td>`;
                                 html += `</tr>`;
