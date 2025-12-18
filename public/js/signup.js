@@ -15,7 +15,8 @@ document.getElementById('signup-form').addEventListener('submit', (e) => {
     signupButton.textContent = 'Creating Account...';
     message.textContent = '';
 
-    auth.createUserWithEmailAndPassword(email, password)
+    Promise.resolve(window.__authReady)
+        .then(() => auth.createUserWithEmailAndPassword(email, password))
         .then((userCredential) => {
             // After creating the user, update their profile with the name
             return userCredential.user.updateProfile({
