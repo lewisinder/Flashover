@@ -698,15 +698,20 @@ const generateReportHtml = (reportData) => {
     };
 
     let issuesCount = 0;
+    let itemsCount = 0;
     if (Array.isArray(lockers)) {
         lockers.forEach(locker => {
             (locker.shelves || []).forEach(shelf => {
                 (shelf.items || []).forEach(item => {
-                    const s = (item && item.status || '').toLowerCase();
-                    if (s === 'missing' || s === 'defect') issuesCount += 1;
-                    (item && item.subItems || []).forEach(sub => {
-                        const ss = (sub && sub.status || '').toLowerCase();
-                        if (ss === 'missing' || ss === 'defect') issuesCount += 1;
+                    if (!item) return;
+                    itemsCount += 1;
+                    const itemStatus = effectiveContainerStatus(item);
+                    if (isIssueStatus(itemStatus)) issuesCount += 1;
+
+                    (item.subItems || []).forEach(sub => {
+                        if (!sub) return;
+                        itemsCount += 1;
+                        if (isIssueStatus(sub.status)) issuesCount += 1;
                     });
                 });
             });
@@ -718,6 +723,7 @@ const generateReportHtml = (reportData) => {
     html += `<p style="${styles.sub}">Completed by <strong>${username}</strong> on ${formattedDate}</p>`;
     html += `<div style="${styles.summary}">`;
     html += `<span style="${styles.pill}">Issues: ${issuesCount}</span>`;
+    html += `<span style="${styles.pill}">Items: ${itemsCount}</span>`;
     html += `<span style="${styles.pill}">Lockers: ${Array.isArray(lockers) ? lockers.length : 0}</span>`;
     html += `</div>`;
 
