@@ -79,22 +79,29 @@
             appId: "1:74889025348:web:baaec1803ade7ffbd06911"
         };
         // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
         const auth = firebase.auth();
         const db = firebase.firestore();
 
         // Emulator connection
         if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-            console.log("Auth: Using local emulator");
-            auth.useEmulator('http://localhost:9099');
+            const emulatorHost = window.location.hostname;
+            console.log("Auth: Using local emulator", { emulatorHost });
+            auth.useEmulator(`http://${emulatorHost}:9099`);
             
             console.log("Firestore: Using local emulator");
-            db.useEmulator('localhost', 8080);
+            db.useEmulator(emulatorHost, 8080);
 
             // If you had functions, you would connect here too
             // const functions = firebase.functions();
-            // functions.useEmulator('localhost', 5001);
+            // functions.useEmulator(emulatorHost, 5001);
         }
+
+        // Ensure auth persists between pages on local/dev.
+        window.__authReady = auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
+            console.error("Auth persistence failed (menu.html):", err);
+        });
     </script>
 
     <script src="/js/menu.js"></script>
