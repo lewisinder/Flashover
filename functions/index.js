@@ -1,5 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 const nodemailer = require('nodemailer');
 const os = require('os');
 const express = require('express');
@@ -241,7 +242,7 @@ brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
         }
         await joinRequestRef.set({
             status: 'pending',
-            requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+            requestedAt: FieldValue.serverTimestamp(),
             userName: userName || email
         });
         res.status(201).json({ message: 'Your request to join has been sent.' });
@@ -273,7 +274,7 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
             const brigadeDoc = await brigadeRef.get();
             const brigadeData = brigadeDoc.data();
             await db.runTransaction(async (transaction) => {
-                transaction.set(newMemberRef, { role: 'Member', joinedAt: admin.firestore.FieldValue.serverTimestamp(), name: userName });
+                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName });
                 transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
                 transaction.delete(requestRef);
             });
@@ -312,7 +313,7 @@ brigadeRouter.post('/:brigadeId/members', async (req, res) => {
         const brigadeDoc = await brigadeRef.get();
         const brigadeData = brigadeDoc.data();
         await db.runTransaction(async (transaction) => {
-            transaction.set(newMemberRef, { role: 'Member', joinedAt: admin.firestore.FieldValue.serverTimestamp(), name: newMemberName });
+            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName });
             transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
         });
         res.status(201).json({ message: `User ${newMemberName} added to brigade successfully.` });
@@ -474,14 +475,14 @@ brigadeRouter.post('/', async (req, res) => {
             stationNumber: stationNumber,
             region: region,
             creatorId: creatorId,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: FieldValue.serverTimestamp(),
             applianceData: { appliances: [] }
         };
         const adminMemberRef = newBrigadeRef.collection('members').doc(creatorId);
         const userBrigadeRef = db.collection('users').doc(creatorId).collection('userBrigades').doc(brigadeId);
         await db.runTransaction(async (transaction) => {
             transaction.set(newBrigadeRef, newBrigadeData);
-            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: admin.firestore.FieldValue.serverTimestamp(), name: creatorName });
+            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName });
             transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, role: 'Admin' });
         });
         res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId });
