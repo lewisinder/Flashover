@@ -9,6 +9,23 @@ const fsSync = require('fs');
 const sharp = require('sharp');
 const Busboy = require('busboy');
 
+// --- Local Emulator Support (Admin SDK) ---
+// When running locally, point the Admin SDK at the emulators so it doesn't require prod credentials
+// and can accept Auth Emulator tokens.
+const isFunctionsEmulator =
+  process.env.FUNCTIONS_EMULATOR === 'true' || !!process.env.FIREBASE_EMULATOR_HUB;
+
+if (isFunctionsEmulator) {
+  process.env.FIREBASE_AUTH_EMULATOR_HOST =
+    process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
+  process.env.FIRESTORE_EMULATOR_HOST =
+    process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+  console.log('Admin SDK: Using emulators', {
+    FIREBASE_AUTH_EMULATOR_HOST: process.env.FIREBASE_AUTH_EMULATOR_HOST,
+    FIRESTORE_EMULATOR_HOST: process.env.FIRESTORE_EMULATOR_HOST,
+  });
+}
+
 // --- Firebase Admin SDK Initialization ---
 admin.initializeApp();
 
