@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Flashover</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/custom-styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#180F5E" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png" />
+</head>
+<body class="bg-background flex flex-col h-screen">
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay" style="display: none;">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- App Header -->
+  <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center w-20">
+      <button id="app-back-btn" class="mr-3 hidden">
+        <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8" />
+      </button>
+      <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-10 w-10 object-contain" />
+    </div>
+    <h1 id="app-title" class="text-white text-2xl font-bold flex-grow text-center">Flashover</h1>
+    <div class="w-20 text-right">
+      <button id="app-logout-btn" class="text-white/90 text-sm underline hidden">Log out</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main id="app-root" class="flex-grow overflow-y-auto"></main>
+
+  <!-- App Footer -->
+  <footer class="p-4 text-center text-sm text-gray-500 flex-shrink-0">
+    <a href="mailto:hello@theblueprintcollective.co.nz" class="hover:underline">Support</a>
+  </footer>
+
+  <!-- Firebase SDKs (Compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+  <script type="module" src="/js/app-shell/app-shell.js"></script>
+</body>
+</html>
+

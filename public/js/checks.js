@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+function initChecksPage(options = {}) {
     const firebaseConfig = {
           apiKey: "AIzaSyC-fTzW4YzTTSyCtXSIgxZCZAb7a14t3N4",
           authDomain: "flashoverapplication.firebaseapp.com",
@@ -15,6 +15,36 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const auth = firebase.auth();
     let currentUser = null;
+    let unsubscribeAuth = null;
+
+    const isShell = options && options.isShell === true;
+    const navigateToChecksHome =
+        typeof options.navigateToChecksHome === 'function' ? options.navigateToChecksHome : null;
+    const navigateToMenu =
+        typeof options.navigateToMenu === 'function' ? options.navigateToMenu : null;
+
+    function goToSignIn() {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.href = `/signin.html?returnTo=${encodeURIComponent(returnTo)}`;
+    }
+
+    function goToChecksHome() {
+        if (isShell) {
+            if (navigateToChecksHome) return navigateToChecksHome();
+            window.location.hash = '#/checks';
+            return;
+        }
+        window.location.href = '/appliance-checks.html';
+    }
+
+    function goToMenu() {
+        if (isShell) {
+            if (navigateToMenu) return navigateToMenu();
+            window.location.hash = '#/menu';
+            return;
+        }
+        window.location.href = '/menu.html';
+    }
 
     // ===================================================================
     // JAVASCRIPT - THE BRAIN OF THE APP
@@ -40,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const brigadeId = localStorage.getItem('activeBrigadeId');
         if (!brigadeId) {
             alert("No active brigade selected. Redirecting to menu.");
-            window.location.href = '/menu.html';
+            goToMenu();
             return;
         }
         showLoading();
@@ -56,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("Could not load brigade data:", error);
             alert("Could not load brigade data. Please try again.");
-            window.location.href = '/menu.html';
+            goToMenu();
         } finally {
             hideLoading();
         }
@@ -174,7 +204,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const appliance = getActiveAppliance();
         if (!appliance || !appliance.lockers || appliance.lockers.length === 0) {
             alert("This appliance has no lockers or items to check. Please complete setup first.");
-            window.location.href = '/select-appliance.html';
+            if (isShell) {
+                goToChecksHome();
+            } else {
+                window.location.href = '/select-appliance.html';
+            }
             return;
         }
 
@@ -200,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!locker) {
             console.error("Critical Error: Could not find locker with ID:", currentCheckState.lockerId);
             alert("An error occurred. Could not find the current locker. Returning to menu.");
-            window.location.href = '/menu.html';
+            goToMenu();
             return;
         }
 
@@ -708,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 sessionStorage.removeItem('checkResults');
                 sessionStorage.removeItem('checkInProgress');
                 sessionStorage.removeItem('currentCheckState');
-                window.location.href = '/appliance-checks.html';
+                goToChecksHome();
             } else {
                 alert(`Failed to save report: ${(await response.json()).message}`);
             }
@@ -801,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addSafeEventListener('save-report-btn', 'click', saveReport);
         addSafeEventListener('exit-summary-btn', 'click', () => {
             if (isReportSaved) {
-                window.location.href = '/menu.html';
+                goToMenu();
             } else {
                 exitConfirmModal.overlay.classList.remove('hidden');
             }
@@ -831,13 +865,13 @@ document.addEventListener('DOMContentLoaded', () => {
             sessionStorage.removeItem('checkInProgress');
             sessionStorage.removeItem('checkResults');
             sessionStorage.removeItem('currentCheckState');
-            window.location.href = '/appliance-checks.html';
+            goToChecksHome();
         }
         hideLoading();
     }
 
     async function initializeApp() {
-        auth.onAuthStateChanged(async (user) => {
+        unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
             if (user) {
                 currentUser = user;
                 setupEventListeners();
@@ -845,10 +879,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 await loadData();
                 startOrResumeChecks();
             } else {
-                window.location.href = '/signin.html';
+                goToSignIn();
             }
         });
     }
 
     initializeApp();
-});
+
+    return () => {
+        try {
+            if (typeof unsubscribeAuth === 'function') unsubscribeAuth();
+        } catch (e) {}
+    };
+}
+
+window.initChecksPage = initChecksPage;
+
+function autoStartChecksPage() {
+    // Only auto-start on the dedicated checks page, not inside the app shell.
+    if (!window.location.pathname.endsWith('/checks.html')) return;
+    if (typeof window.__checksCleanup === 'function') return;
+    if (!document.getElementById('locker-check-screen')) return;
+    window.__checksCleanup = initChecksPage();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoStartChecksPage);
+} else {
+    autoStartChecksPage();
+}

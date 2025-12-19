@@ -11,6 +11,14 @@ const handleSuccessfulLogin = (user) => {
     const uid = user.uid;
     localStorage.setItem('userId', uid);
 
+    // If we were sent to login from somewhere else (like the app shell),
+    // go back there after a successful sign-in.
+    const returnToRaw = new URLSearchParams(window.location.search).get('returnTo');
+    const returnTo =
+        returnToRaw && returnToRaw.startsWith('/') && !returnToRaw.startsWith('//')
+            ? returnToRaw
+            : null;
+
     // Get the Firebase ID token to send to the backend.
     user.getIdToken().then(idToken => {
         const cacheBust = `?t=${new Date().getTime()}`;
@@ -37,7 +45,7 @@ const handleSuccessfulLogin = (user) => {
         })
         .then(data => {
             console.log('Data fetched successfully on sign-in:', data);
-            window.location.href = '/menu.html'; // Redirect to the main menu
+            window.location.href = returnTo || '/menu.html'; // Redirect after login
         })
         .catch(error => {
             console.error("Failed to fetch user data on sign-in:", error);
@@ -45,7 +53,7 @@ const handleSuccessfulLogin = (user) => {
                 message.textContent = `Login successful, but could not load your profile: ${error.message}. Redirecting...`;
             }
             // Still redirect, the app can try loading again.
-            setTimeout(() => { window.location.href = '/menu.html'; }, 2000);
+            setTimeout(() => { window.location.href = returnTo || '/menu.html'; }, 2000);
         });
     });
 };
@@ -59,5 +67,4 @@ const handleAuthError = (error) => {
     console.error("Authentication Error:", error);
     message.textContent = `Error: ${error.message}`;
 };
-
 

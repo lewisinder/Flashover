@@ -107,6 +107,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
     <script>
+        console.log("manage-brigades.html: script start", { href: window.location.href, hostname: window.location.hostname });
         const firebaseConfig = {
           apiKey: "AIzaSyC-fTzW4YzTTSyCtXSIgxZCZAb7a14t3N4",
           authDomain: "flashoverapplication.firebaseapp.com",
@@ -116,20 +117,24 @@
           appId: "1:74889025348:web:baaec1803ade7ffbd06911"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-        const db = firebase.firestore();
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 
         // --- Emulator Connection ---
-        if (window.location.hostname === "localhost" || window.location.hostname === "1227.0.0.1") {
-            console.log("Connecting to Firebase Emulators from manage-brigades.html");
-            auth.useEmulator('http://localhost:9099');
-            db.useEmulator('localhost', 8080);
-            
-            const functions = firebase.functions();
-            functions.useEmulator('localhost', 5001);
+        // IMPORTANT: connect to emulators before relying on auth state.
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        if (isLocal) {
+            const emulatorHost = window.location.hostname;
+            console.log("Connecting to Firebase Emulators from manage-brigades.html", { emulatorHost });
+            firebase.auth().useEmulator(`http://${emulatorHost}:9099`);
+            firebase.firestore().useEmulator(emulatorHost, 8080);
         }
         // --- End Emulator Connection ---
+
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        window.__authReady = auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
+            console.error("Auth persistence failed (manage-brigades.html):", err);
+        });
 
         const createErrorMessage = document.getElementById('create-error-message');
         const joinBrigadeRegionSelect = document.getElementById('join-brigade-region');
@@ -148,16 +153,46 @@
             if(loadingOverlay) loadingOverlay.style.display = 'none';
         }
 
-        auth.onAuthStateChanged(user => {
+        const debugNoRedirect = new URLSearchParams(window.location.search).has('debug');
+
+        Promise.resolve(window.__authReady).finally(() => auth.onAuthStateChanged(user => {
             if (user) {
                 currentUser = user;
                 console.log("User is signed in:", currentUser.uid);
+                hideLoading();
                 loadUserBrigades();
-            } else {
-                // If no user is signed in, redirect to the login page.
-                window.location.href = '/signin.html';
+                return;
             }
-        });
+
+            showLoading();
+
+            // On local emulators, auth state can briefly appear as null during init.
+            // Give it a moment before redirecting.
+            setTimeout(() => {
+                if (auth.currentUser) {
+                    currentUser = auth.currentUser;
+                    console.log("User became available after delay:", currentUser.uid);
+                    hideLoading();
+                    loadUserBrigades();
+                    return;
+                }
+                if (debugNoRedirect) {
+                    console.warn("Auth user is null; debug mode prevents redirect.", {
+                        hostname: window.location.hostname,
+                        isLocal,
+                        currentUser: auth.currentUser,
+                    });
+                    hideLoading();
+                    const debugEl = document.createElement('div');
+                    debugEl.className = 'mt-4 p-3 bg-yellow-100 text-yellow-900 rounded-lg';
+                    debugEl.textContent = 'Debug: auth.currentUser is null on this page. Check Console/Network for identitytoolkit requests.';
+                    document.querySelector('main')?.prepend(debugEl);
+                    return;
+                }
+                hideLoading();
+                window.location.href = '/signin.html';
+            }, isLocal ? 5000 : 0);
+        }));
 
         // --- Create Brigade Logic ---
         document.getElementById('create-brigade-form').addEventListener('submit', async (e) => {

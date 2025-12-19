@@ -1,4 +1,17 @@
+window.initSetupPage = function initSetupPage(options = {}) {
 const auth = firebase.auth();
+
+const isShell = options.isShell === true;
+const navigateToMenu =
+    options.navigateToMenu ||
+    (() => {
+        window.location.href = '/menu.html';
+    });
+const navigateToSetupHome =
+    options.navigateToSetupHome ||
+    (() => {
+        window.location.href = 'select-appliance.html';
+    });
 
 // --- Global State ---
 let currentUser = null;
@@ -89,25 +102,33 @@ function updateSaveButtonVisibility() {
 }
 
 // --- Data Handling & Initialization ---
-document.addEventListener('DOMContentLoaded', () => {
-    auth.onAuthStateChanged(user => {
-        if (user) {
-            currentUser = user;
-            activeBrigadeId = localStorage.getItem('activeBrigadeId');
-            activeApplianceId = new URLSearchParams(window.location.search).get('applianceId');
-            if (!activeBrigadeId || !activeApplianceId) {
-                alert("Brigade or Appliance not selected. Redirecting.");
-                window.location.href = '/menu.html';
-                return;
-            }
-            loadBrigadeData();
-        } else {
-            window.location.href = '/signin.html';
-        }
-    });
+let unsubscribeAuth = null;
 
+function start() {
+    Promise.resolve(window.__authReady).finally(() => {
+        unsubscribeAuth = auth.onAuthStateChanged(user => {
+            if (user) {
+                currentUser = user;
+                activeBrigadeId = options.brigadeId || localStorage.getItem('activeBrigadeId');
+                activeApplianceId = options.applianceId || new URLSearchParams(window.location.search).get('applianceId');
+                if (!activeBrigadeId || !activeApplianceId) {
+                    alert("Brigade or Appliance not selected. Redirecting.");
+                    navigateToMenu();
+                    return;
+                }
+                loadBrigadeData();
+            } else {
+                const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+                window.location.href = isShell
+                    ? `/signin.html?returnTo=${encodeURIComponent(returnTo)}`
+                    : '/signin.html';
+            }
+        });
+    });
     addEventListeners();
-});
+}
+
+start();
 
 function addEventListeners() {
     editLockerNameIcon.addEventListener('click', () => lockerEditorName.focus());
@@ -178,12 +199,14 @@ function addEventListeners() {
     });
 
     // Browser-level navigation guard
-    window.addEventListener('beforeunload', (e) => {
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+}
+
+function beforeUnloadHandler(e) {
         if (hasUnsavedChanges) {
             e.preventDefault();
             e.returnValue = ''; // Required for Chrome
         }
-    });
 }
 
 async function loadBrigadeData() {
@@ -204,7 +227,7 @@ async function loadBrigadeData() {
             renderLockerList();
         } else {
             alert('Appliance not found in this brigade.');
-            window.location.href = 'select-appliance.html';
+            navigateToSetupHome();
         }
     } catch (error) {
         console.error("Error loading data:", error);
@@ -317,7 +340,7 @@ function navigateBack() {
            activeContainerId = null;
         }
     } else {
-        window.location.href = 'select-appliance.html';
+        navigateToSetupHome();
     }
 }
 
@@ -782,3 +805,31 @@ function formatBytes(bytes, decimals = 2) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
+
+return () => {
+    try {
+        if (typeof unsubscribeAuth === 'function') unsubscribeAuth();
+    } catch (e) {}
+    try {
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+    } catch (e) {}
+    try {
+        cleanupPendingUploads();
+    } catch (e) {}
+};
+};
+
+// Auto-init only when running as the legacy standalone page (setup.html),
+// not when the setup UI is embedded inside the app shell.
+try {
+    const isStandaloneSetupPage = /\/setup\.html$/.test(window.location.pathname || '');
+    if (isStandaloneSetupPage) {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                window.__setupCleanup = window.initSetupPage({});
+            });
+        } else {
+            window.__setupCleanup = window.initSetupPage({});
+        }
+    }
+} catch (e) {}

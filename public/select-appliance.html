@@ -107,19 +107,19 @@
 
         firebase.initializeApp(firebaseConfig);
 
+        const auth = firebase.auth();
+
         // --- Emulator Connection ---
         if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
             console.log("Connecting to Firebase Emulators from select-appliance.html");
-            const auth = firebase.auth();
             auth.useEmulator('http://localhost:9099');
-            
-            const db = firebase.firestore();
-            db.useEmulator('localhost', 8080);
-
-            const functions = firebase.functions();
-            functions.useEmulator('localhost', 5001);
         }
         // --- End Emulator Connection ---
+
+        // Ensure auth persists between pages on local/dev.
+        window.__authReady = auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
+            console.error("Auth persistence failed (select-appliance.html):", err);
+        });
     </script>
     <script src="/js/select-appliance.js"></script>
 </body>
