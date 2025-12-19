@@ -183,7 +183,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               localStorage.setItem("activeBrigadeId", brigadeId);
               localStorage.setItem("selectedBrigadeId", brigadeId);
               localStorage.setItem("selectedApplianceId", appliance.id);
-              window.location.href = "/checks.html";
+              window.location.hash = `#/check/${encodeURIComponent(brigadeId)}/${encodeURIComponent(appliance.id)}`;
             };
 
             const startCheck = async () => {

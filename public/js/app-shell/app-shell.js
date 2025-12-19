@@ -4,12 +4,15 @@ import { renderMenu } from "./screens/menu.js";
 import { renderChecks } from "./screens/checks.js";
 import { renderBrigades } from "./screens/brigades.js";
 import { renderBrigade } from "./screens/brigade.js";
+import { renderCheck } from "./screens/check.js";
 
 const appRoot = document.getElementById("app-root");
 const titleEl = document.getElementById("app-title");
 const backBtn = document.getElementById("app-back-btn");
 const logoutBtn = document.getElementById("app-logout-btn");
 const loadingOverlay = document.getElementById("loading-overlay");
+const shellHeader = document.querySelector("body > header");
+const shellFooter = document.querySelector("body > footer");
 
 function showLoading() {
   if (loadingOverlay) loadingOverlay.style.display = "flex";
@@ -19,7 +22,19 @@ function hideLoading() {
   if (loadingOverlay) loadingOverlay.style.display = "none";
 }
 
+function setShellChromeVisible(visible) {
+  shellHeader?.classList.toggle("hidden", !visible);
+  shellFooter?.classList.toggle("hidden", !visible);
+}
+
 function setHeader({ title, showBack, showLogout }) {
+  setShellChromeVisible(true);
+  try {
+    if (typeof window.__checksCleanup === "function") {
+      window.__checksCleanup();
+      window.__checksCleanup = null;
+    }
+  } catch (e) {}
   if (titleEl) titleEl.textContent = title || "Flashover";
   if (backBtn) backBtn.classList.toggle("hidden", !showBack);
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !showLogout);
@@ -103,6 +118,25 @@ const routes = {
       setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
       showLoading,
       hideLoading,
+    });
+  },
+  "/check/:brigadeId/:applianceId": async ({ params }) => {
+    // Use the full legacy check UI for now, inside the shell.
+    // Hide the shell header/footer to avoid duplicate headers.
+    setShellChromeVisible(false);
+    await renderCheck({
+      root: appRoot,
+      brigadeId: params.brigadeId,
+      applianceId: params.applianceId,
+      setShellChromeVisible,
+      navigateToChecksHome: () => {
+        setShellChromeVisible(true);
+        window.location.hash = "#/checks";
+      },
+      navigateToMenu: () => {
+        setShellChromeVisible(true);
+        window.location.hash = "#/menu";
+      },
     });
   },
 };
