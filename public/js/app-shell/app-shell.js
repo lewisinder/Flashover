@@ -56,7 +56,7 @@ const routes = {
   },
   "/checks": async () => {
     setHeader({ title: "Appliance Checks", showBack: true, showLogout: true });
-    await renderChecks({ root: appRoot });
+    await renderChecks({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/brigades": async () => {
     setHeader({ title: "Brigades", showBack: true, showLogout: true });
