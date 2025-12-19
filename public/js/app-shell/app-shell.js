@@ -37,6 +37,37 @@ requireEl(logoutBtn, "app-logout-btn");
 
 const { auth, db } = initFirebase();
 
+async function maybeSeedDemoData(user) {
+  const isLocal =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+  if (!isLocal) return;
+
+  const seededKey = `demoSeeded:${user.uid}`;
+  if (localStorage.getItem(seededKey) === "1") return;
+
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch("/api/dev/seed-demo", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message || `Seed failed (${res.status})`);
+    }
+    const seeded = await res.json().catch(() => ({}));
+    localStorage.setItem(seededKey, "1");
+
+    const currentActive = localStorage.getItem("activeBrigadeId");
+    if (!currentActive && seeded?.brigadeId) {
+      localStorage.setItem("activeBrigadeId", seeded.brigadeId);
+    }
+  } catch (err) {
+    console.warn("Demo seed failed (app shell):", err);
+  }
+}
+
 logoutBtn.addEventListener("click", async () => {
   try {
     await auth.signOut();
@@ -94,10 +125,11 @@ Promise.resolve(window.__authReady).finally(() => {
     window.location.hostname === "127.0.0.1";
   let hasStarted = false;
 
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     if (user) {
       if (!hasStarted) {
         hasStarted = true;
+        await maybeSeedDemoData(user);
         router.start();
       }
       return;
@@ -108,6 +140,7 @@ Promise.resolve(window.__authReady).finally(() => {
       if (auth.currentUser) {
         if (!hasStarted) {
           hasStarted = true;
+          void maybeSeedDemoData(auth.currentUser);
           router.start();
         }
         return;

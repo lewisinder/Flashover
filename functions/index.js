@@ -96,6 +96,153 @@ const verifyToken = async (req, res, next) => {
 const apiRouter = express.Router();
 apiRouter.use(verifyToken);
 
+// --- Dev helpers (emulator only) ---
+apiRouter.post('/dev/seed-demo', async (req, res) => {
+    if (!isFunctionsEmulator) {
+        return res.status(404).json({ message: 'Not found.' });
+    }
+    try {
+        const uid = req.user.uid;
+        const displayName = req.user.name || req.user.email || 'Demo User';
+
+        const brigadeId = 'demo-brigade';
+        const brigadeRef = db.collection('brigades').doc(brigadeId);
+        const memberRef = brigadeRef.collection('members').doc(uid);
+        const userBrigadeRef = db.collection('users').doc(uid).collection('userBrigades').doc(brigadeId);
+
+        const demoApplianceData = {
+            appliances: [
+                {
+                    id: 'demo-rav281',
+                    name: 'RAV281 (Demo)',
+                    lockers: [
+                        {
+                            id: 'locker-ns-transverse',
+                            name: 'NS Transverse Locker',
+                            shelves: [
+                                {
+                                    items: [
+                                        {
+                                            id: 'item-broom',
+                                            name: 'Broom',
+                                            desc: 'General purpose broom.',
+                                            img: '/design_assets/Gear Icon.png',
+                                        },
+                                        {
+                                            id: 'item-mop',
+                                            name: 'Mop',
+                                            desc: 'Standard mop head.',
+                                            img: '/design_assets/Gear Icon.png',
+                                        },
+                                        {
+                                            id: 'item-milwaukee-box',
+                                            name: 'Milwaukee Box',
+                                            desc: 'Power tool kit container.',
+                                            img: '/design_assets/Gear Icon.png',
+                                            type: 'container',
+                                            subItems: [
+                                                {
+                                                    id: 'sub-batteries',
+                                                    name: 'Batteries',
+                                                    desc: '2x charged batteries.',
+                                                    img: '/design_assets/Gear Icon.png',
+                                                },
+                                                {
+                                                    id: 'sub-drill',
+                                                    name: 'Drill',
+                                                    desc: '18V drill.',
+                                                    img: '/design_assets/Gear Icon.png',
+                                                },
+                                                {
+                                                    id: 'sub-recsaw',
+                                                    name: 'Rec Saw',
+                                                    desc: 'Reciprocating saw.',
+                                                    img: '/design_assets/Gear Icon.png',
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            id: 'locker-os-1',
+                            name: 'OS Locker #1',
+                            shelves: [
+                                {
+                                    items: [
+                                        {
+                                            id: 'item-first-aid',
+                                            name: 'First Aid Kit',
+                                            desc: 'Primary first aid kit.',
+                                            img: '/design_assets/Gear Icon.png',
+                                        },
+                                        {
+                                            id: 'item-traffic-cones',
+                                            name: 'Road Cones',
+                                            desc: '4x road cones.',
+                                            img: '/design_assets/Gear Icon.png',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        await db.runTransaction(async (tx) => {
+            const brigadeDoc = await tx.get(brigadeRef);
+            if (!brigadeDoc.exists) {
+                tx.set(brigadeRef, {
+                    name: 'Demo Brigade',
+                    stationNumber: '000',
+                    region: 'Te Hiku',
+                    creatorId: uid,
+                    createdAt: FieldValue.serverTimestamp(),
+                    applianceData: demoApplianceData,
+                });
+            } else {
+                tx.set(
+                    brigadeRef,
+                    {
+                        applianceData: demoApplianceData,
+                        name: 'Demo Brigade',
+                        stationNumber: '000',
+                        region: 'Te Hiku',
+                    },
+                    { merge: true }
+                );
+            }
+
+            tx.set(
+                memberRef,
+                {
+                    role: 'Admin',
+                    joinedAt: FieldValue.serverTimestamp(),
+                    name: displayName,
+                },
+                { merge: true }
+            );
+
+            tx.set(
+                userBrigadeRef,
+                {
+                    brigadeName: 'Demo Brigade (000)',
+                    role: 'Admin',
+                },
+                { merge: true }
+            );
+        });
+
+        res.status(200).json({ message: 'Seeded demo brigade.', brigadeId, applianceId: 'demo-rav281' });
+    } catch (error) {
+        console.error('Error seeding demo brigade:', error);
+        res.status(500).json({ message: 'Failed to seed demo brigade.' });
+    }
+});
+
 // --- Image Upload & Delete Routes ---
 apiRouter.post('/upload', (req, res) => {
     if (!req.rawBody) {
