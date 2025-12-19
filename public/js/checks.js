@@ -23,6 +23,11 @@ function initChecksPage(options = {}) {
     const navigateToMenu =
         typeof options.navigateToMenu === 'function' ? options.navigateToMenu : null;
 
+    function goToSignIn() {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.href = `/signin.html?returnTo=${encodeURIComponent(returnTo)}`;
+    }
+
     function goToChecksHome() {
         if (isShell) {
             if (navigateToChecksHome) return navigateToChecksHome();
@@ -199,7 +204,11 @@ function initChecksPage(options = {}) {
         const appliance = getActiveAppliance();
         if (!appliance || !appliance.lockers || appliance.lockers.length === 0) {
             alert("This appliance has no lockers or items to check. Please complete setup first.");
-            window.location.href = '/select-appliance.html';
+            if (isShell) {
+                goToChecksHome();
+            } else {
+                window.location.href = '/select-appliance.html';
+            }
             return;
         }
 
@@ -870,7 +879,7 @@ function initChecksPage(options = {}) {
                 await loadData();
                 startOrResumeChecks();
             } else {
-                window.location.href = '/signin.html';
+                goToSignIn();
             }
         });
     }

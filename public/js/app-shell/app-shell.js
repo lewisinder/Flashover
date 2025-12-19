@@ -179,7 +179,8 @@ Promise.resolve(window.__authReady).finally(() => {
         }
         return;
       }
-      window.location.href = "/signin.html";
+      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.href = `/signin.html?returnTo=${encodeURIComponent(returnTo)}`;
     }, isLocal ? 1500 : 0);
   });
 });
