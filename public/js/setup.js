@@ -819,9 +819,11 @@ return () => {
 };
 };
 
-// Auto-init when running as the legacy standalone page (setup.html).
+// Auto-init only when running as the legacy standalone page (setup.html),
+// not when the setup UI is embedded inside the app shell.
 try {
-    if (document.getElementById('select-locker-screen')) {
+    const isStandaloneSetupPage = /\/setup\.html$/.test(window.location.pathname || '');
+    if (isStandaloneSetupPage) {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
                 window.__setupCleanup = window.initSetupPage({});
