@@ -3,6 +3,7 @@ import { createRouter } from "./router.js";
 import { renderMenu } from "./screens/menu.js";
 import { renderChecks } from "./screens/checks.js";
 import { renderBrigades } from "./screens/brigades.js";
+import { renderBrigade } from "./screens/brigade.js";
 
 const appRoot = document.getElementById("app-root");
 const titleEl = document.getElementById("app-title");
@@ -60,6 +61,18 @@ const routes = {
   "/brigades": async () => {
     setHeader({ title: "Brigades", showBack: true, showLogout: true });
     await renderBrigades({ root: appRoot, auth, db, showLoading, hideLoading });
+  },
+  "/brigade/:id": async ({ params }) => {
+    setHeader({ title: "Brigade", showBack: true, showLogout: true });
+    await renderBrigade({
+      root: appRoot,
+      auth,
+      db,
+      brigadeId: params.id,
+      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
+      showLoading,
+      hideLoading,
+    });
   },
 };
 

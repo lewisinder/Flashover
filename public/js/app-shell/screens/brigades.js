@@ -188,7 +188,7 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
         manageBtn.type = "button";
         manageBtn.textContent = "Manage";
         manageBtn.addEventListener("click", () => {
-          window.location.href = `/brigade-management.html?id=${brigade.id}`;
+          window.location.hash = `#/brigade/${encodeURIComponent(brigade.id)}`;
         });
 
         const leaveBtn = el("button", "ml-2 bg-red-action-1 text-white font-semibold py-2 px-4 rounded-lg");
