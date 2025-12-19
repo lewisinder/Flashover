@@ -5,6 +5,8 @@ import { renderChecks } from "./screens/checks.js";
 import { renderBrigades } from "./screens/brigades.js";
 import { renderBrigade } from "./screens/brigade.js";
 import { renderCheck } from "./screens/check.js";
+import { renderReports } from "./screens/reports.js";
+import { renderReport } from "./screens/report.js";
 
 const appRoot = document.getElementById("app-root");
 const titleEl = document.getElementById("app-title");
@@ -103,8 +105,16 @@ backBtn.addEventListener("click", () => {
     window.location.hash = "#/brigades";
     return;
   }
+  if (hash.startsWith("#/report/")) {
+    window.location.hash = "#/reports";
+    return;
+  }
   if (hash === "#/checks" || hash === "#/brigades") {
     window.location.hash = "#/menu";
+    return;
+  }
+  if (hash === "#/reports") {
+    window.location.hash = "#/checks";
     return;
   }
 
@@ -120,6 +130,10 @@ const routes = {
     setHeader({ title: "Appliance Checks", showBack: true, showLogout: true });
     await renderChecks({ root: appRoot, auth, db, showLoading, hideLoading });
   },
+  "/reports": async () => {
+    setHeader({ title: "Past Reports", showBack: true, showLogout: true });
+    await renderReports({ root: appRoot, auth, db, showLoading, hideLoading });
+  },
   "/brigades": async () => {
     setHeader({ title: "Brigades", showBack: true, showLogout: true });
     await renderBrigades({ root: appRoot, auth, db, showLoading, hideLoading });
@@ -131,6 +145,18 @@ const routes = {
       auth,
       db,
       brigadeId: params.id,
+      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
+      showLoading,
+      hideLoading,
+    });
+  },
+  "/report/:brigadeId/:reportId": async ({ params }) => {
+    setHeader({ title: "Report", showBack: true, showLogout: true });
+    await renderReport({
+      root: appRoot,
+      auth,
+      brigadeId: params.brigadeId,
+      reportId: params.reportId,
       setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
       showLoading,
       hideLoading,

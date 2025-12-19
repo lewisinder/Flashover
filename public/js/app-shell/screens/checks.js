@@ -66,7 +66,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   btnReports.type = "button";
   btnReports.innerHTML = `<span>View Past Reports</span>`;
   btnReports.addEventListener("click", () => {
-    window.location.href = "/reports.html";
+    window.location.hash = "#/reports";
   });
 
   helperRow.appendChild(btnSetup);
