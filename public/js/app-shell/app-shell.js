@@ -7,6 +7,8 @@ import { renderBrigade } from "./screens/brigade.js";
 import { renderCheck } from "./screens/check.js";
 import { renderReports } from "./screens/reports.js";
 import { renderReport } from "./screens/report.js";
+import { renderSetupHome } from "./screens/setup-home.js";
+import { renderSetupEditor } from "./screens/setup-editor.js";
 
 const appRoot = document.getElementById("app-root");
 const titleEl = document.getElementById("app-title");
@@ -35,6 +37,12 @@ function setHeader({ title, showBack, showLogout }) {
     if (typeof window.__checksCleanup === "function") {
       window.__checksCleanup();
       window.__checksCleanup = null;
+    }
+  } catch (e) {}
+  try {
+    if (typeof window.__setupCleanup === "function") {
+      window.__setupCleanup();
+      window.__setupCleanup = null;
     }
   } catch (e) {}
   if (titleEl) titleEl.textContent = title || "Flashover";
@@ -109,6 +117,10 @@ backBtn.addEventListener("click", () => {
     window.location.hash = "#/reports";
     return;
   }
+  if (hash === "#/setup") {
+    window.location.hash = "#/checks";
+    return;
+  }
   if (hash === "#/checks" || hash === "#/brigades") {
     window.location.hash = "#/menu";
     return;
@@ -133,6 +145,10 @@ const routes = {
   "/reports": async () => {
     setHeader({ title: "Past Reports", showBack: true, showLogout: true });
     await renderReports({ root: appRoot, auth, db, showLoading, hideLoading });
+  },
+  "/setup": async () => {
+    setHeader({ title: "Appliance Setup", showBack: true, showLogout: true });
+    await renderSetupHome({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/brigades": async () => {
     setHeader({ title: "Brigades", showBack: true, showLogout: true });
@@ -174,6 +190,26 @@ const routes = {
       navigateToChecksHome: () => {
         setShellChromeVisible(true);
         window.location.hash = "#/checks";
+      },
+      navigateToMenu: () => {
+        setShellChromeVisible(true);
+        window.location.hash = "#/menu";
+      },
+    });
+  },
+  "/setup/:applianceId": async ({ params }) => {
+    // Use the legacy setup UI for now, inside the shell.
+    setShellChromeVisible(false);
+    const brigadeId = localStorage.getItem("activeBrigadeId");
+    await renderSetupEditor({
+      root: appRoot,
+      auth,
+      brigadeId,
+      applianceId: params.applianceId,
+      setShellChromeVisible,
+      navigateToSetupHome: () => {
+        setShellChromeVisible(true);
+        window.location.hash = "#/setup";
       },
       navigateToMenu: () => {
         setShellChromeVisible(true);

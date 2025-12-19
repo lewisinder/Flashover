@@ -419,24 +419,19 @@
           appId: "1:74889025348:web:baaec1803ade7ffbd06911"
         };
          firebase.initializeApp(firebaseConfig);
+         const auth = firebase.auth();
 
          // --- Emulator Connection ---
          if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
             console.log("Connecting to Firebase Emulators");
-            const auth = firebase.auth();
             auth.useEmulator('http://localhost:9099');
-            
-            // Firestore is not directly used on this page's init, but good practice
-            // const db = firebase.firestore();
-            // db.useEmulator('localhost', 8080);
-
-            const functions = firebase.functions();
-            functions.useEmulator('localhost', 5001);
-            
-            const storage = firebase.storage();
-            storage.useEmulator('localhost', 9199);
         }
         // --- End Emulator Connection ---
+
+        // Ensure auth persists between pages on local/dev.
+        window.__authReady = auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
+            console.error("Auth persistence failed (setup.html):", err);
+        });
      </script>
      <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@latest/dist/browser-image-compression.js"></script>
      <script src="/js/setup.js"></script>

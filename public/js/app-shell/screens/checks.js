@@ -59,7 +59,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   btnSetup.type = "button";
   btnSetup.innerHTML = `<span>Set Up Appliances</span>`;
   btnSetup.addEventListener("click", () => {
-    window.location.href = "/select-appliance.html";
+    window.location.hash = "#/setup";
   });
 
   const btnReports = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg");
