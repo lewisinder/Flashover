@@ -92,6 +92,22 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 backBtn.addEventListener("click", () => {
+  const hash = window.location.hash || "";
+
+  // Prefer "app-like" back behavior over browser history for core routes.
+  if (hash.startsWith("#/check/")) {
+    window.location.hash = "#/checks";
+    return;
+  }
+  if (hash.startsWith("#/brigade/")) {
+    window.location.hash = "#/brigades";
+    return;
+  }
+  if (hash === "#/checks" || hash === "#/brigades") {
+    window.location.hash = "#/menu";
+    return;
+  }
+
   window.history.back();
 });
 
