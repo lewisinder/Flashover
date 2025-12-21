@@ -19,22 +19,22 @@ auth.onAuthStateChanged(user => {
 });
 
 document.getElementById('back-btn').addEventListener('click', () => {
-    window.location.href = '/menu.html';
+    window.location.href = '/app.html#/menu';
 });
 
 document.getElementById('start-checks-btn').addEventListener('click', () => {
     showLoading();
-    window.location.href = '/select-appliance-for-check.html';
+    window.location.href = '/app.html#/checks';
 });
 
 document.getElementById('setup-truck-btn').addEventListener('click', () => {
     showLoading();
-    window.location.href = '/select-appliance.html';
+    window.location.href = '/app.html#/setup';
 });
 
 document.getElementById('view-reports-btn').addEventListener('click', () => {
     showLoading();
-    window.location.href = '/reports.html';
+    window.location.href = '/app.html#/reports';
 });
 
 document.getElementById('logout-btn').addEventListener('click', () => {

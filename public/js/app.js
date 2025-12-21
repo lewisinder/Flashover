@@ -1493,9 +1493,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Page Navigation
     addSafeEventListener('start-checks-btn', 'click', () => {
-        window.location.href = '/select-appliance-for-check.html';
+        window.location.href = '/app.html#/checks';
     });
-    addSafeEventListener('view-reports-btn', 'click', () => window.location.href = '/reports.html');
+    addSafeEventListener('view-reports-btn', 'click', () => window.location.href = '/app.html#/reports');
     addSafeEventListener('logout-btn', 'click', () => {
         auth.signOut().then(() => {
             localStorage.removeItem('userId');
@@ -1514,15 +1514,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // --- Main Navigation Hierarchy ---
         if (path.includes('/menu.html')) {
-            window.location.href = '/welcome.html';
+            window.location.href = '/app.html#/menu';
             return;
         }
         if (path.includes('/appliance-checks.html')) {
-            window.location.href = '/menu.html';
+            window.location.href = '/app.html#/menu';
             return;
         }
         if (path.includes('/select-appliance.html') || path.includes('/select-appliance-for-check.html') || path.includes('/reports.html')) {
-            window.location.href = '/appliance-checks.html';
+            window.location.href = '/app.html#/checks';
             return;
         }
 

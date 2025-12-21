@@ -13,7 +13,7 @@
       },
       {
         "source": "/",
-        "destination": "/welcome.html"
+        "destination": "/app.html#/menu"
       }
     ]
   },
