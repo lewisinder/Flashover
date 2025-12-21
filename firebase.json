@@ -13,13 +13,19 @@
       },
       {
         "source": "/",
-        "destination": "/app.html#/menu"
+        "destination": "/app.html"
       }
     ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   },
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"
+  },
+  "storage": {
+    "rules": "storage.rules"
   },
   "emulators": {
     "auth": {

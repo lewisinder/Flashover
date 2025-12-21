@@ -279,7 +279,7 @@ async function saveBrigadeData(operation) {
                         progressText.textContent = 
                             `Uploading image ${index + 1} of ${itemsWithPendingUploads.length}: ` +
                             `${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round(percentage)}%)`;
-                    });
+                    }, { 'x-brigade-id': activeBrigadeId });
 
                     const result = JSON.parse(responseText);
                     URL.revokeObjectURL(item.img); // Clean up blob URL
@@ -301,7 +301,10 @@ async function saveBrigadeData(operation) {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(truckData)
         });
-        if (!response.ok) throw new Error('Failed to save data');
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.message || 'Failed to save data');
+        }
         
         console.log(`Data saved after: ${operation}`);
         lastSavedTruckData = JSON.parse(JSON.stringify(truckData));
@@ -780,11 +783,15 @@ function handleImageUpload(e, context) {
     e.target.value = '';
 }
 
-function uploadWithProgress(url, token, formData, onProgress) {
+function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {}) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url, true);
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        Object.entries(extraHeaders || {}).forEach(([key, value]) => {
+            if (value === undefined || value === null || value === '') return;
+            xhr.setRequestHeader(key, String(value));
+        });
         xhr.upload.onprogress = (event) => {
             if (event.lengthComputable) onProgress(event);
         };

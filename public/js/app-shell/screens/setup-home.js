@@ -40,10 +40,12 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   select.id = "brigade-selector-setup-shell";
   select.innerHTML = '<option value="">Loading brigades...</option>';
   const errorEl = el("p", "text-red-action-2 text-center");
+  const adminHintEl = el("p", "text-gray-600 text-center text-sm");
 
   topCard.appendChild(label);
   topCard.appendChild(select);
   topCard.appendChild(errorEl);
+  topCard.appendChild(adminHintEl);
 
   const listCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
   const title = el("h2", "text-2xl font-bold");
@@ -112,6 +114,17 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   let truckData = { appliances: [] };
   let editingApplianceId = null;
   let deletingApplianceId = null;
+  let canEdit = true;
+
+  function updateAdminUi(brigadeId) {
+    const role = String((brigadeMetaById.get(brigadeId) || {}).role || "").toLowerCase();
+    canEdit = role === "admin";
+    adminHintEl.textContent = canEdit ? "" : "Only Admins can edit appliance setup.";
+    createBtn.disabled = !canEdit;
+    createBtn.classList.toggle("opacity-50", !canEdit);
+    createBtn.classList.toggle("cursor-not-allowed", !canEdit);
+    createBtn.title = canEdit ? "" : "Admins only";
+  }
 
   function openModal(applianceId) {
     editingApplianceId = applianceId || null;
@@ -175,16 +188,28 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       row.appendChild(actions);
 
       row.addEventListener("click", () => {
+        if (!canEdit) {
+          alert("Admins only: you don't have permission to edit appliance setup.");
+          return;
+        }
         localStorage.setItem("selectedApplianceId", appliance.id);
         window.location.hash = `#/setup/${encodeURIComponent(appliance.id)}`;
       });
 
       edit.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (!canEdit) {
+          alert("Admins only: you don't have permission to edit appliance setup.");
+          return;
+        }
         openModal(appliance.id);
       });
       del.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (!canEdit) {
+          alert("Admins only: you don't have permission to edit appliance setup.");
+          return;
+        }
         openDeleteModal(appliance.id, appliance.name);
       });
 
@@ -226,7 +251,13 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   cancelBtn.addEventListener("click", closeModal);
-  createBtn.addEventListener("click", () => openModal(null));
+  createBtn.addEventListener("click", () => {
+    if (!canEdit) {
+      alert("Admins only: you don't have permission to edit appliance setup.");
+      return;
+    }
+    openModal(null);
+  });
   saveBtn.addEventListener("click", async () => {
     const name = nameInput.value.trim();
     if (!name) {
@@ -258,9 +289,11 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   const user = auth?.currentUser;
   if (!user) return;
 
+  let brigadeMetaById = new Map();
   showLoading?.();
   try {
     const brigades = await loadUserBrigades({ db, uid: user.uid });
+    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
     select.innerHTML = "";
     if (brigades.length === 0) {
       select.innerHTML = '<option value="">No brigades found</option>';
@@ -281,6 +314,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     localStorage.setItem("activeBrigadeId", activeBrigadeId);
     select.value = activeBrigadeId;
 
+    updateAdminUi(activeBrigadeId);
     await loadBrigadeData(activeBrigadeId);
 
     select.addEventListener("change", async (e) => {
@@ -288,6 +322,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       if (!brigadeId) return;
       activeBrigadeId = brigadeId;
       localStorage.setItem("activeBrigadeId", brigadeId);
+      updateAdminUi(brigadeId);
       await loadBrigadeData(brigadeId);
     });
   } catch (err) {
@@ -297,4 +332,3 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     hideLoading?.();
   }
 }
-
