@@ -135,6 +135,17 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   const user = auth?.currentUser;
   if (!user) return;
 
+  let brigadeMetaById = new Map();
+  function updateSetupButton(brigadeId) {
+    const meta = brigadeMetaById.get(brigadeId) || {};
+    const role = String(meta.role || "").toLowerCase();
+    const isAdmin = role === "admin";
+    btnSetup.disabled = !isAdmin;
+    btnSetup.classList.toggle("opacity-50", !isAdmin);
+    btnSetup.classList.toggle("cursor-not-allowed", !isAdmin);
+    btnSetup.title = isAdmin ? "" : "Admins only";
+  }
+
   async function loadAppliancesForBrigade(brigadeId) {
     errorEl.textContent = "";
     successEl.textContent = "";
@@ -238,6 +249,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   showLoading?.();
   try {
     const brigades = await loadUserBrigades({ db, uid: user.uid });
+    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
     select.innerHTML = "";
     if (brigades.length === 0) {
       select.innerHTML = '<option value="">No brigades found</option>';
@@ -259,12 +271,14 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
     localStorage.setItem("activeBrigadeId", active);
     select.value = active;
 
+    updateSetupButton(active);
     await loadAppliancesForBrigade(active);
 
     select.addEventListener("change", async (e) => {
       const brigadeId = e.target.value;
       if (!brigadeId) return;
       localStorage.setItem("activeBrigadeId", brigadeId);
+      updateSetupButton(brigadeId);
       await loadAppliancesForBrigade(brigadeId);
     });
   } catch (err) {

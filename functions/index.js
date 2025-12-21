@@ -48,6 +48,29 @@ const bucket = admin.storage().bucket();
 const db = admin.firestore();
 
 // ===================================================================
+// SECURITY HELPERS
+// ===================================================================
+async function getBrigadeDoc(brigadeId) {
+    if (!brigadeId) return null;
+    const ref = db.collection('brigades').doc(brigadeId);
+    const doc = await ref.get();
+    if (!doc.exists) return null;
+    return { ref, data: doc.data() };
+}
+
+async function getBrigadeMember(brigadeId, userId) {
+    if (!brigadeId || !userId) return null;
+    const ref = db.collection('brigades').doc(brigadeId).collection('members').doc(userId);
+    const doc = await ref.get();
+    if (!doc.exists) return null;
+    return { ref, data: doc.data() };
+}
+
+function isAdminRole(role) {
+    return String(role || '').toLowerCase() === 'admin';
+}
+
+// ===================================================================
 // NEW EMAIL TRIGGER FUNCTION
 // ===================================================================
 exports.processEmail = functions.region("australia-southeast1").firestore
@@ -244,17 +267,53 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
 });
 
 // --- Image Upload & Delete Routes ---
-apiRouter.post('/upload', (req, res) => {
+apiRouter.post('/upload', async (req, res) => {
+    const brigadeId = String(req.get('x-brigade-id') || '').trim();
+    if (!brigadeId) {
+        return res.status(400).json({ message: 'Missing brigade id (x-brigade-id).' });
+    }
+
+    try {
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        if (!isAdminRole(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin role required.' });
+        }
+    } catch (error) {
+        console.error('Upload auth check failed:', error);
+        return res.status(500).json({ message: 'Failed to authorize upload.' });
+    }
+
     if (!req.rawBody) {
         console.error('Request did not have a rawBody.');
         return res.status(400).json({ message: 'Missing request body.' });
     }
-    const busboy = Busboy({ headers: req.headers });
+    const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+    const busboy = Busboy({ headers: req.headers, limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 1 } });
     const tmpdir = os.tmpdir();
     const uploads = {};
     const fileWrites = [];
-    busboy.on('file', (fieldname, file, { filename }) => {
-        const filepath = path.join(tmpdir, filename);
+    let fileTooLarge = false;
+    let invalidFileType = false;
+
+    busboy.on('file', (fieldname, file, info) => {
+        const { filename, mimeType } = info || {};
+
+        if (!mimeType || !String(mimeType).toLowerCase().startsWith('image/')) {
+            invalidFileType = true;
+            file.resume();
+            return;
+        }
+
+        file.on('limit', () => {
+            fileTooLarge = true;
+            file.resume();
+        });
+
+        const safeFilename = path.basename(filename || `upload-${Date.now()}`);
+        const filepath = path.join(tmpdir, `${Date.now()}-${safeFilename}`);
         uploads.filepath = filepath;
         const writeStream = fsSync.createWriteStream(filepath);
         file.pipe(writeStream);
@@ -267,6 +326,12 @@ apiRouter.post('/upload', (req, res) => {
     });
     busboy.on('finish', async () => {
         await Promise.all(fileWrites);
+        if (fileTooLarge) {
+            return res.status(413).json({ message: 'File too large.' });
+        }
+        if (invalidFileType) {
+            return res.status(400).json({ message: 'Only image uploads are supported.' });
+        }
         if (!uploads.filepath) {
             return res.status(400).json({ message: 'No file uploaded.' });
         }
@@ -278,17 +343,29 @@ apiRouter.post('/upload', (req, res) => {
                 .resize(800, 800, { fit: 'cover', withoutEnlargement: true })
                 .toFormat('webp', { quality: 80 })
                 .toFile(processedTmpPath);
-            const destination = `uploads/${newFilename}`;
+            const destination = `uploads/${brigadeId}/${newFilename}`;
             await bucket.upload(processedTmpPath, {
                 destination: destination,
-                metadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
+                metadata: {
+                    contentType: 'image/webp',
+                    cacheControl: 'public, max-age=31536000',
+                    metadata: {
+                        brigadeId,
+                        uploadedBy: req.user.uid,
+                    },
+                },
             });
             const file = bucket.file(destination);
             await file.makePublic();
             const publicUrl = file.publicUrl();
             await fs.unlink(uploads.filepath);
             await fs.unlink(processedTmpPath);
-            res.status(200).json({ message: 'File uploaded successfully!', filePath: publicUrl });
+            res.status(200).json({
+                message: 'File uploaded successfully!',
+                filePath: publicUrl,
+                fileName: newFilename,
+                storagePath: destination,
+            });
         } catch (error) {
             console.error('Upload process failed:', error);
             res.status(500).json({ message: 'Failed to process and upload image.' });
@@ -299,11 +376,24 @@ apiRouter.post('/upload', (req, res) => {
 
 apiRouter.delete('/image/:fileName', async (req, res) => {
     try {
+        const brigadeId = String(req.get('x-brigade-id') || '').trim();
+        if (!brigadeId) {
+            return res.status(400).json({ message: 'Missing brigade id (x-brigade-id).' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        if (!isAdminRole(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin role required.' });
+        }
+
         const { fileName } = req.params;
-        if (!fileName || fileName.includes('..')) {
+        if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
             return res.status(400).json({ message: 'Invalid filename.' });
         }
-        const file = bucket.file(`uploads/${fileName}`);
+        const file = bucket.file(`uploads/${brigadeId}/${fileName}`);
         await file.delete();
         res.status(200).json({ message: 'Image deleted successfully.' });
     } catch (err) {
@@ -354,7 +444,16 @@ brigadeRouter.get('/region/:regionName', async (req, res) => {
         const brigadesRef = db.collection('brigades');
         const snapshot = await brigadesRef.where('region', '==', regionName).get();
         if (snapshot.empty) return res.json([]);
-        const brigades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Only return safe public fields so non-members can't see brigade inventory data.
+        const brigades = snapshot.docs.map(doc => {
+            const data = doc.data() || {};
+            return {
+                id: doc.id,
+                name: data.name,
+                stationNumber: data.stationNumber,
+                region: data.region,
+            };
+        });
         res.json(brigades);
     } catch (error) {
         console.error(`Error fetching brigades for region ${req.params.regionName}:`, error);
@@ -382,6 +481,17 @@ brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
     try {
         const { brigadeId } = req.params;
         const { uid: userId, name: userName, email } = req.user;
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const existingMember = await getBrigadeMember(brigadeId, userId);
+        if (existingMember) {
+            return res.status(400).json({ message: 'You are already a member of this brigade.' });
+        }
+
         const joinRequestRef = db.collection('brigades').doc(brigadeId).collection('joinRequests').doc(userId);
         const doc = await joinRequestRef.get();
         if (doc.exists) {
@@ -599,8 +709,16 @@ brigadeRouter.post('/:brigadeId/data', async (req, res) => {
         if (!memberDoc.exists) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        await brigadeRef.update({ applianceData: newData });
+        if (!isAdminRole(memberDoc.data().role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin role required to edit appliance setup.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        await brigade.ref.update({ applianceData: newData });
         res.status(200).json({ message: 'Appliance data saved successfully!' });
     } catch (error) {
         console.error(`Error saving appliance data for brigade ${req.params.brigadeId}:`, error);
@@ -641,12 +759,16 @@ brigadeRouter.post('/', async (req, res) => {
 brigadeRouter.get('/:brigadeId/appliances/:applianceId/check-status', async (req, res) => {
     try {
         const { brigadeId, applianceId } = req.params;
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        const brigadeDoc = await brigadeRef.get();
-        if (!brigadeDoc.exists) {
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
-        const applianceData = brigadeDoc.data().applianceData || { appliances: [] };
+        const applianceData = brigade.data.applianceData || { appliances: [] };
         const appliance = applianceData.appliances.find(a => a.id === applianceId);
         if (appliance && appliance.checkStatus && appliance.checkStatus.inProgress) {
             res.json({
@@ -667,9 +789,17 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/start-check', async (req
     try {
         const { brigadeId, applianceId } = req.params;
         const { uid, name, email } = req.user;
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        const brigadeDoc = await brigadeRef.get();
-        const applianceData = brigadeDoc.data().applianceData || { appliances: [] };
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const applianceData = brigade.data.applianceData || { appliances: [] };
         const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
         if (applianceIndex === -1) {
             return res.status(404).json({ message: 'Appliance not found.' });
@@ -680,7 +810,7 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/start-check', async (req
             uid: uid,
             timestamp: new Date().toISOString()
         };
-        await brigadeRef.update({ applianceData });
+        await brigade.ref.update({ applianceData });
         res.status(200).json({ message: 'Check started successfully.' });
     } catch (error) {
         console.error('Error starting check:', error);
@@ -690,13 +820,21 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/start-check', async (req
 brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (req, res) => {
     try {
         const { brigadeId, applianceId } = req.params;
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        const brigadeDoc = await brigadeRef.get();
-        const applianceData = brigadeDoc.data().applianceData || { appliances: [] };
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const applianceData = brigade.data.applianceData || { appliances: [] };
         const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
         if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
             delete applianceData.appliances[applianceIndex].checkStatus;
-            await brigadeRef.update({ applianceData });
+            await brigade.ref.update({ applianceData });
         }
         res.status(200).json({ message: 'Check completed successfully.' });
     } catch (error) {
@@ -762,12 +900,33 @@ const reportRouter = express.Router();
 reportRouter.get('/brigade/:brigadeId', async (req, res) => {
     try {
         const { brigadeId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
         const reportsRef = db.collection('brigades').doc(brigadeId).collection('reports');
         const snapshot = await reportsRef.orderBy('date', 'desc').get();
         if (snapshot.empty) {
             return res.json([]);
         }
-        const reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Return only summary fields here (the full report can be fetched by ID).
+        const reports = snapshot.docs.map(doc => {
+            const data = doc.data() || {};
+            return {
+                id: doc.id,
+                applianceId: data.applianceId,
+                applianceName: data.applianceName,
+                date: data.date,
+                username: data.username || data.creatorName,
+                uid: data.uid,
+            };
+        });
         res.json(reports);
     } catch (error) {
         console.error(`Error fetching reports for brigade ${req.params.brigadeId}:`, error);
@@ -957,23 +1116,46 @@ const generateReportHtml = (reportData) => {
 
 reportRouter.post('/', async (req, res) => {
     try {
-        const reportData = req.body;
-        const { brigadeId, applianceId, applianceName, date, username } = reportData;
-        if (!brigadeId || !applianceId || !date || !username) {
+        const reportData = req.body || {};
+        const { brigadeId, applianceId } = reportData;
+        if (!brigadeId || !applianceId) {
             return res.status(400).json({ message: 'Missing required report data.' });
         }
-        const reportRef = db.collection('brigades').doc(brigadeId).collection('reports').doc();
-        await reportRef.set(reportData);
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const applianceData = brigade.data.applianceData || { appliances: [] };
+        const appliance = applianceData.appliances.find(a => a.id === applianceId);
+        if (!appliance) {
+            return res.status(404).json({ message: 'Appliance not found.' });
+        }
+
+        const safeReportData = {
+            ...reportData,
+            brigadeId,
+            applianceId,
+            applianceName: reportData.applianceName || appliance.name,
+            date: reportData.date || new Date().toISOString(),
+            lockers: Array.isArray(reportData.lockers) ? reportData.lockers : [],
+            uid: req.user.uid,
+            username: req.user.name || req.user.email || reportData.username || 'Unknown',
+        };
+
+        const reportRef = brigade.ref.collection('reports').doc();
+        await reportRef.set(safeReportData);
         const reportId = reportRef.id;
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        const brigadeDoc = await brigadeRef.get();
-        if (brigadeDoc.exists) {
-            const applianceData = brigadeDoc.data().applianceData || { appliances: [] };
-            const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
-            if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
-                delete applianceData.appliances[applianceIndex].checkStatus;
-                await brigadeRef.update({ applianceData });
-            }
+        const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
+        if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
+            delete applianceData.appliances[applianceIndex].checkStatus;
+            await brigade.ref.update({ applianceData });
         }
         try {
             const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
@@ -985,14 +1167,14 @@ reportRouter.post('/', async (req, res) => {
                 if (recipients.length > 0) {
                     
                     // Generate the rich HTML content for the email
-                    const emailHtml = generateReportHtml(reportData);
+                    const emailHtml = generateReportHtml(safeReportData);
 
                     const mailCollection = db.collection('mail');
                     const emailPromises = recipients.map(email => {
                         return mailCollection.add({
                             to: email,
                             message: {
-                                subject: `New Report Submitted for ${applianceName}`,
+                                subject: `New Report Submitted for ${safeReportData.applianceName}`,
                                 html: emailHtml, // Use the new, detailed HTML
                             },
                         });

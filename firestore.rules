@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // ------------------------------------------------------------------
+    // Users
+    // ------------------------------------------------------------------
+    // The app only needs to read the signed-in user's brigade memberships
+    // directly from Firestore. All other data access should go through the
+    // authenticated backend API (Cloud Functions).
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      allow write: if false;
+
+      match /userBrigades/{brigadeId} {
+        allow read: if isSelf(userId);
+        allow write: if false;
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Mail queue (server-only)
+    // ------------------------------------------------------------------
+    match /mail/{documentId} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // Brigade data (server-only via API)
+    // ------------------------------------------------------------------
+    match /brigades/{brigadeId} {
+      allow read, write: if false;
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Default deny.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

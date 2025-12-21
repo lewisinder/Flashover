@@ -141,9 +141,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fileName = imageUrl.split('/').pop();
         try {
+            const brigadeId = localStorage.getItem('activeBrigadeId') || '';
             await fetch(`/api/image/${fileName}`, { 
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${idToken}` }
+                headers: {
+                    'Authorization': `Bearer ${idToken}`,
+                    ...(brigadeId ? { 'x-brigade-id': brigadeId } : {})
+                }
             });
         } catch (error) {
             console.error('Failed to delete image:', error);
@@ -761,7 +765,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const response = await fetch('/api/upload', { 
                 method: 'POST', 
-                headers: { 'Authorization': `Bearer ${idToken}` },
+                headers: {
+                    'Authorization': `Bearer ${idToken}`,
+                    'x-brigade-id': localStorage.getItem('activeBrigadeId') || ''
+                },
                 body: formData 
             });
             const data = await response.json();
