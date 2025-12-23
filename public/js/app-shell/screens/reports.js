@@ -29,44 +29,67 @@ async function loadUserBrigades({ db, uid }) {
 export async function renderReports({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto space-y-6");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const topCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
-  const label = el("label", "block text-lg font-medium text-gray-700 mb-2 text-center");
+  const topCard = el("div", "fs-card");
+  const topInner = el("div", "fs-card-inner fs-stack");
+  topInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Brigade</div>
+      <div class="fs-card-subtitle">Choose a brigade to view its reports.</div>
+    </div>
+  `;
+
+  const field = el("div", "fs-field");
+  const label = el("label", "fs-label");
   label.setAttribute("for", "brigade-selector-reports-shell");
-  label.textContent = "Select Brigade";
-  const select = el(
-    "select",
-    "w-full bg-white rounded-lg py-3 px-4 border border-gray-300 text-center appearance-none text-lg"
-  );
+  label.textContent = "Brigade";
+  const select = el("select", "fs-select");
   select.id = "brigade-selector-reports-shell";
-  select.innerHTML = '<option value="">Loading brigades...</option>';
+  select.innerHTML = '<option value="">Loading…</option>';
 
-  const errorEl = el("p", "text-red-action-2 text-center");
+  const errorEl = el("div", "fs-alert fs-alert-error");
+  errorEl.style.display = "none";
 
-  topCard.appendChild(label);
-  topCard.appendChild(select);
-  topCard.appendChild(errorEl);
+  field.appendChild(label);
+  field.appendChild(select);
+  topInner.appendChild(field);
+  topInner.appendChild(errorEl);
+  topCard.appendChild(topInner);
 
-  const listCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
-  const title = el("h2", "text-2xl font-bold");
-  title.textContent = "Past Reports";
-  const list = el("div", "space-y-4");
-  list.innerHTML = '<p class="text-gray-600 text-center">Select a brigade to load reports.</p>';
+  const listCard = el("div", "fs-card");
+  const listInner = el("div", "fs-card-inner fs-stack");
+  listInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Reports</div>
+      <div class="fs-card-subtitle">Tap a report to view the full details.</div>
+    </div>
+  `;
+  const list = el("div", "fs-list");
+  list.innerHTML =
+    '<div class="fs-row"><div><div class="fs-row-title">Select a brigade</div><div class="fs-row-meta">Reports will show here.</div></div></div>';
 
-  listCard.appendChild(title);
-  listCard.appendChild(list);
+  listInner.appendChild(list);
+  listCard.appendChild(listInner);
 
-  container.appendChild(topCard);
-  container.appendChild(listCard);
+  stack.appendChild(topCard);
+  stack.appendChild(listCard);
+  container.appendChild(stack);
   root.appendChild(container);
 
   const user = auth?.currentUser;
   if (!user) return;
 
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
+
   async function loadReportsForBrigade(brigadeId) {
-    errorEl.textContent = "";
-    list.innerHTML = '<p class="text-gray-600 text-center">Loading reports…</p>';
+    setAlert(errorEl, "");
+    list.innerHTML =
+      '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching reports</div></div></div>';
     showLoading?.();
     try {
       const token = await user.getIdToken();
@@ -74,22 +97,42 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
 
       list.innerHTML = "";
       if (!Array.isArray(reports) || reports.length === 0) {
-        list.innerHTML = "<p>No reports found for this brigade.</p>";
+        list.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No reports yet</div><div class="fs-row-meta">Completed checks will appear here.</div></div></div>';
         return;
       }
 
       reports.forEach((report) => {
-        const card = el(
-          "div",
-          "bg-white rounded-xl p-4 shadow-[0_4px_8px_3px_rgba(0,0,0,0.12)] cursor-pointer hover:-translate-y-1 transition-transform"
-        );
+        const card = el("button", "fs-row");
+        card.type = "button";
         const who = report.username || report.creatorName || "Unknown";
         const when = report.date ? new Date(report.date).toLocaleString() : "";
-        card.innerHTML = `
-          <h3 class="text-xl font-bold">${report.applianceName || "Unknown Appliance"}</h3>
-          <p class="text-gray-600">Checked by: ${who}</p>
-          <p class="text-gray-500 text-sm">${when}</p>
+
+        const left = el("div");
+        left.style.display = "flex";
+        left.style.alignItems = "center";
+        left.style.gap = "12px";
+
+        const bubble = el("div", "fs-icon-bubble");
+        bubble.innerHTML = `<img src="/design_assets/Report Icon.png" alt="" />`;
+
+        const text = el("div");
+        text.innerHTML = `
+          <div class="fs-row-title">${report.applianceName || "Unknown appliance"}</div>
+          <div class="fs-row-meta">Checked by ${who}${when ? ` • ${when}` : ""}</div>
         `;
+
+        const chevron = el("div");
+        chevron.style.color = "var(--fs-muted)";
+        chevron.style.fontWeight = "900";
+        chevron.style.fontSize = "18px";
+        chevron.textContent = "›";
+
+        left.appendChild(bubble);
+        left.appendChild(text);
+        card.appendChild(left);
+        card.appendChild(chevron);
+
         card.addEventListener("click", () => {
           window.location.hash = `#/report/${encodeURIComponent(brigadeId)}/${encodeURIComponent(report.id)}`;
         });
@@ -98,7 +141,7 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     } catch (err) {
       console.error("Error loading reports:", err);
       list.innerHTML = "";
-      errorEl.textContent = err.message;
+      setAlert(errorEl, err.message);
     } finally {
       hideLoading?.();
     }
@@ -110,7 +153,8 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     select.innerHTML = "";
     if (brigades.length === 0) {
       select.innerHTML = '<option value="">No brigades found</option>';
-      list.innerHTML = '<p class="text-gray-700">You are not a member of any brigades yet.</p>';
+      list.innerHTML =
+        '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
       return;
     }
 
@@ -137,9 +181,8 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     });
   } catch (err) {
     console.error("Failed to load brigades:", err);
-    errorEl.textContent = "Could not load your brigades.";
+    setAlert(errorEl, "Could not load your brigades.");
   } finally {
     hideLoading?.();
   }
 }
-

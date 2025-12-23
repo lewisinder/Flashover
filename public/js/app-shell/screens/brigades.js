@@ -37,25 +37,60 @@ async function loadUserBrigades({ db, uid }) {
 export async function renderBrigades({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto");
-  const card = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-8");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
   const user = auth?.currentUser;
   if (!user) {
-    card.innerHTML = '<p class="text-center text-gray-700">You need to be signed in.</p>';
+    const card = el("div", "fs-card");
+    card.innerHTML =
+      '<div class="fs-card-inner"><div class="fs-card-title">You’re signed out</div><div class="fs-card-subtitle">Please sign in to manage brigades.</div></div>';
     container.appendChild(card);
     root.appendChild(container);
     return;
   }
 
-  const joinTitle = el("h2", "text-2xl font-bold");
-  joinTitle.textContent = "Join a Brigade";
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
 
-  const joinWrap = el("div", "space-y-4");
-  const joinLabel = el("label", "block text-lg font-medium text-gray-700");
+  const statusError = el("div", "fs-alert fs-alert-error");
+  statusError.style.display = "none";
+  const statusSuccess = el("div", "fs-alert fs-alert-success");
+  statusSuccess.style.display = "none";
+
+  // My brigades card
+  const myCard = el("div", "fs-card");
+  const myInner = el("div", "fs-card-inner fs-stack");
+  myInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">My brigades</div>
+      <div class="fs-card-subtitle">Your memberships and roles.</div>
+    </div>
+  `;
+  const myList = el("div", "fs-list");
+  myList.innerHTML =
+    '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching your brigades</div></div></div>';
+  myInner.appendChild(myList);
+  myCard.appendChild(myInner);
+
+  // Join a brigade card
+  const joinCard = el("div", "fs-card");
+  const joinInner = el("div", "fs-card-inner fs-stack");
+  joinInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Join a brigade</div>
+      <div class="fs-card-subtitle">Pick a region, then request to join.</div>
+    </div>
+  `;
+
+  const joinField = el("div", "fs-field");
+  const joinLabel = el("label", "fs-label");
   joinLabel.setAttribute("for", "join-brigade-region-shell");
-  joinLabel.textContent = "Select a Region to Find Brigades";
-  const joinSelect = el("select", "mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300");
+  joinLabel.textContent = "Region";
+
+  const joinSelect = el("select", "fs-select");
   joinSelect.id = "join-brigade-region-shell";
   joinSelect.innerHTML = `<option value="" disabled selected>Select a Region</option>`;
   REGIONS.forEach((r) => {
@@ -65,39 +100,44 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     joinSelect.appendChild(opt);
   });
 
-  const joinList = el("div", "space-y-4");
+  joinField.appendChild(joinLabel);
+  joinField.appendChild(joinSelect);
+
+  const joinList = el("div", "fs-list");
   joinList.id = "join-brigades-list-shell";
+  joinList.innerHTML =
+    '<div class="fs-row"><div><div class="fs-row-title">Choose a region</div><div class="fs-row-meta">Brigades will appear here.</div></div></div>';
 
-  const joinError = el("p", "text-red-action-2 text-center");
-  const joinSuccess = el("p", "text-green-action-1 text-center");
+  const joinCardError = el("div", "fs-alert fs-alert-error");
+  joinCardError.style.display = "none";
 
-  joinWrap.appendChild(joinLabel);
-  joinWrap.appendChild(joinSelect);
-  joinWrap.appendChild(joinList);
-  joinWrap.appendChild(joinError);
-  joinWrap.appendChild(joinSuccess);
+  joinInner.appendChild(joinField);
+  joinInner.appendChild(joinList);
+  joinInner.appendChild(joinCardError);
+  joinCard.appendChild(joinInner);
 
-  const myTitle = el("h2", "text-2xl font-bold");
-  myTitle.textContent = "My Brigades";
-  const myList = el("div", "space-y-4");
-  myList.innerHTML = '<p class="text-gray-600">Loading your brigades...</p>';
+  // Create brigade card
+  const createCard = el("div", "fs-card");
+  const createInner = el("div", "fs-card-inner fs-stack");
+  createInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Create a brigade</div>
+      <div class="fs-card-subtitle">For admins setting up a new station.</div>
+    </div>
+  `;
 
-  const createTitle = el("h2", "text-2xl font-bold");
-  createTitle.textContent = "Create a New Brigade";
-  const createError = el("p", "text-red-action-2 text-center");
+  const createError = el("div", "fs-alert fs-alert-error");
+  createError.style.display = "none";
 
-  const form = el("form", "space-y-4");
+  const form = el("form", "fs-stack");
   form.id = "create-brigade-form-shell";
 
-  const grid = el("div", "grid grid-cols-1 md:grid-cols-2 gap-4");
-  const nameWrap = el("div");
-  const nameLabel = el("label", "block text-lg font-medium text-gray-700");
+  const grid = el("div", "fs-grid");
+  const nameWrap = el("div", "fs-field");
+  const nameLabel = el("label", "fs-label");
   nameLabel.setAttribute("for", "brigade-name-shell");
   nameLabel.textContent = "Name";
-  const nameInput = el(
-    "input",
-    "mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500"
-  );
+  const nameInput = el("input", "fs-input");
   nameInput.id = "brigade-name-shell";
   nameInput.type = "text";
   nameInput.placeholder = "e.g., Titirangi";
@@ -105,14 +145,11 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   nameWrap.appendChild(nameLabel);
   nameWrap.appendChild(nameInput);
 
-  const stationWrap = el("div");
-  const stationLabel = el("label", "block text-lg font-medium text-gray-700");
+  const stationWrap = el("div", "fs-field");
+  const stationLabel = el("label", "fs-label");
   stationLabel.setAttribute("for", "station-number-shell");
   stationLabel.textContent = "Station Number";
-  const stationInput = el(
-    "input",
-    "mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500"
-  );
+  const stationInput = el("input", "fs-input");
   stationInput.id = "station-number-shell";
   stationInput.type = "text";
   stationInput.placeholder = "e.g., 69";
@@ -123,11 +160,11 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   grid.appendChild(nameWrap);
   grid.appendChild(stationWrap);
 
-  const regionWrap = el("div");
-  const regionLabel = el("label", "block text-lg font-medium text-gray-700");
+  const regionWrap = el("div", "fs-field");
+  const regionLabel = el("label", "fs-label");
   regionLabel.setAttribute("for", "brigade-region-shell");
   regionLabel.textContent = "Region";
-  const regionSelect = el("select", "mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300");
+  const regionSelect = el("select", "fs-select");
   regionSelect.id = "brigade-region-shell";
   regionSelect.required = true;
   regionSelect.innerHTML = `<option value="" disabled selected>Select a Region</option>`;
@@ -140,25 +177,24 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   regionWrap.appendChild(regionLabel);
   regionWrap.appendChild(regionSelect);
 
-  const createBtn = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl");
+  const createBtn = el("button", "fs-btn fs-btn-primary");
   createBtn.type = "submit";
-  createBtn.textContent = "Create Brigade";
+  createBtn.textContent = "Create";
 
   form.appendChild(grid);
   form.appendChild(regionWrap);
   form.appendChild(createBtn);
   form.appendChild(createError);
 
-  card.appendChild(joinTitle);
-  card.appendChild(joinWrap);
-  card.appendChild(el("hr", "my-2"));
-  card.appendChild(myTitle);
-  card.appendChild(myList);
-  card.appendChild(el("hr", "my-2"));
-  card.appendChild(createTitle);
-  card.appendChild(form);
+  createInner.appendChild(form);
+  createCard.appendChild(createInner);
 
-  container.appendChild(card);
+  stack.appendChild(statusError);
+  stack.appendChild(statusSuccess);
+  stack.appendChild(myCard);
+  stack.appendChild(joinCard);
+  stack.appendChild(createCard);
+  container.appendChild(stack);
   root.appendChild(container);
 
   async function refreshMyBrigades() {
@@ -168,74 +204,88 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       myList.innerHTML = "";
 
       if (brigades.length === 0) {
-        myList.innerHTML = '<p class="text-gray-700">You are not a member of any brigades yet.</p>';
+        myList.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join one below, or create a new brigade.</div></div></div>';
         return;
       }
 
       brigades.forEach((brigade) => {
         const isAdmin = brigade.role === "Admin";
-        const row = el("div", "bg-gray-100 p-4 rounded-lg flex justify-between items-center");
+        const row = el("div", "fs-row");
 
         const left = el("div");
         left.innerHTML = `
-          <h3 class="text-xl font-bold">${brigade.brigadeName || "Brigade"}</h3>
-          <p class="text-gray-600">Your Role: <span class="font-semibold">${brigade.role || "Member"}</span></p>
+          <div class="fs-row-title">${brigade.brigadeName || "Brigade"}</div>
+          <div class="fs-row-meta">Role: ${brigade.role || "Member"}</div>
         `;
 
-        const actions = el("div", "flex items-center");
+        const actions = el("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.alignItems = "center";
 
-        const manageBtn = el("button", "bg-blue text-white font-semibold py-2 px-4 rounded-lg");
+        const rolePill = el("span", `fs-pill ${isAdmin ? "fs-pill-success" : ""}`);
+        rolePill.textContent = brigade.role || "Member";
+
+        const manageBtn = el("button", "fs-btn fs-btn-secondary");
         manageBtn.type = "button";
         manageBtn.textContent = "Manage";
+        manageBtn.style.width = "auto";
+        manageBtn.style.padding = "8px 10px";
         manageBtn.addEventListener("click", () => {
           window.location.hash = `#/brigade/${encodeURIComponent(brigade.id)}`;
         });
 
-        const leaveBtn = el("button", "ml-2 bg-red-action-1 text-white font-semibold py-2 px-4 rounded-lg");
+        const leaveBtn = el("button", "fs-btn fs-btn-secondary");
         leaveBtn.type = "button";
         leaveBtn.textContent = "Leave";
+        leaveBtn.style.width = "auto";
+        leaveBtn.style.padding = "8px 10px";
         leaveBtn.addEventListener("click", async () => {
           if (!confirm(`Are you sure you want to leave the brigade "${brigade.brigadeName}"?`)) return;
-          joinError.textContent = "";
-          joinSuccess.textContent = "";
+          setAlert(statusError, "");
+          setAlert(statusSuccess, "");
           showLoading?.();
           try {
             const token = await user.getIdToken();
             const result = await fetchJson(`/api/brigades/${brigade.id}/leave`, { token, method: "POST" });
-            joinSuccess.textContent = result.message || "Left brigade.";
+            setAlert(statusSuccess, result.message || "Left brigade.");
             await refreshMyBrigades();
           } catch (err) {
             console.error("Error leaving brigade:", err);
-            joinError.textContent = err.message;
+            setAlert(statusError, err.message);
           } finally {
             hideLoading?.();
           }
         });
 
+        actions.appendChild(rolePill);
         actions.appendChild(manageBtn);
         actions.appendChild(leaveBtn);
 
         if (isAdmin) {
-          const delBtn = el("button", "ml-2 bg-red-action-2 p-2 rounded-full");
+          const delBtn = el("button", "fs-btn fs-btn-danger");
           delBtn.type = "button";
-          delBtn.innerHTML = `<img src="/design_assets/No Icon.png" alt="Delete Brigade" class="h-6 w-6">`;
+          delBtn.textContent = "Delete";
+          delBtn.style.width = "auto";
+          delBtn.style.padding = "8px 10px";
           delBtn.addEventListener("click", async () => {
             const name = brigade.brigadeName || brigade.id;
             if (!confirm(`Are you sure you want to delete the brigade "${name}"? This will remove all members and cannot be undone.`)) {
               return;
             }
             if (!confirm(`Final warning: Deleting "${name}" is permanent. Are you sure?`)) return;
-            joinError.textContent = "";
-            joinSuccess.textContent = "";
+            setAlert(statusError, "");
+            setAlert(statusSuccess, "");
             showLoading?.();
             try {
               const token = await user.getIdToken();
               const result = await fetchJson(`/api/brigades/${brigade.id}`, { token, method: "DELETE" });
-              joinSuccess.textContent = result.message || "Deleted brigade.";
+              setAlert(statusSuccess, result.message || "Deleted brigade.");
               await refreshMyBrigades();
             } catch (err) {
               console.error("Error deleting brigade:", err);
-              joinError.textContent = err.message;
+              setAlert(statusError, err.message);
             } finally {
               hideLoading?.();
             }
@@ -259,19 +309,19 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   async function requestToJoin(brigadeId, buttonEl) {
     buttonEl.disabled = true;
     buttonEl.textContent = "Requesting...";
-    joinError.textContent = "";
-    joinSuccess.textContent = "";
+    setAlert(joinCardError, "");
     showLoading?.();
     try {
       const token = await user.getIdToken();
       const result = await fetchJson(`/api/brigades/${brigadeId}/join-requests`, { token, method: "POST" });
-      joinSuccess.textContent = result.message || "Request sent.";
-      buttonEl.textContent = "Request Sent";
-      buttonEl.classList.remove("bg-green-action-1");
-      buttonEl.classList.add("bg-gray-400");
+      setAlert(statusSuccess, result.message || "Request sent.");
+      buttonEl.textContent = "Requested";
+      buttonEl.className = "fs-btn fs-btn-secondary";
+      buttonEl.style.width = "auto";
+      buttonEl.style.padding = "8px 10px";
     } catch (err) {
       console.error("Error sending join request:", err);
-      joinError.textContent = err.message;
+      setAlert(joinCardError, err.message);
       buttonEl.disabled = false;
       buttonEl.textContent = "Request to Join";
     } finally {
@@ -283,9 +333,9 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     const region = e.target.value;
     if (!region) return;
 
-    joinList.innerHTML = "<p>Loading brigades in this region...</p>";
-    joinError.textContent = "";
-    joinSuccess.textContent = "";
+    joinList.innerHTML =
+      '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching brigades in this region</div></div></div>';
+    setAlert(joinCardError, "");
     showLoading?.();
 
     try {
@@ -294,17 +344,23 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       joinList.innerHTML = "";
 
       if (!Array.isArray(brigades) || brigades.length === 0) {
-        joinList.innerHTML = "<p>No brigades found in this region.</p>";
+        joinList.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No brigades found</div><div class="fs-row-meta">Try another region.</div></div></div>';
         return;
       }
 
       brigades.forEach((brigade) => {
-        const row = el("div", "bg-gray-100 p-4 rounded-lg flex justify-between items-center");
+        const row = el("div", "fs-row");
         const left = el("div");
-        left.innerHTML = `<h3 class="text-xl font-bold">${brigade.name} (${brigade.stationNumber})</h3>`;
-        const btn = el("button", "bg-green-action-1 text-white font-semibold py-2 px-4 rounded-lg");
+        left.innerHTML = `
+          <div class="fs-row-title">${brigade.name} (${brigade.stationNumber})</div>
+          <div class="fs-row-meta">Region: ${brigade.region || ""}</div>
+        `;
+        const btn = el("button", "fs-btn fs-btn-primary");
         btn.type = "button";
         btn.textContent = "Request to Join";
+        btn.style.width = "auto";
+        btn.style.padding = "8px 10px";
         btn.addEventListener("click", () => requestToJoin(brigade.id, btn));
         row.appendChild(left);
         row.appendChild(btn);
@@ -313,7 +369,7 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     } catch (err) {
       console.error("Error fetching regional brigades:", err);
       joinList.innerHTML = "";
-      joinError.textContent = err.message;
+      setAlert(joinCardError, err.message);
     } finally {
       hideLoading?.();
     }
@@ -321,9 +377,9 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    createError.textContent = "";
-    joinError.textContent = "";
-    joinSuccess.textContent = "";
+    setAlert(createError, "");
+    setAlert(statusError, "");
+    setAlert(statusSuccess, "");
 
     createBtn.disabled = true;
     createBtn.textContent = "Creating...";
@@ -344,14 +400,15 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       });
 
       console.log(result.message || "Brigade created.");
+      setAlert(statusSuccess, result.message || "Brigade created.");
       form.reset();
       await refreshMyBrigades();
     } catch (err) {
       console.error("Error creating brigade:", err);
-      createError.textContent = err.message;
+      setAlert(createError, err.message);
     } finally {
       createBtn.disabled = false;
-      createBtn.textContent = "Create Brigade";
+      createBtn.textContent = "Create";
       hideLoading?.();
     }
   });

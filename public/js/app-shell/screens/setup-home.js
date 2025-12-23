@@ -27,86 +27,128 @@ async function loadUserBrigades({ db, uid }) {
 export async function renderSetupHome({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto space-y-6");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const topCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
-  const label = el("label", "block text-lg font-medium text-gray-700 mb-2 text-center");
+  const topCard = el("div", "fs-card");
+  const topInner = el("div", "fs-card-inner fs-stack");
+  topInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Appliance setup</div>
+      <div class="fs-card-subtitle">Admins can create and edit appliances for a brigade.</div>
+    </div>
+  `;
+
+  const field = el("div", "fs-field");
+  const label = el("label", "fs-label");
   label.setAttribute("for", "brigade-selector-setup-shell");
-  label.textContent = "Select Brigade";
-  const select = el(
-    "select",
-    "w-full bg-white rounded-lg py-3 px-4 border border-gray-300 text-center appearance-none text-lg"
-  );
+  label.textContent = "Brigade";
+  const select = el("select", "fs-select");
   select.id = "brigade-selector-setup-shell";
-  select.innerHTML = '<option value="">Loading brigades...</option>';
-  const errorEl = el("p", "text-red-action-2 text-center");
-  const adminHintEl = el("p", "text-gray-600 text-center text-sm");
+  select.innerHTML = '<option value="">Loading…</option>';
+  field.appendChild(label);
+  field.appendChild(select);
 
-  topCard.appendChild(label);
-  topCard.appendChild(select);
-  topCard.appendChild(errorEl);
-  topCard.appendChild(adminHintEl);
+  const errorEl = el("div", "fs-alert fs-alert-error");
+  errorEl.style.display = "none";
+  const adminHintEl = el("div", "fs-alert");
+  adminHintEl.style.display = "none";
 
-  const listCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
-  const title = el("h2", "text-2xl font-bold");
-  title.textContent = "Appliances";
-  const list = el("div", "space-y-4");
-  list.innerHTML = '<p class="text-gray-600 text-center">Select a brigade to load appliances.</p>';
+  topInner.appendChild(field);
+  topInner.appendChild(errorEl);
+  topInner.appendChild(adminHintEl);
+  topCard.appendChild(topInner);
 
-  const createBtn = el("button", "w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg shadow-lg");
+  const listCard = el("div", "fs-card");
+  const listInner = el("div", "fs-card-inner fs-stack");
+  listInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Appliances</div>
+      <div class="fs-card-subtitle">Tap an appliance to edit its lockers and items.</div>
+    </div>
+  `;
+  const list = el("div", "fs-list");
+  list.innerHTML =
+    '<div class="fs-row"><div><div class="fs-row-title">Select a brigade</div><div class="fs-row-meta">Appliances will appear here.</div></div></div>';
+
+  const createBtn = el("button", "fs-btn fs-btn-primary");
   createBtn.type = "button";
-  createBtn.textContent = "+ Create New Appliance";
+  createBtn.textContent = "Create appliance";
 
-  listCard.appendChild(title);
-  listCard.appendChild(list);
-  listCard.appendChild(createBtn);
+  listInner.appendChild(list);
+  listInner.appendChild(createBtn);
+  listCard.appendChild(listInner);
 
-  container.appendChild(topCard);
-  container.appendChild(listCard);
+  stack.appendChild(topCard);
+  stack.appendChild(listCard);
+  container.appendChild(stack);
   root.appendChild(container);
 
   const applianceModal = el("div", "fixed inset-0 w-full h-full flex items-center justify-center hidden");
   applianceModal.style.backgroundColor = "rgba(0,0,0,0.6)";
   applianceModal.style.backdropFilter = "blur(4px)";
-  const modalCard = el("div", "bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl");
-  const modalTitle = el("h3", "text-xl font-bold mb-4");
-  const nameInput = el("input", "w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500");
+  const modalCard = el("div", "fs-card");
+  modalCard.style.width = "92%";
+  modalCard.style.maxWidth = "420px";
+  const modalInner = el("div", "fs-card-inner fs-stack");
+  const modalTitle = el("div", "fs-card-title");
+  const nameInput = el("input", "fs-input");
   nameInput.type = "text";
   nameInput.placeholder = "eg RAV281";
-  const modalBtnRow = el("div", "flex justify-end mt-6");
-  const cancelBtn = el("button", "bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2");
+  const modalBtnRow = el("div");
+  modalBtnRow.style.display = "flex";
+  modalBtnRow.style.justifyContent = "flex-end";
+  modalBtnRow.style.gap = "8px";
+  const cancelBtn = el("button", "fs-btn fs-btn-secondary");
   cancelBtn.type = "button";
   cancelBtn.textContent = "Cancel";
-  const saveBtn = el("button", "bg-blue text-white font-bold py-2 px-4 rounded-lg");
+  cancelBtn.style.width = "auto";
+  cancelBtn.style.padding = "8px 10px";
+  const saveBtn = el("button", "fs-btn fs-btn-primary");
   saveBtn.type = "button";
   saveBtn.textContent = "Create";
+  saveBtn.style.width = "auto";
+  saveBtn.style.padding = "8px 10px";
   modalBtnRow.appendChild(cancelBtn);
   modalBtnRow.appendChild(saveBtn);
-  modalCard.appendChild(modalTitle);
-  modalCard.appendChild(nameInput);
-  modalCard.appendChild(modalBtnRow);
+  modalInner.appendChild(modalTitle);
+  modalInner.appendChild(nameInput);
+  modalInner.appendChild(modalBtnRow);
+  modalCard.appendChild(modalInner);
   applianceModal.appendChild(modalCard);
   root.appendChild(applianceModal);
 
   const deleteModal = el("div", "fixed inset-0 w-full h-full flex items-center justify-center hidden");
   deleteModal.style.backgroundColor = "rgba(0,0,0,0.6)";
   deleteModal.style.backdropFilter = "blur(4px)";
-  const deleteCard = el("div", "bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl");
-  const deleteTitle = el("h3", "text-xl font-bold mb-2");
+  const deleteCard = el("div", "fs-card");
+  deleteCard.style.width = "92%";
+  deleteCard.style.maxWidth = "420px";
+  const deleteInner = el("div", "fs-card-inner fs-stack");
+  const deleteTitle = el("div", "fs-card-title");
   deleteTitle.textContent = "Are you sure?";
-  const deleteText = el("p", "text-gray-600 mb-6");
-  const deleteBtnRow = el("div", "flex justify-end");
-  const deleteCancel = el("button", "bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2");
+  const deleteText = el("p");
+  deleteText.style.color = "var(--fs-muted)";
+  const deleteBtnRow = el("div");
+  deleteBtnRow.style.display = "flex";
+  deleteBtnRow.style.justifyContent = "flex-end";
+  deleteBtnRow.style.gap = "8px";
+  const deleteCancel = el("button", "fs-btn fs-btn-secondary");
   deleteCancel.type = "button";
   deleteCancel.textContent = "Cancel";
-  const deleteConfirm = el("button", "bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg");
+  deleteCancel.style.width = "auto";
+  deleteCancel.style.padding = "8px 10px";
+  const deleteConfirm = el("button", "fs-btn fs-btn-danger");
   deleteConfirm.type = "button";
   deleteConfirm.textContent = "Delete";
+  deleteConfirm.style.width = "auto";
+  deleteConfirm.style.padding = "8px 10px";
   deleteBtnRow.appendChild(deleteCancel);
   deleteBtnRow.appendChild(deleteConfirm);
-  deleteCard.appendChild(deleteTitle);
-  deleteCard.appendChild(deleteText);
-  deleteCard.appendChild(deleteBtnRow);
+  deleteInner.appendChild(deleteTitle);
+  deleteInner.appendChild(deleteText);
+  deleteInner.appendChild(deleteBtnRow);
+  deleteCard.appendChild(deleteInner);
   deleteModal.appendChild(deleteCard);
   root.appendChild(deleteModal);
 
@@ -116,13 +158,16 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   let deletingApplianceId = null;
   let canEdit = true;
 
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
+
   function updateAdminUi(brigadeId) {
     const role = String((brigadeMetaById.get(brigadeId) || {}).role || "").toLowerCase();
     canEdit = role === "admin";
-    adminHintEl.textContent = canEdit ? "" : "Only Admins can edit appliance setup.";
+    setAlert(adminHintEl, canEdit ? "" : "Admins only: you don’t have permission to edit appliance setup.");
     createBtn.disabled = !canEdit;
-    createBtn.classList.toggle("opacity-50", !canEdit);
-    createBtn.classList.toggle("cursor-not-allowed", !canEdit);
     createBtn.title = canEdit ? "" : "Admins only";
   }
 
@@ -161,25 +206,40 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     list.innerHTML = "";
     const appliances = Array.isArray(truckData?.appliances) ? truckData.appliances : [];
     if (appliances.length === 0) {
-      list.innerHTML = '<p class="text-center text-gray-500">No appliances configured for this brigade.</p>';
+      list.innerHTML =
+        '<div class="fs-row"><div><div class="fs-row-title">No appliances yet</div><div class="fs-row-meta">Create one to start setting up lockers.</div></div></div>';
       return;
     }
 
     appliances.forEach((appliance) => {
-      const row = el(
-        "div",
-        "bg-gray-100 p-4 rounded-lg flex items-center justify-between shadow-md cursor-pointer hover:bg-gray-200"
-      );
-      const left = el("div", "flex items-center");
-      left.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="Truck" class="h-10 w-10 mr-4"><h3 class="text-xl font-bold">${appliance.name}</h3>`;
+      const row = el("div", "fs-row");
+      row.style.cursor = "pointer";
+      const left = el("div");
+      left.style.display = "flex";
+      left.style.alignItems = "center";
+      left.style.gap = "12px";
+      const bubble = el("div", "fs-icon-bubble");
+      bubble.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="" />`;
+      const text = el("div");
+      text.innerHTML = `<div class="fs-row-title">${appliance.name}</div><div class="fs-row-meta">Edit lockers & items</div>`;
+      left.appendChild(bubble);
+      left.appendChild(text);
 
-      const actions = el("div", "flex items-center gap-2");
-      const edit = el("button", "p-2");
+      const actions = el("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.alignItems = "center";
+
+      const edit = el("button", "fs-btn fs-btn-secondary");
       edit.type = "button";
-      edit.innerHTML = '<img src="/design_assets/black pencil icon.png" class="h-6 w-6" alt="Edit">';
-      const del = el("button", "p-2");
+      edit.textContent = "Edit";
+      edit.style.width = "auto";
+      edit.style.padding = "8px 10px";
+      const del = el("button", "fs-btn fs-btn-danger");
       del.type = "button";
-      del.innerHTML = '<img src="/design_assets/No Icon.png" class="h-8 w-8" alt="Delete">';
+      del.textContent = "Delete";
+      del.style.width = "auto";
+      del.style.padding = "8px 10px";
 
       actions.appendChild(edit);
       actions.appendChild(del);
@@ -218,8 +278,9 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   async function loadBrigadeData(brigadeId) {
-    errorEl.textContent = "";
-    list.innerHTML = '<p class="text-gray-600 text-center">Loading appliances…</p>';
+    setAlert(errorEl, "");
+    list.innerHTML =
+      '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching appliances</div></div></div>';
     showLoading?.();
     try {
       const token = await auth.currentUser.getIdToken();
@@ -229,7 +290,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     } catch (err) {
       console.error("Error loading brigade data (setup):", err);
       list.innerHTML = "";
-      errorEl.textContent = err.message;
+      setAlert(errorEl, err.message);
     } finally {
       hideLoading?.();
     }
@@ -297,7 +358,8 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     select.innerHTML = "";
     if (brigades.length === 0) {
       select.innerHTML = '<option value="">No brigades found</option>';
-      list.innerHTML = '<p class="text-gray-700">You are not a member of any brigades yet.</p>';
+      list.innerHTML =
+        '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
       return;
     }
 
@@ -327,7 +389,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     });
   } catch (err) {
     console.error("Failed to load brigades (setup):", err);
-    errorEl.textContent = "Could not load your brigades.";
+    setAlert(errorEl, "Could not load your brigades.");
   } finally {
     hideLoading?.();
   }

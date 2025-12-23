@@ -32,28 +32,54 @@ const statusIcons = {
 
 function renderItem(item, { isSubItem }) {
   const status = (item.status || "").toLowerCase();
-  const iconSrc = statusIcons[status] || "/design_assets/No Icon.png";
+  const iconSrc = statusIcons[status] || "/design_assets/Note Icon.png";
 
-  const wrap = el("div", isSubItem ? "ml-6" : "");
-  const row = el("div", "bg-white p-3 rounded-lg shadow-sm flex items-center");
-  const img = el("img");
-  img.src = iconSrc;
-  img.alt = status || "status";
-  img.className = "h-6 w-6 mr-3";
-  const name = el("span", "font-semibold");
-  name.textContent = item.name || "Item";
-  row.appendChild(img);
-  row.appendChild(name);
+  const wrap = el("div");
+  if (isSubItem) {
+    wrap.style.marginLeft = "18px";
+    wrap.style.paddingLeft = "12px";
+    wrap.style.borderLeft = "2px solid rgba(15, 23, 42, 0.10)";
+  }
+
+  const row = el("div", "fs-row");
+  const left = el("div");
+  left.style.display = "flex";
+  left.style.alignItems = "center";
+  left.style.gap = "12px";
+
+  const bubble = el("div", "fs-icon-bubble");
+  bubble.innerHTML = `<img src="${iconSrc}" alt="" />`;
+
+  const text = el("div");
+  text.innerHTML = `<div class="fs-row-title">${item.name || "Item"}</div>`;
+
+  const pill = el("span", "fs-pill");
+  const statusLabel = status ? status[0].toUpperCase() + status.slice(1) : "Unknown";
+  pill.textContent = statusLabel;
+  if (status === "present") pill.classList.add("fs-pill-success");
+  else if (status === "missing" || status === "defect") pill.classList.add("fs-pill-danger");
+  else pill.classList.add("fs-pill-warn");
+
+  left.appendChild(bubble);
+  left.appendChild(text);
+  row.appendChild(left);
+  row.appendChild(pill);
   wrap.appendChild(row);
 
   if (item.note) {
-    const note = el("div", "text-sm text-gray-600 italic pl-10 py-1");
-    note.textContent = `Note: ${item.note}`;
+    const note = el("div", "fs-row-meta");
+    note.style.marginLeft = isSubItem ? "56px" : "56px";
+    note.style.padding = "6px 0 0";
+    note.textContent = item.note;
     wrap.appendChild(note);
   }
 
   if (item.type === "container" && Array.isArray(item.subItems) && item.subItems.length > 0) {
-    const subWrap = el("div", "mt-2 space-y-2");
+    const subWrap = el("div");
+    subWrap.style.marginTop = "10px";
+    subWrap.style.display = "flex";
+    subWrap.style.flexDirection = "column";
+    subWrap.style.gap = "10px";
     item.subItems.forEach((sub) => {
       subWrap.appendChild(renderItem(sub, { isSubItem: true }));
     });
@@ -74,38 +100,46 @@ export async function renderReport({
 }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto space-y-4");
-  const card = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-6");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const errorEl = el("p", "text-red-action-2 text-center");
+  const errorEl = el("div", "fs-alert fs-alert-error");
+  errorEl.style.display = "none";
 
-  const meta = el("div", "bg-gray-100 p-3 rounded-lg shadow space-y-1");
-  const metaTitle = el("h3", "text-lg font-bold text-gray-800");
-  metaTitle.textContent = "Report Details";
-  const metaBy = el("p");
-  const metaDate = el("p");
-  meta.appendChild(metaTitle);
-  meta.appendChild(metaBy);
-  meta.appendChild(metaDate);
+  const metaCard = el("div", "fs-card");
+  const metaInner = el("div", "fs-card-inner fs-stack");
+  const metaTitle = el("div");
+  metaTitle.innerHTML = `<div class="fs-card-title">Report details</div><div class="fs-card-subtitle">Who completed this check and when.</div>`;
+  const metaBy = el("div", "fs-row-meta");
+  const metaDate = el("div", "fs-row-meta");
+  metaInner.appendChild(metaTitle);
+  metaInner.appendChild(metaBy);
+  metaInner.appendChild(metaDate);
+  metaCard.appendChild(metaInner);
 
-  const content = el("div", "space-y-4");
+  const content = el("div", "fs-stack");
 
-  const closeBtn = el("button", "w-full bg-red-action-2 text-white font-bold py-3 px-4 rounded-lg");
+  const closeBtn = el("button", "fs-btn fs-btn-secondary");
   closeBtn.type = "button";
-  closeBtn.textContent = "Back to Reports";
+  closeBtn.textContent = "Back to reports";
   closeBtn.addEventListener("click", () => {
     window.location.hash = "#/reports";
   });
 
-  card.appendChild(errorEl);
-  card.appendChild(meta);
-  card.appendChild(content);
-  card.appendChild(closeBtn);
-  container.appendChild(card);
+  stack.appendChild(errorEl);
+  stack.appendChild(metaCard);
+  stack.appendChild(content);
+  stack.appendChild(closeBtn);
+  container.appendChild(stack);
   root.appendChild(container);
 
   const user = auth?.currentUser;
   if (!user) return;
+
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
 
   showLoading?.();
   try {
@@ -118,35 +152,40 @@ export async function renderReport({
     const title = `Report for ${report.applianceName || "Appliance"}`;
     setTitle?.(title);
 
-    metaBy.innerHTML = `<strong>Checked by:</strong> ${report.username || report.creatorName || "Unknown"}`;
-    metaDate.innerHTML = `<strong>Date:</strong> ${report.date ? new Date(report.date).toLocaleString() : ""}`;
+    metaBy.textContent = `Checked by: ${report.username || report.creatorName || "Unknown"}`;
+    metaDate.textContent = `Date: ${report.date ? new Date(report.date).toLocaleString() : ""}`;
 
     content.innerHTML = "";
 
     if (Array.isArray(report.lockers) && report.lockers.length > 0) {
       report.lockers.forEach((locker) => {
-        const section = el("div", "bg-blue p-4 rounded-xl shadow-lg space-y-3");
-        const h = el("h4", "text-white text-center text-xl font-bold uppercase");
-        h.textContent = locker.name || "Locker";
-        section.appendChild(h);
+        const section = el("div", "fs-card");
+        const inner = el("div", "fs-card-inner fs-stack");
+        inner.innerHTML = `
+          <div>
+            <div class="fs-card-title">${locker.name || "Locker"}</div>
+            <div class="fs-card-subtitle">Items in order (including containers).</div>
+          </div>
+        `;
 
-        const itemsWrap = el("div", "space-y-3");
+        const itemsWrap = el("div", "fs-stack");
         (locker.shelves || []).forEach((shelf) => {
           (shelf.items || []).forEach((item) => {
             itemsWrap.appendChild(renderItem(item, { isSubItem: false }));
           });
         });
-        section.appendChild(itemsWrap);
+        inner.appendChild(itemsWrap);
+        section.appendChild(inner);
         content.appendChild(section);
       });
     } else {
-      content.innerHTML = "<p>This report contains no locker data.</p>";
+      content.innerHTML =
+        '<div class="fs-card"><div class="fs-card-inner"><div class="fs-card-title">No locker data</div><div class="fs-card-subtitle">This report didn’t include any lockers.</div></div></div>';
     }
   } catch (err) {
     console.error("Error loading report details:", err);
-    errorEl.textContent = err.message;
+    setAlert(errorEl, err.message);
   } finally {
     hideLoading?.();
   }
 }
-

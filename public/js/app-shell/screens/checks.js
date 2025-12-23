@@ -35,36 +35,41 @@ function clearCheckSession() {
 export async function renderChecks({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto space-y-6");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const topCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
+  const topCard = el("div", "fs-card");
+  const topInner = el("div", "fs-card-inner fs-stack");
+  topInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Pick a brigade</div>
+      <div class="fs-card-subtitle">Checks and setup are tied to your active brigade.</div>
+    </div>
+  `;
 
-  const selectorWrap = el("div", "w-full");
-  const label = el("label", "block text-lg font-medium text-gray-700 mb-2 text-center");
-  label.textContent = "Select Brigade";
+  const selectorWrap = el("div", "fs-field");
+  const label = el("label", "fs-label");
+  label.textContent = "Brigade";
   label.setAttribute("for", "brigade-selector-checks-shell");
 
-  const select = el(
-    "select",
-    "w-full bg-white rounded-lg py-3 px-4 border border-gray-300 text-center appearance-none text-lg"
-  );
+  const select = el("select", "fs-select");
   select.id = "brigade-selector-checks-shell";
-  select.innerHTML = '<option value="">Loading brigades...</option>';
+  select.innerHTML = '<option value="">Loading…</option>';
   selectorWrap.appendChild(label);
   selectorWrap.appendChild(select);
 
-  const helperRow = el("div", "grid grid-cols-1 sm:grid-cols-2 gap-3");
+  const helperRow = el("div", "fs-grid");
 
-  const btnSetup = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg");
+  const btnSetup = el("button", "fs-btn fs-btn-secondary");
   btnSetup.type = "button";
-  btnSetup.innerHTML = `<span>Set Up Appliances</span>`;
+  btnSetup.innerHTML = `<span>Appliance setup</span>`;
   btnSetup.addEventListener("click", () => {
     window.location.hash = "#/setup";
   });
 
-  const btnReports = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg");
+  const btnReports = el("button", "fs-btn fs-btn-secondary");
   btnReports.type = "button";
-  btnReports.innerHTML = `<span>View Past Reports</span>`;
+  btnReports.innerHTML = `<span>View reports</span>`;
   btnReports.addEventListener("click", () => {
     window.location.hash = "#/reports";
   });
@@ -72,24 +77,33 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   helperRow.appendChild(btnSetup);
   helperRow.appendChild(btnReports);
 
-  const errorEl = el("p", "text-red-action-2 text-center");
-  const successEl = el("p", "text-green-action-1 text-center");
+  const errorEl = el("div", "fs-alert fs-alert-error");
+  errorEl.style.display = "none";
+  const successEl = el("div", "fs-alert fs-alert-success");
+  successEl.style.display = "none";
 
-  topCard.appendChild(selectorWrap);
-  topCard.appendChild(helperRow);
-  topCard.appendChild(errorEl);
-  topCard.appendChild(successEl);
+  topInner.appendChild(selectorWrap);
+  topInner.appendChild(helperRow);
+  topInner.appendChild(errorEl);
+  topInner.appendChild(successEl);
+  topCard.appendChild(topInner);
 
-  const listCard = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-4");
-  const listTitle = el("h2", "text-2xl font-bold");
-  listTitle.textContent = "Choose Appliance";
-  const applianceList = el("div", "space-y-4");
-  applianceList.innerHTML = '<p class="text-gray-600 text-center">Select a brigade to load appliances.</p>';
-  listCard.appendChild(listTitle);
-  listCard.appendChild(applianceList);
+  const listCard = el("div", "fs-card");
+  const listInner = el("div", "fs-card-inner fs-stack");
+  listInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Choose an appliance</div>
+      <div class="fs-card-subtitle">Tap an appliance to start a new check.</div>
+    </div>
+  `;
+  const applianceList = el("div", "fs-list");
+  applianceList.innerHTML = '<div class="fs-row"><div><div class="fs-row-title">Select a brigade</div><div class="fs-row-meta">Appliances will appear here.</div></div></div>';
+  listInner.appendChild(applianceList);
+  listCard.appendChild(listInner);
 
-  container.appendChild(topCard);
-  container.appendChild(listCard);
+  stack.appendChild(topCard);
+  stack.appendChild(listCard);
+  container.appendChild(stack);
 
   // Modal for check in progress
   const modalOverlay = el(
@@ -100,31 +114,35 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   modalOverlay.style.backdropFilter = "blur(4px)";
   modalOverlay.style.zIndex = "50";
 
-  const modal = el("div", "bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center");
-  const modalTitle = el("h3", "text-xl font-bold mb-4");
+  const modal = el("div", "fs-card");
+  modal.style.width = "92%";
+  modal.style.maxWidth = "420px";
+  const modalInner = el("div", "fs-card-inner fs-stack");
+  modalInner.style.textAlign = "center";
+
+  const modalTitle = el("div", "fs-card-title");
   modalTitle.textContent = "Check Already in Progress";
-  const modalText = el("p", "text-gray-600 mb-6");
-  const resumeBtn = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg");
+  const modalText = el("p");
+  modalText.style.color = "var(--fs-muted)";
+  const resumeBtn = el("button", "fs-btn fs-btn-primary");
   resumeBtn.type = "button";
   resumeBtn.textContent = "Resume Check";
-  const startNewBtn = el("button", "w-full bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg");
+  const startNewBtn = el("button", "fs-btn fs-btn-danger");
   startNewBtn.type = "button";
   startNewBtn.textContent = "Start New Check";
-  const cancelBtn = el(
-    "button",
-    "w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-2"
-  );
+  const cancelBtn = el("button", "fs-btn fs-btn-secondary");
   cancelBtn.type = "button";
   cancelBtn.textContent = "Cancel";
 
-  const modalButtons = el("div", "flex flex-col space-y-3");
+  const modalButtons = el("div", "fs-stack");
   modalButtons.appendChild(resumeBtn);
   modalButtons.appendChild(startNewBtn);
   modalButtons.appendChild(cancelBtn);
 
-  modal.appendChild(modalTitle);
-  modal.appendChild(modalText);
-  modal.appendChild(modalButtons);
+  modalInner.appendChild(modalTitle);
+  modalInner.appendChild(modalText);
+  modalInner.appendChild(modalButtons);
+  modal.appendChild(modalInner);
   modalOverlay.appendChild(modal);
 
   root.appendChild(container);
@@ -136,20 +154,23 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   if (!user) return;
 
   let brigadeMetaById = new Map();
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
   function updateSetupButton(brigadeId) {
     const meta = brigadeMetaById.get(brigadeId) || {};
     const role = String(meta.role || "").toLowerCase();
     const isAdmin = role === "admin";
     btnSetup.disabled = !isAdmin;
-    btnSetup.classList.toggle("opacity-50", !isAdmin);
-    btnSetup.classList.toggle("cursor-not-allowed", !isAdmin);
     btnSetup.title = isAdmin ? "" : "Admins only";
   }
 
   async function loadAppliancesForBrigade(brigadeId) {
-    errorEl.textContent = "";
-    successEl.textContent = "";
-    applianceList.innerHTML = '<p class="text-gray-600 text-center">Loading appliances…</p>';
+    setAlert(errorEl, "");
+    setAlert(successEl, "");
+    applianceList.innerHTML =
+      '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching appliances</div></div></div>';
     showLoading?.();
     try {
       const token = await user.getIdToken();
@@ -160,28 +181,43 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
 
       if (appliances.length === 0) {
         applianceList.innerHTML =
-          '<p class="text-center text-gray-500">No appliances configured for this brigade. Please set one up first.</p>';
+          '<div class="fs-row"><div><div class="fs-row-title">No appliances yet</div><div class="fs-row-meta">Admins can add appliances from Appliance setup.</div></div></div>';
         return;
       }
 
       appliances.forEach((appliance) => {
-        const row = el(
-          "div",
-          "bg-gray-100 p-4 rounded-lg flex items-center justify-between shadow-md cursor-pointer hover:bg-gray-200"
-        );
+        const row = el("button", "fs-row");
+        row.type = "button";
 
-        const left = el("div", "flex items-center");
-        left.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="Truck" class="h-10 w-10 mr-4"><h3 class="text-xl font-bold">${appliance.name}</h3>`;
+        const left = el("div");
+        left.style.display = "flex";
+        left.style.alignItems = "center";
+        left.style.gap = "12px";
 
-        const right = el("div", "text-right text-sm text-gray-600");
-        right.textContent = "";
+        const bubble = el("div", "fs-icon-bubble");
+        bubble.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="" />`;
+
+        const text = el("div");
+        text.innerHTML = `
+          <div class="fs-row-title">${appliance.name}</div>
+          <div class="fs-row-meta">Tap to start</div>
+        `;
+
+        left.appendChild(bubble);
+        left.appendChild(text);
+
+        const chevron = el("div");
+        chevron.style.color = "var(--fs-muted)";
+        chevron.style.fontWeight = "900";
+        chevron.style.fontSize = "18px";
+        chevron.textContent = "›";
 
         row.appendChild(left);
-        row.appendChild(right);
+        row.appendChild(chevron);
 
         row.addEventListener("click", async () => {
-          errorEl.textContent = "";
-          successEl.textContent = "";
+          setAlert(errorEl, "");
+          setAlert(successEl, "");
           showLoading?.();
           try {
             const token = await user.getIdToken();
@@ -229,7 +265,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
             openCheckForm();
           } catch (err) {
             console.error("Error starting check:", err);
-            errorEl.textContent = err.message;
+            setAlert(errorEl, err.message);
           } finally {
             hideLoading?.();
           }
@@ -240,7 +276,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
     } catch (err) {
       console.error("Failed to load appliance data:", err);
       applianceList.innerHTML = "";
-      errorEl.textContent = err.message;
+      setAlert(errorEl, err.message);
     } finally {
       hideLoading?.();
     }
@@ -254,7 +290,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
     if (brigades.length === 0) {
       select.innerHTML = '<option value="">No brigades found</option>';
       applianceList.innerHTML =
-        '<p class="text-center text-gray-500">You are not a member of any brigades yet.</p>';
+        '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
       return;
     }
 
@@ -283,7 +319,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
     });
   } catch (err) {
     console.error("Failed to load brigades:", err);
-    errorEl.textContent = "Could not load your brigades.";
+    setAlert(errorEl, "Could not load your brigades.");
   } finally {
     hideLoading?.();
   }

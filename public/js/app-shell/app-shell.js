@@ -7,6 +7,7 @@ import { renderBrigade } from "./screens/brigade.js";
 import { renderCheck } from "./screens/check.js";
 import { renderReports } from "./screens/reports.js";
 import { renderReport } from "./screens/report.js";
+import { renderAccount } from "./screens/account.js";
 import { renderSetupHome } from "./screens/setup-home.js";
 import { renderSetupEditor } from "./screens/setup-editor.js";
 
@@ -14,9 +15,9 @@ const appRoot = document.getElementById("app-root");
 const titleEl = document.getElementById("app-title");
 const backBtn = document.getElementById("app-back-btn");
 const logoutBtn = document.getElementById("app-logout-btn");
+const tabbar = document.getElementById("app-tabbar");
 const loadingOverlay = document.getElementById("loading-overlay");
 const shellHeader = document.querySelector("body > header");
-const shellFooter = document.querySelector("body > footer");
 
 function showLoading() {
   if (loadingOverlay) loadingOverlay.style.display = "flex";
@@ -28,7 +29,7 @@ function hideLoading() {
 
 function setShellChromeVisible(visible) {
   shellHeader?.classList.toggle("hidden", !visible);
-  shellFooter?.classList.toggle("hidden", !visible);
+  tabbar?.classList.toggle("hidden", !visible);
 }
 
 function setHeader({ title, showBack, showLogout }) {
@@ -61,6 +62,33 @@ requireEl(backBtn, "app-back-btn");
 requireEl(logoutBtn, "app-logout-btn");
 
 const { auth, db } = initFirebase();
+
+function getActiveTabRoute(route) {
+  if (route.startsWith("/brigade/") || route === "/brigades") return "#/brigades";
+  if (route.startsWith("/report/") || route === "/reports") return "#/reports";
+  if (route.startsWith("/check/") || route === "/checks") return "#/checks";
+  if (route === "/setup" || route.startsWith("/setup/")) return "#/checks";
+  if (route === "/account") return "#/account";
+  return "#/menu";
+}
+
+function setTabbarActive(route) {
+  if (!tabbar) return;
+  const active = getActiveTabRoute(route);
+  tabbar.querySelectorAll("[data-route]").forEach((btn) => {
+    const target = btn.getAttribute("data-route");
+    if (target === active) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
+  });
+}
+
+tabbar?.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.("[data-route]");
+  const target = btn?.getAttribute?.("data-route");
+  if (!target) return;
+  if (window.location.hash === target) return;
+  window.location.hash = target;
+});
 
 async function maybeSeedDemoData(user) {
   const isLocal =
@@ -135,45 +163,49 @@ backBtn.addEventListener("click", () => {
 
 const routes = {
   "/menu": async () => {
-    setHeader({ title: "Menu", showBack: false, showLogout: true });
+    setHeader({ title: "Home", showBack: false, showLogout: false });
     await renderMenu({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/checks": async () => {
-    setHeader({ title: "Appliance Checks", showBack: true, showLogout: true });
+    setHeader({ title: "Checks", showBack: false, showLogout: false });
     await renderChecks({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/reports": async () => {
-    setHeader({ title: "Past Reports", showBack: true, showLogout: true });
+    setHeader({ title: "Reports", showBack: false, showLogout: false });
     await renderReports({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/setup": async () => {
-    setHeader({ title: "Appliance Setup", showBack: true, showLogout: true });
+    setHeader({ title: "Appliance setup", showBack: true, showLogout: false });
     await renderSetupHome({ root: appRoot, auth, db, showLoading, hideLoading });
   },
   "/brigades": async () => {
-    setHeader({ title: "Brigades", showBack: true, showLogout: true });
+    setHeader({ title: "Brigades", showBack: false, showLogout: false });
     await renderBrigades({ root: appRoot, auth, db, showLoading, hideLoading });
   },
+  "/account": async () => {
+    setHeader({ title: "Account", showBack: false, showLogout: false });
+    await renderAccount({ root: appRoot, auth, db, showLoading, hideLoading });
+  },
   "/brigade/:id": async ({ params }) => {
-    setHeader({ title: "Brigade", showBack: true, showLogout: true });
+    setHeader({ title: "Brigade", showBack: true, showLogout: false });
     await renderBrigade({
       root: appRoot,
       auth,
       db,
       brigadeId: params.id,
-      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
+      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: false }),
       showLoading,
       hideLoading,
     });
   },
   "/report/:brigadeId/:reportId": async ({ params }) => {
-    setHeader({ title: "Report", showBack: true, showLogout: true });
+    setHeader({ title: "Report", showBack: true, showLogout: false });
     await renderReport({
       root: appRoot,
       auth,
       brigadeId: params.brigadeId,
       reportId: params.reportId,
-      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: true }),
+      setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: false }),
       showLoading,
       hideLoading,
     });
@@ -222,10 +254,13 @@ const routes = {
 const router = createRouter({
   routes,
   defaultRoute: "/menu",
-  onRouteStart: () => showLoading(),
+  onRouteStart: (route) => {
+    setTabbarActive(route);
+    showLoading();
+  },
   onRouteEnd: () => hideLoading(),
   onNotFound: () => {
-    setHeader({ title: "Not found", showBack: true, showLogout: true });
+    setHeader({ title: "Not found", showBack: true, showLogout: false });
     appRoot.innerHTML =
       '<div class="p-6 max-w-md mx-auto"><p class="text-center text-gray-700">Page not found.</p></div>';
   },
