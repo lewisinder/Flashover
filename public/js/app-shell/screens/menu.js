@@ -9,54 +9,128 @@ async function loadUserBrigades({ db, uid }) {
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
+function buildActionCard({ iconSrc, title, subtitle, onClick }) {
+  const btn = el("button", "fs-card");
+  btn.type = "button";
+  btn.innerHTML = `
+    <div class="fs-action-card-inner">
+      <div class="fs-icon-bubble"><img src="${iconSrc}" alt="" /></div>
+      <div>
+        <div class="fs-action-card-title">${title}</div>
+        <div class="fs-action-card-subtitle">${subtitle}</div>
+      </div>
+    </div>
+  `;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
 export async function renderMenu({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-6 max-w-md mx-auto space-y-6");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const selectorWrap = el("div", "w-full");
-  const label = el("label", "block text-lg font-medium text-gray-700 mb-2 text-center");
-  label.textContent = "Active Brigade";
+  const selectorCard = el("div", "fs-card");
+  const selectorInner = el("div", "fs-card-inner fs-stack");
+  selectorInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Active brigade</div>
+      <div class="fs-card-subtitle">This decides what data you’re working with.</div>
+    </div>
+  `;
+
+  const selectWrap = el("div", "fs-field");
+  const label = el("label", "fs-label");
+  label.textContent = "Brigade";
   label.setAttribute("for", "brigade-selector-shell");
-
-  const select = el(
-    "select",
-    "w-full bg-white rounded-lg py-3 px-4 border border-gray-300 text-center appearance-none text-lg"
-  );
+  const select = el("select", "fs-select");
   select.id = "brigade-selector-shell";
-  select.innerHTML = '<option value="">Loading brigades...</option>';
-  selectorWrap.appendChild(label);
-  selectorWrap.appendChild(select);
+  select.innerHTML = '<option value="">Loading…</option>';
+  selectWrap.appendChild(label);
+  selectWrap.appendChild(select);
 
-  const btnChecks = el(
-    "button",
-    "w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3"
-  );
-  btnChecks.innerHTML = `<img src="/design_assets/Tick Icon.png" alt="Tick" class="h-7 w-7"><span>Appliance Inventory Checks</span>`;
-  btnChecks.addEventListener("click", () => {
-    window.location.hash = "#/checks";
+  const selectorMsg = el("div", "fs-alert");
+  selectorMsg.textContent = "Tip: if you’re just testing, you can use the demo brigade in the emulator.";
+
+  selectorInner.appendChild(selectWrap);
+  selectorInner.appendChild(selectorMsg);
+  selectorCard.appendChild(selectorInner);
+
+  const actionsCard = el("div", "fs-card");
+  const actionsInner = el("div", "fs-card-inner fs-stack");
+  actionsInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Quick actions</div>
+      <div class="fs-card-subtitle">Start a check, view reports, or manage brigades.</div>
+    </div>
+  `;
+  const grid = el("div", "fs-grid");
+
+  const checksCard = buildActionCard({
+    iconSrc: "/design_assets/Tick Icon.png",
+    title: "Checks",
+    subtitle: "Start or resume an appliance check",
+    onClick: () => (window.location.hash = "#/checks"),
+  });
+  const reportsCard = buildActionCard({
+    iconSrc: "/design_assets/Report Icon.png",
+    title: "Reports",
+    subtitle: "View previous checks and history",
+    onClick: () => (window.location.hash = "#/reports"),
+  });
+  const brigadesCard = buildActionCard({
+    iconSrc: "/design_assets/Users Icon.png",
+    title: "Brigades",
+    subtitle: "Join, create, or manage members",
+    onClick: () => (window.location.hash = "#/brigades"),
+  });
+  const setupCard = buildActionCard({
+    iconSrc: "/design_assets/Gear Icon.png",
+    title: "Appliance setup",
+    subtitle: "Admins only",
+    onClick: () => (window.location.hash = "#/setup"),
   });
 
-  const btnBrigades = el(
-    "button",
-    "w-full bg-blue text-white text-xl font-bold py-5 px-6 rounded-lg drop-shadow flex items-center justify-center space-x-3"
-  );
-  btnBrigades.innerHTML = `<img src="/design_assets/Users Icon.png" alt="Users" class="h-7 w-7"><span>Brigade Management</span>`;
-  btnBrigades.addEventListener("click", () => {
-    window.location.hash = "#/brigades";
-  });
+  grid.appendChild(checksCard);
+  grid.appendChild(reportsCard);
+  grid.appendChild(brigadesCard);
+  grid.appendChild(setupCard);
+  actionsInner.appendChild(grid);
+  actionsCard.appendChild(actionsInner);
 
-  container.appendChild(selectorWrap);
-  container.appendChild(btnChecks);
-  container.appendChild(btnBrigades);
+  stack.appendChild(selectorCard);
+  stack.appendChild(actionsCard);
+  container.appendChild(stack);
   root.appendChild(container);
 
   const user = auth.currentUser;
   if (!user) return;
 
+  let brigadeMetaById = new Map();
+  function updateActionAccess(brigadeId) {
+    const meta = brigadeMetaById.get(brigadeId) || {};
+    const role = String(meta.role || "").toLowerCase();
+    const hasBrigade = Boolean(brigadeId);
+    const isAdmin = role === "admin";
+
+    checksCard.disabled = !hasBrigade;
+    reportsCard.disabled = !hasBrigade;
+    setupCard.disabled = !hasBrigade || !isAdmin;
+
+    if (!hasBrigade) {
+      setupCard.querySelector(".fs-action-card-subtitle").textContent = "Pick a brigade first";
+    } else if (!isAdmin) {
+      setupCard.querySelector(".fs-action-card-subtitle").textContent = "Admins only";
+    } else {
+      setupCard.querySelector(".fs-action-card-subtitle").textContent = "Edit appliances & lockers";
+    }
+  }
+
   showLoading?.();
   try {
     const brigades = await loadUserBrigades({ db, uid: user.uid });
+    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
     select.innerHTML = "";
 
     if (brigades.length === 0) {
@@ -65,6 +139,7 @@ export async function renderMenu({ root, auth, db, showLoading, hideLoading }) {
       opt.textContent = "No brigades found";
       select.appendChild(opt);
       localStorage.removeItem("activeBrigadeId");
+      updateActionAccess("");
       return;
     }
 
@@ -80,15 +155,18 @@ export async function renderMenu({ root, auth, db, showLoading, hideLoading }) {
     const active = storedExists ? stored : brigades[0].id;
     localStorage.setItem("activeBrigadeId", active);
     select.value = active;
+    updateActionAccess(active);
 
     select.addEventListener("change", (e) => {
-      localStorage.setItem("activeBrigadeId", e.target.value);
+      const next = e.target.value;
+      localStorage.setItem("activeBrigadeId", next);
+      updateActionAccess(next);
     });
   } catch (err) {
     console.error("Failed to load brigades:", err);
     select.innerHTML = '<option value="">Error loading brigades</option>';
+    updateActionAccess("");
   } finally {
     hideLoading?.();
   }
 }
-

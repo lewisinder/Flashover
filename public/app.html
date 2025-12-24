@@ -7,11 +7,13 @@
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/css/custom-styles.css" />
+  <link rel="stylesheet" href="/css/app-shell-v2.css" />
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#180F5E" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="bg-background flex flex-col h-screen">
   <!-- Loading Overlay -->
@@ -20,26 +22,52 @@
   </div>
 
   <!-- App Header -->
-  <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
-    <div class="flex items-center w-20">
-      <button id="app-back-btn" class="mr-3 hidden">
-        <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8" />
+  <header class="fs-header p-4 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center gap-2 w-28">
+      <button id="app-back-btn" class="fs-header-btn hidden" aria-label="Back">
+        <img src="/design_assets/Back Icon.png" alt="" class="h-5 w-5" />
+        <span class="text-sm font-semibold">Back</span>
       </button>
-      <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-10 w-10 object-contain" />
     </div>
-    <h1 id="app-title" class="text-white text-2xl font-bold flex-grow text-center">Flashover</h1>
-    <div class="w-20 text-right">
-      <button id="app-logout-btn" class="text-white/90 text-sm underline hidden">Log out</button>
+    <div class="flex items-center gap-3">
+      <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-9 w-9 object-contain" />
+      <h1 id="app-title" class="fs-header-title text-white text-lg sm:text-xl font-extrabold">Flashover</h1>
+    </div>
+    <div class="w-28 flex justify-end">
+      <button id="app-logout-btn" class="fs-header-btn hidden" aria-label="Log out">
+        <span class="text-sm font-semibold">Log out</span>
+      </button>
     </div>
   </header>
 
   <!-- Main Content -->
   <main id="app-root" class="flex-grow overflow-y-auto"></main>
 
-  <!-- App Footer -->
-  <footer class="p-4 text-center text-sm text-gray-500 flex-shrink-0">
-    <a href="mailto:hello@theblueprintcollective.co.nz" class="hover:underline">Support</a>
-  </footer>
+  <!-- Tab Bar -->
+  <nav id="app-tabbar" class="fs-tabbar flex-shrink-0 px-2 py-2">
+    <div class="max-w-4xl mx-auto grid grid-cols-5 gap-2">
+      <button class="fs-tabbar-btn" data-route="#/menu" aria-label="Home">
+        <img src="/design_assets/Flashover Logo.png" alt="" />
+        <span class="text-[11px] font-semibold">Home</span>
+      </button>
+      <button class="fs-tabbar-btn" data-route="#/checks" aria-label="Checks">
+        <img src="/design_assets/Tick Icon.png" alt="" />
+        <span class="text-[11px] font-semibold">Checks</span>
+      </button>
+      <button class="fs-tabbar-btn" data-route="#/reports" aria-label="Reports">
+        <img src="/design_assets/Report Icon.png" alt="" />
+        <span class="text-[11px] font-semibold">Reports</span>
+      </button>
+      <button class="fs-tabbar-btn" data-route="#/brigades" aria-label="Brigades">
+        <img src="/design_assets/Users Icon.png" alt="" />
+        <span class="text-[11px] font-semibold">Brigades</span>
+      </button>
+      <button class="fs-tabbar-btn" data-route="#/account" aria-label="Account">
+        <img src="/design_assets/Gear Icon.png" alt="" />
+        <span class="text-[11px] font-semibold">Account</span>
+      </button>
+    </div>
+  </nav>
 
   <!-- Firebase SDKs (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -49,4 +77,3 @@
   <script type="module" src="/js/app-shell/app-shell.js"></script>
 </body>
 </html>
-

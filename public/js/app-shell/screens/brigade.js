@@ -38,80 +38,105 @@ function safeFormatTimestamp(ts) {
 export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoading, hideLoading }) {
   root.innerHTML = "";
 
-  const container = el("div", "p-4 max-w-4xl mx-auto");
-  const card = el("div", "bg-white rounded-2xl shadow-lg p-6 space-y-8");
+  const container = el("div", "fs-page max-w-4xl mx-auto");
+  const stack = el("div", "fs-stack");
 
-  const header = el("div", "space-y-1");
-  const h2 = el("h2", "text-2xl font-bold text-gray-900");
+  const headerCard = el("div", "fs-card");
+  const headerInner = el("div", "fs-card-inner fs-stack");
+  const headerTop = el("div");
+  const h2 = el("div", "fs-card-title");
   h2.textContent = "Loading brigade…";
-  const sub = el("p", "text-gray-600");
+  const sub = el("div", "fs-card-subtitle");
   sub.textContent = "";
-  header.appendChild(h2);
-  header.appendChild(sub);
+  headerTop.appendChild(h2);
+  headerTop.appendChild(sub);
+  headerInner.appendChild(headerTop);
+  headerCard.appendChild(headerInner);
 
-  const errorEl = el("p", "text-red-action-2 text-center");
+  const errorEl = el("div", "fs-alert fs-alert-error");
+  errorEl.style.display = "none";
 
-  const joinRequestsSection = el("div", "hidden space-y-3");
-  const jrTitle = el("h3", "text-xl font-bold");
-  jrTitle.textContent = "Join Requests";
-  const jrList = el("div", "space-y-3");
-  const jrError = el("p", "text-red-action-2 text-center");
-  joinRequestsSection.appendChild(jrTitle);
-  joinRequestsSection.appendChild(jrList);
-  joinRequestsSection.appendChild(jrError);
+  const joinRequestsCard = el("div", "fs-card hidden");
+  const jrInner = el("div", "fs-card-inner fs-stack");
+  jrInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Join requests</div>
+      <div class="fs-card-subtitle">Approve or deny new members.</div>
+    </div>
+  `;
+  const jrList = el("div", "fs-list");
+  const jrError = el("div", "fs-alert fs-alert-error");
+  jrError.style.display = "none";
+  jrInner.appendChild(jrList);
+  jrInner.appendChild(jrError);
+  joinRequestsCard.appendChild(jrInner);
 
-  const membersSection = el("div", "space-y-3");
-  const membersTitle = el("h3", "text-xl font-bold");
-  membersTitle.textContent = "Brigade Members";
-  const membersList = el("div", "space-y-3");
-  membersList.innerHTML = '<p class="text-gray-600">Loading members...</p>';
-  membersSection.appendChild(membersTitle);
-  membersSection.appendChild(membersList);
+  const membersCard = el("div", "fs-card");
+  const membersInner = el("div", "fs-card-inner fs-stack");
+  membersInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Members</div>
+      <div class="fs-card-subtitle">Roles control who can manage gear and settings.</div>
+    </div>
+  `;
+  const membersList = el("div", "fs-list");
+  membersList.innerHTML =
+    '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching members</div></div></div>';
+  membersInner.appendChild(membersList);
+  membersCard.appendChild(membersInner);
 
-  const adminSection = el("div", "hidden space-y-3");
-  const adminTitle = el("h3", "text-xl font-bold");
-  adminTitle.textContent = "Add a New Member";
-  const adminForm = el("form", "space-y-4");
-  const emailWrap = el("div");
-  const emailLabel = el("label", "block text-lg font-medium text-gray-700");
+  const adminCard = el("div", "fs-card hidden");
+  const adminInner = el("div", "fs-card-inner fs-stack");
+  adminInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Add a member</div>
+      <div class="fs-card-subtitle">Invite someone by email.</div>
+    </div>
+  `;
+  const adminForm = el("form", "fs-stack");
+  const emailWrap = el("div", "fs-field");
+  const emailLabel = el("label", "fs-label");
   emailLabel.setAttribute("for", "member-email-shell");
-  emailLabel.textContent = "User's Email";
-  const emailInput = el(
-    "input",
-    "mt-1 block w-full bg-gray-100 rounded-lg p-3 border border-gray-300 placeholder-gray-500"
-  );
+  emailLabel.textContent = "Email";
+  const emailInput = el("input", "fs-input");
   emailInput.type = "email";
   emailInput.required = true;
   emailInput.id = "member-email-shell";
   emailInput.placeholder = "user@example.com";
   emailWrap.appendChild(emailLabel);
   emailWrap.appendChild(emailInput);
-  const addBtn = el("button", "w-full bg-blue text-white font-bold py-3 px-4 rounded-lg text-xl");
+  const addBtn = el("button", "fs-btn fs-btn-primary");
   addBtn.type = "submit";
   addBtn.textContent = "Add Member";
-  const addError = el("p", "text-red-action-2 text-center");
-  const addSuccess = el("p", "text-green-action-1 text-center");
+  const addError = el("div", "fs-alert fs-alert-error");
+  addError.style.display = "none";
+  const addSuccess = el("div", "fs-alert fs-alert-success");
+  addSuccess.style.display = "none";
   adminForm.appendChild(emailWrap);
   adminForm.appendChild(addBtn);
   adminForm.appendChild(addError);
   adminForm.appendChild(addSuccess);
-  adminSection.appendChild(adminTitle);
-  adminSection.appendChild(adminForm);
+  adminInner.appendChild(adminForm);
+  adminCard.appendChild(adminInner);
 
-  card.appendChild(header);
-  card.appendChild(errorEl);
-  card.appendChild(joinRequestsSection);
-  card.appendChild(membersSection);
-  card.appendChild(el("hr", "my-2"));
-  card.appendChild(adminSection);
-  container.appendChild(card);
+  stack.appendChild(headerCard);
+  stack.appendChild(errorEl);
+  stack.appendChild(joinRequestsCard);
+  stack.appendChild(membersCard);
+  stack.appendChild(adminCard);
+  container.appendChild(stack);
   root.appendChild(container);
 
   const user = auth?.currentUser;
   if (!user) return;
 
+  function setAlert(el, message) {
+    el.textContent = message || "";
+    el.style.display = message ? "block" : "none";
+  }
+
   async function loadBrigadeData() {
-    errorEl.textContent = "";
+    setAlert(errorEl, "");
     showLoading?.();
     try {
       const token = await user.getIdToken();
@@ -120,29 +145,31 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       const title = `${brigadeData.name} (${brigadeData.stationNumber})`;
       h2.textContent = title;
       setTitle?.(title);
+      sub.textContent = brigadeData.region ? `Region: ${brigadeData.region}` : "";
 
       const currentMembership = (brigadeData.members || []).find((m) => m.id === user.uid);
       const isAdmin = currentMembership && currentMembership.role === "Admin";
 
       membersList.innerHTML = "";
       (brigadeData.members || []).forEach((member) => {
-        const row = el(
-          "div",
-          "bg-gray-100 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between"
-        );
+        const row = el("div", "fs-row");
 
         const left = el("div");
-        left.innerHTML = `<p class="text-lg font-semibold">${member.name || "N/A"}</p>`;
-        if (!isAdmin) {
-          const roleP = el("p", "text-gray-600");
-          roleP.textContent = `Role: ${member.role}`;
-          left.appendChild(roleP);
-        }
+        const isSelf = member.id === user.uid;
+        left.innerHTML = `
+          <div class="fs-row-title">${member.name || "N/A"}${isSelf ? " (you)" : ""}</div>
+          <div class="fs-row-meta">${member.email || ""}</div>
+        `;
 
-        const actions = el("div", "flex items-center mt-2 sm:mt-0");
+        const actions = el("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.alignItems = "center";
 
         if (isAdmin) {
-          const roleSelect = el("select", "bg-white border border-gray-300 rounded-md py-1 px-2");
+          const roleSelect = el("select", "fs-select");
+          roleSelect.style.width = "auto";
+          roleSelect.style.padding = "8px 10px";
           roleSelect.id = `role-${member.id}`;
           ["Member", "Gear Manager", "Admin"].forEach((role) => {
             const opt = document.createElement("option");
@@ -152,8 +179,8 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
             roleSelect.appendChild(opt);
           });
           roleSelect.addEventListener("change", async () => {
-            addError.textContent = "";
-            addSuccess.textContent = "";
+            setAlert(addError, "");
+            setAlert(addSuccess, "");
             showLoading?.();
             try {
               const token = await user.getIdToken();
@@ -161,10 +188,10 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
                 `/api/brigades/${encodeURIComponent(brigadeId)}/members/${encodeURIComponent(member.id)}`,
                 { token, method: "PUT", body: { role: roleSelect.value } }
               );
-              addSuccess.textContent = result.message || "Role updated.";
+              setAlert(addSuccess, result.message || "Role updated.");
             } catch (err) {
               console.error("Error updating role:", err);
-              addError.textContent = err.message;
+              setAlert(addError, err.message);
             } finally {
               hideLoading?.();
             }
@@ -172,11 +199,12 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
 
           actions.appendChild(roleSelect);
 
-          const isSelf = member.id === user.uid;
           if (!isSelf) {
-            const removeBtn = el("button", "ml-2 bg-red-action-2 text-white font-semibold py-1 px-3 rounded-lg");
+            const removeBtn = el("button", "fs-btn fs-btn-danger");
             removeBtn.type = "button";
             removeBtn.textContent = "Remove";
+            removeBtn.style.width = "auto";
+            removeBtn.style.padding = "8px 10px";
             removeBtn.addEventListener("click", async () => {
               if (
                 !confirm(
@@ -185,8 +213,8 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
               ) {
                 return;
               }
-              addError.textContent = "";
-              addSuccess.textContent = "";
+              setAlert(addError, "");
+              setAlert(addSuccess, "");
               showLoading?.();
               try {
                 const token = await user.getIdToken();
@@ -194,17 +222,22 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
                   `/api/brigades/${encodeURIComponent(brigadeId)}/members/${encodeURIComponent(member.id)}`,
                   { token, method: "DELETE" }
                 );
-                addSuccess.textContent = result.message || "Member removed.";
+                setAlert(addSuccess, result.message || "Member removed.");
                 await loadBrigadeData();
               } catch (err) {
                 console.error("Error removing member:", err);
-                addError.textContent = err.message;
+                setAlert(addError, err.message);
               } finally {
                 hideLoading?.();
               }
             });
             actions.appendChild(removeBtn);
           }
+        } else {
+          const pill = el("span", "fs-pill");
+          pill.textContent = member.role || "Member";
+          if (String(member.role).toLowerCase() === "admin") pill.classList.add("fs-pill-success");
+          actions.appendChild(pill);
         }
 
         row.appendChild(left);
@@ -212,15 +245,15 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         membersList.appendChild(row);
       });
 
-      adminSection.classList.toggle("hidden", !isAdmin);
-      joinRequestsSection.classList.toggle("hidden", !isAdmin);
+      adminCard.classList.toggle("hidden", !isAdmin);
+      joinRequestsCard.classList.toggle("hidden", !isAdmin);
 
       if (isAdmin) {
         await loadJoinRequests();
       }
     } catch (err) {
       console.error("Error loading brigade data:", err);
-      errorEl.textContent = err.message;
+      setAlert(errorEl, err.message);
       h2.textContent = "Error";
       setTitle?.("Brigade");
       membersList.innerHTML = "";
@@ -230,8 +263,9 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
   }
 
   async function loadJoinRequests() {
-    jrList.innerHTML = "<p>Loading join requests...</p>";
-    jrError.textContent = "";
+    jrList.innerHTML =
+      '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching join requests</div></div></div>';
+    setAlert(jrError, "");
     try {
       const token = await user.getIdToken();
       const requests = await fetchJson(
@@ -240,28 +274,38 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       );
       jrList.innerHTML = "";
       if (!Array.isArray(requests) || requests.length === 0) {
-        jrList.innerHTML = "<p>There are no pending join requests.</p>";
+        jrList.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No requests</div><div class="fs-row-meta">You’re all caught up.</div></div></div>';
         return;
       }
 
       requests.forEach((req) => {
-        const row = el("div", "bg-gray-100 p-3 rounded-lg flex justify-between items-center");
+        const row = el("div", "fs-row");
         const left = el("div");
         left.innerHTML = `
-          <p class="font-semibold">${req.userName || req.id}</p>
-          <p class="text-sm text-gray-500">Requested on: ${safeFormatTimestamp(req.requestedAt)}</p>
+          <div class="fs-row-title">${req.userName || req.id}</div>
+          <div class="fs-row-meta">Requested: ${safeFormatTimestamp(req.requestedAt)}</div>
         `;
 
         const right = el("div");
-        const acceptBtn = el("button", "bg-green-action-1 text-white font-semibold py-1 px-3 rounded-lg");
+        right.style.display = "flex";
+        right.style.gap = "8px";
+        right.style.alignItems = "center";
+
+        const acceptBtn = el("button", "fs-btn fs-btn-primary");
         acceptBtn.type = "button";
         acceptBtn.textContent = "Accept";
-        const denyBtn = el("button", "ml-2 bg-red-action-2 text-white font-semibold py-1 px-3 rounded-lg");
+        acceptBtn.style.width = "auto";
+        acceptBtn.style.padding = "8px 10px";
+
+        const denyBtn = el("button", "fs-btn fs-btn-secondary");
         denyBtn.type = "button";
         denyBtn.textContent = "Deny";
+        denyBtn.style.width = "auto";
+        denyBtn.style.padding = "8px 10px";
 
         async function handle(action) {
-          jrError.textContent = "";
+          setAlert(jrError, "");
           showLoading?.();
           try {
             const token = await user.getIdToken();
@@ -273,7 +317,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
             await loadBrigadeData();
           } catch (err) {
             console.error("Error handling join request:", err);
-            jrError.textContent = err.message;
+            setAlert(jrError, err.message);
           } finally {
             hideLoading?.();
           }
@@ -290,15 +334,15 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       });
     } catch (err) {
       console.error("Error loading join requests:", err);
-      jrError.textContent = err.message;
+      setAlert(jrError, err.message);
       jrList.innerHTML = "";
     }
   }
 
   adminForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    addError.textContent = "";
-    addSuccess.textContent = "";
+    setAlert(addError, "");
+    setAlert(addSuccess, "");
     addBtn.disabled = true;
     addBtn.textContent = "Adding...";
     showLoading?.();
@@ -309,12 +353,12 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         method: "POST",
         body: { email: emailInput.value },
       });
-      addSuccess.textContent = result.message || "Member added.";
+      setAlert(addSuccess, result.message || "Member added.");
       adminForm.reset();
       await loadBrigadeData();
     } catch (err) {
       console.error("Error adding member:", err);
-      addError.textContent = err.message;
+      setAlert(addError, err.message);
     } finally {
       addBtn.disabled = false;
       addBtn.textContent = "Add Member";
