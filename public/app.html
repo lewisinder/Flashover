@@ -15,7 +15,7 @@
   <link rel="apple-touch-icon" href="/design_assets/Flashover Logo.png" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="bg-background flex flex-col h-screen">
+<body class="fs-viewport bg-background flex flex-col h-screen">
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay" style="display: none;">
     <div class="loading-spinner"></div>
@@ -73,6 +73,32 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+  <script>
+    (function () {
+      function setAppHeight() {
+        const vv = window.visualViewport;
+        const height = vv && vv.height ? vv.height : window.innerHeight;
+        document.documentElement.style.setProperty("--app-height", Math.round(height) + "px");
+      }
+
+      let raf = 0;
+      function schedule() {
+        if (raf) return;
+        raf = requestAnimationFrame(() => {
+          raf = 0;
+          setAppHeight();
+        });
+      }
+
+      setAppHeight();
+      window.addEventListener("resize", schedule, { passive: true });
+      window.addEventListener("orientationchange", schedule, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", schedule, { passive: true });
+      }
+    })();
+  </script>
 
   <script type="module" src="/js/app-shell/app-shell.js"></script>
 </body>
