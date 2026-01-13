@@ -441,7 +441,7 @@ export async function renderReport({
       const signoffInner = el("div", "fs-card-inner fs-stack");
       signoffInner.innerHTML = `
         <div>
-          <div class="fs-card-title">Sign-off</div>
+          <div class="fs-card-title">Sign-off report</div>
           <div class="fs-card-subtitle">Recorded name and signature for this report.</div>
         </div>
       `;
