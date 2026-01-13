@@ -307,7 +307,7 @@ function initChecksPage(options = {}) {
         return { version: 1, strokes: cleanedStrokes };
     }
 
-    function createSignaturePad(canvas, { onChange } = {}) {
+    function createSignaturePad(canvas, { onChange, onActivity } = {}) {
         if (!canvas) return null;
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
@@ -428,11 +428,13 @@ function initChecksPage(options = {}) {
         }
 
         function getData() {
-            const hasAny = state.data.strokes.some(
-                (stroke) => stroke && typeof stroke === 'object' && Array.isArray(stroke.points) && stroke.points.length > 0
-            );
-            if (!hasAny) return null;
-            return sanitizeSignatureData(state.data);
+            const strokesSnapshot = Array.isArray(state.data.strokes) ? state.data.strokes.slice() : [];
+            if (Array.isArray(state.currentStroke) && state.currentStroke.length > 0) {
+                strokesSnapshot.push({ points: state.currentStroke });
+            }
+
+            const snapshot = { version: 1, strokes: strokesSnapshot };
+            return sanitizeSignatureData(snapshot);
         }
 
         function setData(data) {
@@ -463,6 +465,7 @@ function initChecksPage(options = {}) {
             state.lastPoint = p;
             drawDot(p);
             try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+            if (typeof onActivity === 'function') onActivity();
             e.preventDefault();
         }
 
@@ -474,6 +477,7 @@ function initChecksPage(options = {}) {
             state.currentStroke.push(p);
             if (prev) drawSegment(prev, p);
             state.lastPoint = p;
+            if (typeof onActivity === 'function') onActivity();
             e.preventDefault();
         }
 
@@ -512,11 +516,15 @@ function initChecksPage(options = {}) {
             persistSignoffState();
             updateSignoffConfirmState();
         },
+        onActivity: () => {
+            // Some browsers may not deliver pointerup to the canvas; keep UI state in sync while drawing.
+            updateSignoffConfirmState();
+        },
     });
 
     function updateSignoffConfirmState() {
         const name = String(signoffUI?.nameInput?.value || '').trim();
-        const hasSig = !!(reportSignature || (signaturePad && signaturePad.getData()));
+        const hasSig = !!(signaturePad && signaturePad.getData());
         const enabled = !!name && hasSig;
         if (signoffUI && signoffUI.confirmBtn) {
             if (enabled) {
