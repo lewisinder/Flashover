@@ -405,7 +405,21 @@ apiRouter.delete('/image/:fileName', async (req, res) => {
     }
 });
 
-apiRouter.use(express.json());
+apiRouter.use(express.json({ limit: '2mb' }));
+apiRouter.use((err, req, res, next) => {
+    // Handle body-parser / express.json size and parse errors explicitly so clients get a useful status.
+    if (err) {
+        const status = Number(err.status || err.statusCode || 0);
+        const type = String(err.type || '');
+        if (status === 413 || type === 'entity.too.large') {
+            return res.status(413).json({ message: 'Request payload too large.' });
+        }
+        if (status === 400) {
+            return res.status(400).json({ message: 'Invalid JSON payload.' });
+        }
+    }
+    return next(err);
+});
 
 // --- User Data Routes ---
 const userRouter = express.Router();
