@@ -1,3 +1,5 @@
+import { getUserBrigades, invalidateUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -27,11 +29,6 @@ async function fetchJson(url, { token, method, body } = {}) {
     throw new Error(data.message || `Request failed (${res.status})`);
   }
   return data;
-}
-
-async function loadUserBrigades({ db, uid }) {
-  const snapshot = await db.collection("users").doc(uid).collection("userBrigades").get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function renderBrigades({ root, auth, db, showLoading, hideLoading }) {
@@ -197,10 +194,10 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   container.appendChild(stack);
   root.appendChild(container);
 
-  async function refreshMyBrigades() {
-    showLoading?.();
+  async function refreshMyBrigades({ force = false } = {}) {
     try {
-      const brigades = await loadUserBrigades({ db, uid: user.uid });
+      const brigades = await getUserBrigades({ db, uid: user.uid, force });
+      if (!container.isConnected) return;
       myList.innerHTML = "";
 
       if (brigades.length === 0) {
@@ -245,16 +242,17 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
           if (!confirm(`Are you sure you want to leave the brigade "${brigade.brigadeName}"?`)) return;
           setAlert(statusError, "");
           setAlert(statusSuccess, "");
-          showLoading?.();
-          try {
-            const token = await user.getIdToken();
-            const result = await fetchJson(`/api/brigades/${brigade.id}/leave`, { token, method: "POST" });
-            setAlert(statusSuccess, result.message || "Left brigade.");
-            await refreshMyBrigades();
-          } catch (err) {
-            console.error("Error leaving brigade:", err);
-            setAlert(statusError, err.message);
-          } finally {
+	          showLoading?.();
+	          try {
+	            const token = await user.getIdToken();
+	            const result = await fetchJson(`/api/brigades/${brigade.id}/leave`, { token, method: "POST" });
+	            setAlert(statusSuccess, result.message || "Left brigade.");
+	            invalidateUserBrigades(user.uid);
+	            await refreshMyBrigades({ force: true });
+	          } catch (err) {
+	            console.error("Error leaving brigade:", err);
+	            setAlert(statusError, err.message);
+	          } finally {
             hideLoading?.();
           }
         });
@@ -278,15 +276,16 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
             setAlert(statusError, "");
             setAlert(statusSuccess, "");
             showLoading?.();
-            try {
-              const token = await user.getIdToken();
-              const result = await fetchJson(`/api/brigades/${brigade.id}`, { token, method: "DELETE" });
-              setAlert(statusSuccess, result.message || "Deleted brigade.");
-              await refreshMyBrigades();
-            } catch (err) {
-              console.error("Error deleting brigade:", err);
-              setAlert(statusError, err.message);
-            } finally {
+	            try {
+	              const token = await user.getIdToken();
+	              const result = await fetchJson(`/api/brigades/${brigade.id}`, { token, method: "DELETE" });
+	              setAlert(statusSuccess, result.message || "Deleted brigade.");
+	              invalidateUserBrigades(user.uid);
+	              await refreshMyBrigades({ force: true });
+	            } catch (err) {
+	              console.error("Error deleting brigade:", err);
+	              setAlert(statusError, err.message);
+	            } finally {
               hideLoading?.();
             }
           });
@@ -301,8 +300,6 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       console.error("Error loading brigades:", err);
       myList.innerHTML =
         '<p class="text-red-action-2">Could not load your brigades. Please try again later.</p>';
-    } finally {
-      hideLoading?.();
     }
   }
 
@@ -402,7 +399,8 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       console.log(result.message || "Brigade created.");
       setAlert(statusSuccess, result.message || "Brigade created.");
       form.reset();
-      await refreshMyBrigades();
+      invalidateUserBrigades(user.uid);
+      await refreshMyBrigades({ force: true });
     } catch (err) {
       console.error("Error creating brigade:", err);
       setAlert(createError, err.message);
@@ -413,5 +411,6 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     }
   });
 
-  await refreshMyBrigades();
+  // Initial hydrate without blocking route transition.
+  void refreshMyBrigades();
 }

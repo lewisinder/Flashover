@@ -29,6 +29,11 @@ export function initFirebase() {
     } catch (e) {}
   }
 
+  // Enable offline persistence for faster repeat navigations (best-effort).
+  try {
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+  } catch (e) {}
+
   try {
     window.__authReady = auth
       .setPersistence(firebase.auth.Auth.Persistence.LOCAL)

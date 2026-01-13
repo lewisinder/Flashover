@@ -1,3 +1,5 @@
+import { getUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -17,11 +19,6 @@ async function fetchJson(url, { token, method, body } = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
   return data;
-}
-
-async function loadUserBrigades({ db, uid }) {
-  const snapshot = await db.collection("users").doc(uid).collection("userBrigades").get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function renderAccount({ root, auth, db, showLoading, hideLoading }) {
@@ -152,10 +149,10 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     }
   });
 
-  // Load brigades list + allow leaving.
-  showLoading?.();
-  try {
-    const brigades = await loadUserBrigades({ db, uid: user.uid });
+  // Load brigades list + allow leaving (async; don't block route transition).
+  void (async () => {
+    try {
+      const brigades = await getUserBrigades({ db, uid: user.uid });
     brigadeList.innerHTML = "";
 
     if (brigades.length === 0) {
@@ -206,12 +203,10 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
       row.appendChild(right);
       brigadeList.appendChild(row);
     });
-  } catch (err) {
-    console.error("Failed to load brigades (account):", err);
-    brigadeList.innerHTML =
-      '<div class="fs-row"><div><div class="fs-row-title">Could not load brigades</div><div class="fs-row-meta">Try again later.</div></div></div>';
-  } finally {
-    hideLoading?.();
-  }
+    } catch (err) {
+      console.error("Failed to load brigades (account):", err);
+      brigadeList.innerHTML =
+        '<div class="fs-row"><div><div class="fs-row-title">Could not load brigades</div><div class="fs-row-meta">Try again later.</div></div></div>';
+    }
+  })();
 }
-

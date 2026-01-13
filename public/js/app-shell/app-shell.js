@@ -19,12 +19,29 @@ const tabbar = document.getElementById("app-tabbar");
 const loadingOverlay = document.getElementById("loading-overlay");
 const shellHeader = document.querySelector("body > header");
 
+let loadingCount = 0;
+let loadingTimer = null;
+
 function showLoading() {
-  if (loadingOverlay) loadingOverlay.style.display = "flex";
+  loadingCount += 1;
+  if (!loadingOverlay) return;
+  if (loadingTimer) return;
+  // Avoid flicker for fast operations (app-like feel).
+  loadingTimer = setTimeout(() => {
+    if (loadingCount > 0) loadingOverlay.style.display = "flex";
+    loadingTimer = null;
+  }, 200);
 }
 
 function hideLoading() {
-  if (loadingOverlay) loadingOverlay.style.display = "none";
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (!loadingOverlay) return;
+  if (loadingCount > 0) return;
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
+  loadingOverlay.style.display = "none";
 }
 
 function setShellChromeVisible(visible) {
@@ -256,7 +273,6 @@ const router = createRouter({
   defaultRoute: "/menu",
   onRouteStart: (route) => {
     setTabbarActive(route);
-    showLoading();
   },
   onRouteEnd: () => hideLoading(),
   onNotFound: () => {
