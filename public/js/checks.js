@@ -251,9 +251,10 @@ function initChecksPage(options = {}) {
         const strokes = Array.isArray(data.strokes) ? data.strokes : null;
         if (!strokes) return null;
 
-        // Keep the signature payload compact so report saving stays fast and reliable.
-        const MAX_STROKES = 12;
-        const MAX_POINTS_TOTAL = 700;
+        // Keep the signature payload compact so report saving stays fast and reliable,
+        // and to stay under Cloud Functions request body limits.
+        const MAX_STROKES = 8;
+        const MAX_POINTS_TOTAL = 250;
         let pointsTotal = 0;
 
         const cleanedStrokes = [];
@@ -265,7 +266,7 @@ function initChecksPage(options = {}) {
                 if (pointsTotal >= MAX_POINTS_TOTAL) break;
                 const x = clamp01(pt[0]);
                 const y = clamp01(pt[1]);
-                cleanedStroke.push([Number(x.toFixed(3)), Number(y.toFixed(3))]);
+                cleanedStroke.push([Number(x.toFixed(2)), Number(y.toFixed(2))]);
                 pointsTotal += 1;
             }
             if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
@@ -1059,7 +1060,13 @@ function initChecksPage(options = {}) {
                 clearSignoffState();
                 goToChecksHome();
             } else {
-                alert(`Failed to save report: ${(await response.json()).message}`);
+                const bodyText = await response.text().catch(() => "");
+                let message = "";
+                try {
+                    const parsed = JSON.parse(bodyText || "{}");
+                    message = parsed && parsed.message ? String(parsed.message) : "";
+                } catch (e) {}
+                alert(`Failed to save report: ${message || bodyText || `HTTP ${response.status}`}`);
             }
         } catch (error) {
             console.error("Error saving report:", error);
