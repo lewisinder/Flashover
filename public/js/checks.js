@@ -516,10 +516,16 @@ function initChecksPage(options = {}) {
 
     function updateSignoffConfirmState() {
         const name = String(signoffUI?.nameInput?.value || '').trim();
-        const hasSig = !!(signaturePad && signaturePad.getData());
+        const hasSig = !!(reportSignature || (signaturePad && signaturePad.getData()));
         const enabled = !!name && hasSig;
         if (signoffUI && signoffUI.confirmBtn) {
-            signoffUI.confirmBtn.disabled = !enabled;
+            if (enabled) {
+                signoffUI.confirmBtn.disabled = false;
+                signoffUI.confirmBtn.removeAttribute('disabled');
+            } else {
+                signoffUI.confirmBtn.disabled = true;
+                signoffUI.confirmBtn.setAttribute('disabled', '');
+            }
             signoffUI.confirmBtn.classList.toggle('opacity-60', !enabled);
         }
     }
