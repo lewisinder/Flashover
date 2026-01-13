@@ -747,7 +747,17 @@ brigadeRouter.get('/:brigadeId/reports/:reportId', async (req, res) => {
         if (!reportDoc.exists) {
             return res.status(404).json({ message: 'Report not found.' });
         }
-        res.status(200).json({ id: reportDoc.id, ...reportDoc.data() });
+        let signature = null;
+        try {
+            const signoffDoc = await reportRef.collection('meta').doc('signoff').get();
+            if (signoffDoc.exists) {
+                const signoffData = signoffDoc.data() || {};
+                if (signoffData && signoffData.signature) signature = signoffData.signature;
+            }
+        } catch (e) {
+            // If the signature doc is missing or unreadable, still return the report.
+        }
+        res.status(200).json({ id: reportDoc.id, ...reportDoc.data(), signature });
     } catch (error) {
         console.error(`Error fetching report ${req.params.reportId}:`, error);
         res.status(500).json({ message: 'Failed to fetch report.' });
@@ -1280,7 +1290,6 @@ reportRouter.post('/', async (req, res) => {
         const signature = sanitizeSignatureData(reportData.signature);
 
         const safeReportData = {
-            ...reportData,
             brigadeId,
             applianceId,
             applianceName: reportData.applianceName || appliance.name,
@@ -1289,12 +1298,26 @@ reportRouter.post('/', async (req, res) => {
             uid: req.user.uid,
             username: req.user.name || req.user.email || reportData.username || 'Unknown',
             signedName,
-            signature: signature || null,
+            hasSignature: !!signature,
         };
 
         const reportRef = brigade.ref.collection('reports').doc();
         await reportRef.set(safeReportData);
         const reportId = reportRef.id;
+
+        // Store the signature separately so large reports don't risk hitting Firestore's 1MiB document limit.
+        if (signature) {
+            await reportRef.collection('meta').doc('signoff').set(
+                {
+                    signature,
+                    signedName,
+                    username: safeReportData.username,
+                    uid: safeReportData.uid,
+                    createdAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+        }
         const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
         if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
             delete applianceData.appliances[applianceIndex].checkStatus;
@@ -1332,7 +1355,9 @@ reportRouter.post('/', async (req, res) => {
         res.status(201).json({ message: 'Report saved successfully.', reportId: reportId });
     } catch (err) {
         console.error('Error saving report:', err);
-        res.status(500).json({ message: 'Error saving report.' });
+        const detail = (err && err.message) ? String(err.message) : '';
+        const safeDetail = detail.replace(/[\r\n\t]+/g, ' ').slice(0, 220);
+        res.status(500).json({ message: `Error saving report.${safeDetail ? ` ${safeDetail}` : ''}` });
     }
 });
 apiRouter.use('/reports', reportRouter);
