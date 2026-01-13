@@ -248,28 +248,50 @@ function initChecksPage(options = {}) {
 
     function sanitizeSignatureData(data) {
         if (!data || typeof data !== 'object') return null;
-        const strokes = Array.isArray(data.strokes) ? data.strokes : null;
-        if (!strokes) return null;
+        const rawStrokes = Array.isArray(data.strokes) ? data.strokes : null;
+        if (!rawStrokes) return null;
 
-        // Keep the signature payload compact so report saving stays fast and reliable,
-        // and to stay under Cloud Functions request body limits.
+        // Firestore does not allow arrays-of-arrays. Keep strokes as arrays of objects.
+        // Keep the payload compact so report saving stays fast and reliable.
         const MAX_STROKES = 8;
         const MAX_POINTS_TOTAL = 250;
         let pointsTotal = 0;
 
         const cleanedStrokes = [];
-        for (const stroke of strokes.slice(0, MAX_STROKES)) {
-            if (!Array.isArray(stroke)) continue;
-            const cleanedStroke = [];
-            for (const pt of stroke) {
-                if (!Array.isArray(pt) || pt.length < 2) continue;
+
+        for (const rawStroke of rawStrokes.slice(0, MAX_STROKES)) {
+            let points = [];
+
+            // Accept either legacy array points ([x,y]) or object points ({x,y})
+            if (rawStroke && typeof rawStroke === 'object' && Array.isArray(rawStroke.points)) {
+                points = rawStroke.points;
+            } else if (Array.isArray(rawStroke)) {
+                points = rawStroke;
+            } else {
+                continue;
+            }
+
+            const cleanedPoints = [];
+            for (const pt of points) {
                 if (pointsTotal >= MAX_POINTS_TOTAL) break;
-                const x = clamp01(pt[0]);
-                const y = clamp01(pt[1]);
-                cleanedStroke.push([Number(x.toFixed(2)), Number(y.toFixed(2))]);
+                let x = null;
+                let y = null;
+                if (pt && typeof pt === 'object' && !Array.isArray(pt)) {
+                    x = pt.x;
+                    y = pt.y;
+                } else if (Array.isArray(pt) && pt.length >= 2) {
+                    x = pt[0];
+                    y = pt[1];
+                }
+                if (x == null || y == null) continue;
+
+                const cx = clamp01(x);
+                const cy = clamp01(y);
+                cleanedPoints.push({ x: Number(cx.toFixed(2)), y: Number(cy.toFixed(2)) });
                 pointsTotal += 1;
             }
-            if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
+
+            if (cleanedPoints.length > 0) cleanedStrokes.push({ points: cleanedPoints });
             if (pointsTotal >= MAX_POINTS_TOTAL) break;
         }
 
@@ -323,8 +345,8 @@ function initChecksPage(options = {}) {
 
         function normToCss(pt) {
             return {
-                x: pt[0] * state.cssWidth,
-                y: pt[1] * state.cssHeight,
+                x: pt.x * state.cssWidth,
+                y: pt.y * state.cssHeight,
             };
         }
 
@@ -351,12 +373,12 @@ function initChecksPage(options = {}) {
             const height = rect.height || 1;
             const x = (e.clientX - rect.left) / width;
             const y = (e.clientY - rect.top) / height;
-            return [Number(clamp01(x).toFixed(4)), Number(clamp01(y).toFixed(4))];
+            return { x: Number(clamp01(x).toFixed(4)), y: Number(clamp01(y).toFixed(4)) };
         }
 
         function distanceSq(a, b) {
-            const dx = a[0] - b[0];
-            const dy = a[1] - b[1];
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
             return dx * dx + dy * dy;
         }
 
@@ -377,7 +399,9 @@ function initChecksPage(options = {}) {
         }
 
         function getData() {
-            const hasAny = state.data.strokes.some((stroke) => Array.isArray(stroke) && stroke.length > 0);
+            const hasAny = state.data.strokes.some(
+                (stroke) => stroke && typeof stroke === 'object' && Array.isArray(stroke.points) && stroke.points.length > 0
+            );
             if (!hasAny) return null;
             return sanitizeSignatureData(state.data);
         }
@@ -430,7 +454,7 @@ function initChecksPage(options = {}) {
             try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
 
             if (state.currentStroke && state.currentStroke.length > 0) {
-                state.data.strokes.push(state.currentStroke);
+                state.data.strokes.push({ points: state.currentStroke });
                 state.data = sanitizeSignatureData(state.data) || { version: 1, strokes: [] };
                 redraw();
                 state.currentStroke = null;

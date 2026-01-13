@@ -55,14 +55,28 @@ function drawSignatureOnCanvas(canvas, signature) {
 
   ctx.beginPath();
   strokes.forEach((stroke) => {
-    if (!Array.isArray(stroke) || stroke.length === 0) return;
-    const first = stroke[0];
-    if (!Array.isArray(first) || first.length < 2) return;
-    ctx.moveTo(first[0] * cssWidth, first[1] * cssHeight);
-    for (let i = 1; i < stroke.length; i += 1) {
-      const pt = stroke[i];
-      if (!Array.isArray(pt) || pt.length < 2) continue;
-      ctx.lineTo(pt[0] * cssWidth, pt[1] * cssHeight);
+    // Accept either:
+    // - New format: { points: [{x,y}, ...] }
+    // - Legacy format: [[x,y], ...]
+    const points = stroke && typeof stroke === "object" && Array.isArray(stroke.points) ? stroke.points : stroke;
+    if (!Array.isArray(points) || points.length === 0) return;
+
+    const first = points[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      ctx.moveTo(first.x * cssWidth, first.y * cssHeight);
+    } else if (Array.isArray(first) && first.length >= 2) {
+      ctx.moveTo(first[0] * cssWidth, first[1] * cssHeight);
+    } else {
+      return;
+    }
+
+    for (let i = 1; i < points.length; i += 1) {
+      const pt = points[i];
+      if (pt && typeof pt === "object" && !Array.isArray(pt)) {
+        ctx.lineTo(pt.x * cssWidth, pt.y * cssHeight);
+      } else if (Array.isArray(pt) && pt.length >= 2) {
+        ctx.lineTo(pt[0] * cssWidth, pt[1] * cssHeight);
+      }
     }
   });
   ctx.stroke();

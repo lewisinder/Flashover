@@ -1007,26 +1007,47 @@ function clamp01Number(value) {
 
 function sanitizeSignatureData(data) {
     if (!data || typeof data !== 'object') return null;
-    const strokes = Array.isArray(data.strokes) ? data.strokes : null;
-    if (!strokes) return null;
+    const rawStrokes = Array.isArray(data.strokes) ? data.strokes : null;
+    if (!rawStrokes) return null;
 
-    const MAX_STROKES = 16;
-    const MAX_POINTS_TOTAL = 2000;
+    // Firestore does not allow arrays containing arrays. Keep strokes as arrays of objects.
+    const MAX_STROKES = 12;
+    const MAX_POINTS_TOTAL = 800;
     let pointsTotal = 0;
     const cleanedStrokes = [];
 
-    for (const stroke of strokes.slice(0, MAX_STROKES)) {
-        if (!Array.isArray(stroke)) continue;
-        const cleanedStroke = [];
-        for (const pt of stroke) {
-            if (!Array.isArray(pt) || pt.length < 2) continue;
+    for (const rawStroke of rawStrokes.slice(0, MAX_STROKES)) {
+        let points = [];
+
+        // Accept either legacy array points ([[x,y], ...]) or object points ({points:[{x,y}, ...]})
+        if (rawStroke && typeof rawStroke === 'object' && Array.isArray(rawStroke.points)) {
+            points = rawStroke.points;
+        } else if (Array.isArray(rawStroke)) {
+            points = rawStroke;
+        } else {
+            continue;
+        }
+
+        const cleanedPoints = [];
+        for (const pt of points) {
             if (pointsTotal >= MAX_POINTS_TOTAL) break;
-            const x = clamp01Number(pt[0]);
-            const y = clamp01Number(pt[1]);
-            cleanedStroke.push([Number(x.toFixed(4)), Number(y.toFixed(4))]);
+            let x = null;
+            let y = null;
+            if (pt && typeof pt === 'object' && !Array.isArray(pt)) {
+                x = pt.x;
+                y = pt.y;
+            } else if (Array.isArray(pt) && pt.length >= 2) {
+                x = pt[0];
+                y = pt[1];
+            }
+            if (x == null || y == null) continue;
+            const cx = clamp01Number(x);
+            const cy = clamp01Number(y);
+            cleanedPoints.push({ x: Number(cx.toFixed(4)), y: Number(cy.toFixed(4)) });
             pointsTotal += 1;
         }
-        if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
+
+        if (cleanedPoints.length > 0) cleanedStrokes.push({ points: cleanedPoints });
         if (pointsTotal >= MAX_POINTS_TOTAL) break;
     }
 
