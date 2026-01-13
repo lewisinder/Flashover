@@ -130,10 +130,30 @@ function initChecksPage(options = {}) {
     let isReportSaved = false;
     let nextLockerToStartId = null;
 
+    const SIGNOFF_NAME_KEY = 'reportSignedName';
+    const SIGNOFF_SIGNATURE_KEY = 'reportSignature';
+    let reportSignedName = '';
+    let reportSignature = null;
+
     function loadStateFromSession() {
         checkResults = JSON.parse(sessionStorage.getItem('checkResults')) || [];
         currentCheckState = JSON.parse(sessionStorage.getItem('currentCheckState')) || { lockerId: null, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
         checkInProgress = sessionStorage.getItem('checkInProgress') === 'true';
+
+        reportSignedName = String(sessionStorage.getItem(SIGNOFF_NAME_KEY) || '').trim();
+        try {
+            reportSignature = JSON.parse(sessionStorage.getItem(SIGNOFF_SIGNATURE_KEY) || 'null');
+        } catch (e) {
+            reportSignature = null;
+        }
+
+        const fallbackName = (currentUser && (currentUser.displayName || currentUser.email)) || '';
+        if (!reportSignedName && fallbackName) reportSignedName = fallbackName;
+        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName || '';
+        if (signaturePad) {
+            if (reportSignature) signaturePad.setData(reportSignature);
+            else signaturePad.clear();
+        }
     }
 
     function saveStateToSession() {
@@ -188,6 +208,266 @@ function initChecksPage(options = {}) {
         containerMissing: getElement('btn-container-missing')
     };
 
+    const signoffUI = {
+        nameInput: getElement('report-signed-name'),
+        canvas: getElement('report-signature-canvas'),
+        clearBtn: getElement('clear-signature-btn')
+    };
+
+    function persistSignoffState() {
+        try {
+            const name = String(reportSignedName || '').trim();
+            if (name) sessionStorage.setItem(SIGNOFF_NAME_KEY, name);
+            else sessionStorage.removeItem(SIGNOFF_NAME_KEY);
+        } catch (e) {}
+
+        try {
+            if (reportSignature) sessionStorage.setItem(SIGNOFF_SIGNATURE_KEY, JSON.stringify(reportSignature));
+            else sessionStorage.removeItem(SIGNOFF_SIGNATURE_KEY);
+        } catch (e) {}
+    }
+
+    function clearSignoffState() {
+        reportSignedName = '';
+        reportSignature = null;
+        try {
+            sessionStorage.removeItem(SIGNOFF_NAME_KEY);
+            sessionStorage.removeItem(SIGNOFF_SIGNATURE_KEY);
+        } catch (e) {}
+        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = '';
+        if (signaturePad) signaturePad.clear();
+    }
+
+    function clamp01(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return 0;
+        if (n < 0) return 0;
+        if (n > 1) return 1;
+        return n;
+    }
+
+    function sanitizeSignatureData(data) {
+        if (!data || typeof data !== 'object') return null;
+        const strokes = Array.isArray(data.strokes) ? data.strokes : null;
+        if (!strokes) return null;
+
+        const MAX_STROKES = 16;
+        const MAX_POINTS_TOTAL = 2000;
+        let pointsTotal = 0;
+
+        const cleanedStrokes = [];
+        for (const stroke of strokes.slice(0, MAX_STROKES)) {
+            if (!Array.isArray(stroke)) continue;
+            const cleanedStroke = [];
+            for (const pt of stroke) {
+                if (!Array.isArray(pt) || pt.length < 2) continue;
+                if (pointsTotal >= MAX_POINTS_TOTAL) break;
+                const x = clamp01(pt[0]);
+                const y = clamp01(pt[1]);
+                cleanedStroke.push([Number(x.toFixed(4)), Number(y.toFixed(4))]);
+                pointsTotal += 1;
+            }
+            if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
+            if (pointsTotal >= MAX_POINTS_TOTAL) break;
+        }
+
+        if (cleanedStrokes.length === 0) return null;
+        return { version: 1, strokes: cleanedStrokes };
+    }
+
+    function createSignaturePad(canvas, { onChange } = {}) {
+        if (!canvas) return null;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        const state = {
+            data: { version: 1, strokes: [] },
+            drawing: false,
+            currentStroke: null,
+            lastPoint: null,
+            cssWidth: 0,
+            cssHeight: 0,
+            dpr: 1,
+        };
+
+        function setCanvasStyle() {
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#111827';
+            ctx.fillStyle = '#111827';
+            ctx.lineWidth = 2.5;
+        }
+
+        function ensureSize() {
+            const rect = canvas.getBoundingClientRect();
+            const cssWidth = Math.max(1, Math.round(rect.width || 0));
+            const cssHeight = Math.max(1, Math.round(rect.height || 0));
+            const dpr = window.devicePixelRatio || 1;
+            if (cssWidth === state.cssWidth && cssHeight === state.cssHeight && dpr === state.dpr) return;
+            state.cssWidth = cssWidth;
+            state.cssHeight = cssHeight;
+            state.dpr = dpr;
+            canvas.width = Math.round(cssWidth * dpr);
+            canvas.height = Math.round(cssHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            setCanvasStyle();
+            redraw();
+        }
+
+        function clearCanvas() {
+            if (!state.cssWidth || !state.cssHeight) return;
+            ctx.clearRect(0, 0, state.cssWidth, state.cssHeight);
+        }
+
+        function normToCss(pt) {
+            return {
+                x: pt[0] * state.cssWidth,
+                y: pt[1] * state.cssHeight,
+            };
+        }
+
+        function redraw() {
+            if (!state.cssWidth || !state.cssHeight) return;
+            clearCanvas();
+            setCanvasStyle();
+            ctx.beginPath();
+            state.data.strokes.forEach((stroke) => {
+                if (!Array.isArray(stroke) || stroke.length === 0) return;
+                const first = normToCss(stroke[0]);
+                ctx.moveTo(first.x, first.y);
+                for (let i = 1; i < stroke.length; i += 1) {
+                    const p = normToCss(stroke[i]);
+                    ctx.lineTo(p.x, p.y);
+                }
+            });
+            ctx.stroke();
+        }
+
+        function getPointFromEvent(e) {
+            const rect = canvas.getBoundingClientRect();
+            const width = rect.width || 1;
+            const height = rect.height || 1;
+            const x = (e.clientX - rect.left) / width;
+            const y = (e.clientY - rect.top) / height;
+            return [Number(clamp01(x).toFixed(4)), Number(clamp01(y).toFixed(4))];
+        }
+
+        function distanceSq(a, b) {
+            const dx = a[0] - b[0];
+            const dy = a[1] - b[1];
+            return dx * dx + dy * dy;
+        }
+
+        function drawDot(point) {
+            const p = normToCss(point);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawSegment(a, b) {
+            const p1 = normToCss(a);
+            const p2 = normToCss(b);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        }
+
+        function getData() {
+            const hasAny = state.data.strokes.some((stroke) => Array.isArray(stroke) && stroke.length > 0);
+            if (!hasAny) return null;
+            return { version: 1, strokes: state.data.strokes };
+        }
+
+        function setData(data) {
+            const sanitized = sanitizeSignatureData(data);
+            state.data = sanitized || { version: 1, strokes: [] };
+            redraw();
+            if (typeof onChange === 'function') onChange(getData());
+        }
+
+        function clear() {
+            state.data = { version: 1, strokes: [] };
+            state.drawing = false;
+            state.currentStroke = null;
+            state.lastPoint = null;
+            clearCanvas();
+            if (typeof onChange === 'function') onChange(null);
+        }
+
+        function handlePointerDown(e) {
+            if (e.button != null && e.button !== 0) return;
+            ensureSize();
+            setCanvasStyle();
+            state.drawing = true;
+            state.currentStroke = [];
+            state.lastPoint = null;
+            const p = getPointFromEvent(e);
+            state.currentStroke.push(p);
+            state.lastPoint = p;
+            drawDot(p);
+            try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+            e.preventDefault();
+        }
+
+        function handlePointerMove(e) {
+            if (!state.drawing || !state.currentStroke) return;
+            const p = getPointFromEvent(e);
+            const prev = state.lastPoint;
+            if (prev && distanceSq(prev, p) < 0.00002) return; // de-noise tiny moves
+            state.currentStroke.push(p);
+            if (prev) drawSegment(prev, p);
+            state.lastPoint = p;
+            e.preventDefault();
+        }
+
+        function endStroke(e) {
+            if (!state.drawing) return;
+            state.drawing = false;
+            try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+
+            if (state.currentStroke && state.currentStroke.length > 0) {
+                state.data.strokes.push(state.currentStroke);
+                state.currentStroke = null;
+                state.lastPoint = null;
+                if (typeof onChange === 'function') onChange(getData());
+            }
+        }
+
+        canvas.addEventListener('pointerdown', handlePointerDown, { passive: false });
+        canvas.addEventListener('pointermove', handlePointerMove, { passive: false });
+        canvas.addEventListener('pointerup', endStroke);
+        canvas.addEventListener('pointercancel', endStroke);
+        canvas.addEventListener('pointerleave', endStroke);
+
+        return {
+            resize: ensureSize,
+            clear,
+            getData,
+            setData,
+        };
+    }
+
+    const signaturePad = createSignaturePad(signoffUI && signoffUI.canvas, {
+        onChange: (data) => {
+            reportSignature = data;
+            persistSignoffState();
+        },
+    });
+
+    if (signoffUI && signoffUI.nameInput) {
+        signoffUI.nameInput.addEventListener('input', () => {
+            reportSignedName = String(signoffUI.nameInput.value || '').slice(0, 120);
+            persistSignoffState();
+        });
+    }
+    if (signoffUI && signoffUI.clearBtn) {
+        signoffUI.clearBtn.addEventListener('click', () => {
+            signaturePad && signaturePad.clear();
+        });
+    }
+
     // -------------------------------------------------------------------
     // SECTION D: CORE APP LOGIC
     // -------------------------------------------------------------------
@@ -198,6 +478,14 @@ function initChecksPage(options = {}) {
                 screens[key].classList.toggle('active', key === screenId);
             }
         });
+
+        if (screenId === 'summary') {
+            requestAnimationFrame(() => {
+                try {
+                    if (signaturePad) signaturePad.resize();
+                } catch (e) {}
+            });
+        }
     }
     
     function startOrResumeChecks() {
@@ -215,6 +503,10 @@ function initChecksPage(options = {}) {
         if (!checkInProgress) {
             checkResults = [];
             checkInProgress = true;
+            clearSignoffState();
+            reportSignedName = String((currentUser && (currentUser.displayName || currentUser.email)) || '');
+            if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName;
+            persistSignoffState();
             const firstLockerId = appliance.lockers[0].id;
             currentCheckState = { lockerId: firstLockerId, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
         }
@@ -716,12 +1008,31 @@ function initChecksPage(options = {}) {
             return;
         }
         try {
+            const signedName = String(signoffUI?.nameInput?.value || '').trim();
+            if (!signedName) {
+                alert('Please type your name to sign off this report.');
+                hideLoading();
+                return;
+            }
+            const signature = signaturePad ? signaturePad.getData() : null;
+            if (!signature) {
+                alert('Please add your signature before saving the report.');
+                hideLoading();
+                return;
+            }
+
+            reportSignedName = signedName;
+            reportSignature = signature;
+            persistSignoffState();
+
             const reportPayload = {
                 date: new Date().toISOString(),
                 applianceId: appliance.id,
                 applianceName: appliance.name,
                 brigadeId: brigadeId,
                 lockers: generateFullReportData().lockers,
+                signedName,
+                signature,
                 username: currentUser.displayName || currentUser.email,
                 uid: currentUser.uid
             };
@@ -742,6 +1053,7 @@ function initChecksPage(options = {}) {
                 sessionStorage.removeItem('checkResults');
                 sessionStorage.removeItem('checkInProgress');
                 sessionStorage.removeItem('currentCheckState');
+                clearSignoffState();
                 goToChecksHome();
             } else {
                 alert(`Failed to save report: ${(await response.json()).message}`);
@@ -865,6 +1177,7 @@ function initChecksPage(options = {}) {
             sessionStorage.removeItem('checkInProgress');
             sessionStorage.removeItem('checkResults');
             sessionStorage.removeItem('currentCheckState');
+            clearSignoffState();
             goToChecksHome();
         }
         hideLoading();

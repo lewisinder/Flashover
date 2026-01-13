@@ -101,7 +101,9 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
       reports.forEach((report) => {
         const card = el("button", "fs-row");
         card.type = "button";
-        const who = report.username || report.creatorName || "Unknown";
+        const appUsername = report.username || report.creatorName || "Unknown";
+        const signedName = typeof report.signedName === "string" ? report.signedName.trim() : "";
+        const who = signedName || appUsername;
         const when = report.date ? new Date(report.date).toLocaleString() : "";
 
         const left = el("div");
@@ -116,6 +118,7 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
         text.innerHTML = `
           <div class="fs-row-title">${report.applianceName || "Unknown appliance"}</div>
           <div class="fs-row-meta">Checked by ${who}${when ? ` • ${when}` : ""}</div>
+          <div class="fs-row-meta fs-row-meta-subtle">app username: ${appUsername}</div>
         `;
 
         const chevron = el("div");

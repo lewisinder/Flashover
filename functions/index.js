@@ -965,6 +965,51 @@ brigadeRouter.delete('/:brigadeId', async (req, res) => {
 });
 apiRouter.use('/brigades', brigadeRouter);
 
+function normalizeSignedName(value) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return '';
+    // Avoid control chars / obvious HTML injection in downstream email rendering.
+    const cleaned = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').replace(/[<>]/g, '');
+    return cleaned.slice(0, 120);
+}
+
+function clamp01Number(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    if (n < 0) return 0;
+    if (n > 1) return 1;
+    return n;
+}
+
+function sanitizeSignatureData(data) {
+    if (!data || typeof data !== 'object') return null;
+    const strokes = Array.isArray(data.strokes) ? data.strokes : null;
+    if (!strokes) return null;
+
+    const MAX_STROKES = 16;
+    const MAX_POINTS_TOTAL = 2000;
+    let pointsTotal = 0;
+    const cleanedStrokes = [];
+
+    for (const stroke of strokes.slice(0, MAX_STROKES)) {
+        if (!Array.isArray(stroke)) continue;
+        const cleanedStroke = [];
+        for (const pt of stroke) {
+            if (!Array.isArray(pt) || pt.length < 2) continue;
+            if (pointsTotal >= MAX_POINTS_TOTAL) break;
+            const x = clamp01Number(pt[0]);
+            const y = clamp01Number(pt[1]);
+            cleanedStroke.push([Number(x.toFixed(4)), Number(y.toFixed(4))]);
+            pointsTotal += 1;
+        }
+        if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
+        if (pointsTotal >= MAX_POINTS_TOTAL) break;
+    }
+
+    if (cleanedStrokes.length === 0) return null;
+    return { version: 1, strokes: cleanedStrokes };
+}
+
 // --- Report Routes ---
 const reportRouter = express.Router();
 reportRouter.get('/brigade/:brigadeId', async (req, res) => {
@@ -994,6 +1039,7 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
                 applianceName: data.applianceName,
                 date: data.date,
                 username: data.username || data.creatorName,
+                signedName: data.signedName,
                 uid: data.uid,
             };
         });
@@ -1005,7 +1051,15 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
 });
 // A helper function to generate a clearer HTML email for the report
 const generateReportHtml = (reportData) => {
-    const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', lockers = [] } = reportData || {};
+    const {
+        applianceName = 'Unknown Appliance',
+        date,
+        username = 'Unknown User',
+        signedName,
+        lockers = [],
+    } = reportData || {};
+
+    const completedBy = String(signedName || '').trim() || username;
 
     let formattedDate = 'an unknown date';
     try {
@@ -1114,7 +1168,7 @@ const generateReportHtml = (reportData) => {
 
     let html = `<div style="${styles.body}"><div style="${styles.card}">`;
     html += `<h2 style="${styles.header}">Report for ${applianceName}</h2>`;
-    html += `<p style="${styles.sub}">Completed by <strong>${username}</strong> on ${formattedDate}</p>`;
+    html += `<p style="${styles.sub}">Completed by <strong>${completedBy}</strong> on ${formattedDate}<br/><span style="${styles.subtle}">app username: ${username}</span></p>`;
     html += `<div style="${styles.summary}">`;
     html += `<span style="${styles.pill}">Issues: ${issuesCount}</span>`;
     html += `<span style="${styles.pill}">Items: ${itemsCount}</span>`;
@@ -1208,6 +1262,9 @@ reportRouter.post('/', async (req, res) => {
             return res.status(404).json({ message: 'Appliance not found.' });
         }
 
+        const signedName = normalizeSignedName(reportData.signedName);
+        const signature = sanitizeSignatureData(reportData.signature);
+
         const safeReportData = {
             ...reportData,
             brigadeId,
@@ -1217,6 +1274,8 @@ reportRouter.post('/', async (req, res) => {
             lockers: Array.isArray(reportData.lockers) ? reportData.lockers : [],
             uid: req.user.uid,
             username: req.user.name || req.user.email || reportData.username || 'Unknown',
+            signedName,
+            signature: signature || null,
         };
 
         const reportRef = brigade.ref.collection('reports').doc();

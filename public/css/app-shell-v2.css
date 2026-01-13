@@ -329,6 +329,11 @@ button.fs-row:focus {
   font-size: 12px;
 }
 
+.fs-row-meta-subtle {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 .fs-pill {
   display: inline-flex;
   align-items: center;
