@@ -1,6 +1,7 @@
 :root {
   --background: #f6f7fb;
   --blue: #0b1220;
+  --flashover-blue: #180F5E;
   --red-action-1: #e11d48;
   --orange-action-1: #f59e0b;
   --green-action-1: #16a34a;
@@ -78,6 +79,34 @@ body {
   width: 22px;
   height: 22px;
   opacity: 0.9;
+}
+
+.fs-tabbar-icon {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  background-color: var(--flashover-blue);
+  opacity: 0.9;
+}
+
+.fs-tabbar-icon-checks {
+  -webkit-mask: url("/design_assets/Tick Icon.png") no-repeat center / contain;
+  mask: url("/design_assets/Tick Icon.png") no-repeat center / contain;
+}
+
+.fs-tabbar-icon-reports {
+  -webkit-mask: url("/design_assets/Report Icon.png") no-repeat center / contain;
+  mask: url("/design_assets/Report Icon.png") no-repeat center / contain;
+}
+
+.fs-tabbar-icon-brigades {
+  -webkit-mask: url("/design_assets/Users Icon.png") no-repeat center / contain;
+  mask: url("/design_assets/Users Icon.png") no-repeat center / contain;
+}
+
+.fs-tabbar-icon-account {
+  -webkit-mask: url("/design_assets/Gear Icon.png") no-repeat center / contain;
+  mask: url("/design_assets/Gear Icon.png") no-repeat center / contain;
 }
 
 .fs-tabbar-btn[aria-current="page"] {
