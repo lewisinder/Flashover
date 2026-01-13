@@ -151,7 +151,7 @@ function initChecksPage(options = {}) {
         if (signoffUI && signoffUI.appUsername) {
             signoffUI.appUsername.textContent = `App username: ${fallbackName || 'Unknown'}`;
         }
-        if (signoffUI && signoffUI.initialsInput) signoffUI.initialsInput.value = reportSignedName || '';
+        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName || fallbackName || '';
         if (signaturePad) {
             if (reportSignature) signaturePad.setData(reportSignature);
             else signaturePad.clear();
@@ -214,7 +214,7 @@ function initChecksPage(options = {}) {
 
     const signoffUI = {
         appUsername: getElement('signoff-app-username'),
-        initialsInput: getElement('signoff-initials'),
+        nameInput: getElement('signoff-name'),
         canvas: getElement('signoff-signature-canvas'),
         clearBtn: getElement('signoff-clear-signature-btn'),
         backBtn: getElement('signoff-back-btn'),
@@ -241,7 +241,7 @@ function initChecksPage(options = {}) {
             sessionStorage.removeItem(SIGNOFF_NAME_KEY);
             sessionStorage.removeItem(SIGNOFF_SIGNATURE_KEY);
         } catch (e) {}
-        if (signoffUI && signoffUI.initialsInput) signoffUI.initialsInput.value = '';
+        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = '';
         if (signaturePad) signaturePad.clear();
         updateSignoffConfirmState();
     }
@@ -515,18 +515,18 @@ function initChecksPage(options = {}) {
     });
 
     function updateSignoffConfirmState() {
-        const initials = String(signoffUI?.initialsInput?.value || '').trim();
+        const name = String(signoffUI?.nameInput?.value || '').trim();
         const hasSig = !!(signaturePad && signaturePad.getData());
-        const enabled = !!initials && hasSig;
+        const enabled = !!name && hasSig;
         if (signoffUI && signoffUI.confirmBtn) {
             signoffUI.confirmBtn.disabled = !enabled;
             signoffUI.confirmBtn.classList.toggle('opacity-60', !enabled);
         }
     }
 
-    if (signoffUI && signoffUI.initialsInput) {
-        signoffUI.initialsInput.addEventListener('input', () => {
-            reportSignedName = String(signoffUI.initialsInput.value || '').slice(0, 12);
+    if (signoffUI && signoffUI.nameInput) {
+        signoffUI.nameInput.addEventListener('input', () => {
+            reportSignedName = String(signoffUI.nameInput.value || '').slice(0, 120);
             persistSignoffState();
             updateSignoffConfirmState();
         });
@@ -1086,20 +1086,20 @@ function initChecksPage(options = {}) {
             return;
         }
         try {
-            const initials = String(signoffUI?.initialsInput?.value || '').trim();
-            if (!initials) {
-                alert('Please enter your initials to sign off this report.');
+            const signedName = String(signoffUI?.nameInput?.value || '').trim();
+            if (!signedName) {
+                alert('Please enter your name to sign off this report.');
                 hideLoading();
                 return;
             }
             const signature = signaturePad ? signaturePad.getData() : null;
             if (!signature) {
-                alert('Please add your signature before saving the report.');
+                alert('Please draw your initials before saving the report.');
                 hideLoading();
                 return;
             }
 
-            reportSignedName = initials;
+            reportSignedName = signedName;
             reportSignature = signature;
             persistSignoffState();
 
@@ -1109,7 +1109,7 @@ function initChecksPage(options = {}) {
                 applianceName: appliance.name,
                 brigadeId: brigadeId,
                 lockers: generateFullReportData().lockers,
-                signedName: initials,
+                signedName,
                 signature,
                 username: currentUser.displayName || currentUser.email,
                 uid: currentUser.uid
@@ -1235,8 +1235,8 @@ function initChecksPage(options = {}) {
             if (signoffUI && signoffUI.appUsername) {
                 signoffUI.appUsername.textContent = `App username: ${fallbackName || 'Unknown'}`;
             }
-            if (signoffUI && signoffUI.initialsInput && !signoffUI.initialsInput.value) {
-                signoffUI.initialsInput.value = reportSignedName || '';
+            if (signoffUI && signoffUI.nameInput && !signoffUI.nameInput.value) {
+                signoffUI.nameInput.value = reportSignedName || fallbackName || '';
             }
             updateSignoffConfirmState();
             showScreen('signoff');
