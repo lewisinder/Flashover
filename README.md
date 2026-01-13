@@ -128,7 +128,7 @@ Key pages:
 
 Prerequisites:
 
-- Node.js (Functions currently target Node 18+ in `functions/package.json`; Firebase deploy uses Node 20 runtime per `firebase.json`)
+- Node.js (Functions target Node 20 per `functions/package.json` / `firebase.json`)
 - Firebase CLI (`npm i -g firebase-tools`)
 
 Run emulators:
