@@ -141,51 +141,54 @@ export async function renderReport({
     el.style.display = message ? "block" : "none";
   }
 
-  showLoading?.();
-  try {
-    const token = await user.getIdToken();
-    const report = await fetchJson(
-      `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
-      { token }
-    );
+  // Don't block route transitions on network reads; render immediately and hydrate async.
+  void (async () => {
+    showLoading?.();
+    try {
+      const token = await user.getIdToken();
+      const report = await fetchJson(
+        `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
+        { token }
+      );
 
-    const title = `Report for ${report.applianceName || "Appliance"}`;
-    setTitle?.(title);
+      const title = `Report for ${report.applianceName || "Appliance"}`;
+      setTitle?.(title);
 
-    metaBy.textContent = `Checked by: ${report.username || report.creatorName || "Unknown"}`;
-    metaDate.textContent = `Date: ${report.date ? new Date(report.date).toLocaleString() : ""}`;
+      metaBy.textContent = `Checked by: ${report.username || report.creatorName || "Unknown"}`;
+      metaDate.textContent = `Date: ${report.date ? new Date(report.date).toLocaleString() : ""}`;
 
-    content.innerHTML = "";
+      content.innerHTML = "";
 
-    if (Array.isArray(report.lockers) && report.lockers.length > 0) {
-      report.lockers.forEach((locker) => {
-        const section = el("div", "fs-card");
-        const inner = el("div", "fs-card-inner fs-stack");
-        inner.innerHTML = `
+      if (Array.isArray(report.lockers) && report.lockers.length > 0) {
+        report.lockers.forEach((locker) => {
+          const section = el("div", "fs-card");
+          const inner = el("div", "fs-card-inner fs-stack");
+          inner.innerHTML = `
           <div>
             <div class="fs-card-title">${locker.name || "Locker"}</div>
             <div class="fs-card-subtitle">Items in order (including containers).</div>
           </div>
         `;
 
-        const itemsWrap = el("div", "fs-stack");
-        (locker.shelves || []).forEach((shelf) => {
-          (shelf.items || []).forEach((item) => {
-            itemsWrap.appendChild(renderItem(item, { isSubItem: false }));
+          const itemsWrap = el("div", "fs-stack");
+          (locker.shelves || []).forEach((shelf) => {
+            (shelf.items || []).forEach((item) => {
+              itemsWrap.appendChild(renderItem(item, { isSubItem: false }));
+            });
           });
+          inner.appendChild(itemsWrap);
+          section.appendChild(inner);
+          content.appendChild(section);
         });
-        inner.appendChild(itemsWrap);
-        section.appendChild(inner);
-        content.appendChild(section);
-      });
-    } else {
-      content.innerHTML =
-        '<div class="fs-card"><div class="fs-card-inner"><div class="fs-card-title">No locker data</div><div class="fs-card-subtitle">This report didn’t include any lockers.</div></div></div>';
+      } else {
+        content.innerHTML =
+          '<div class="fs-card"><div class="fs-card-inner"><div class="fs-card-title">No locker data</div><div class="fs-card-subtitle">This report didn’t include any lockers.</div></div></div>';
+      }
+    } catch (err) {
+      console.error("Error loading report details:", err);
+      setAlert(errorEl, err.message);
+    } finally {
+      hideLoading?.();
     }
-  } catch (err) {
-    console.error("Error loading report details:", err);
-    setAlert(errorEl, err.message);
-  } finally {
-    hideLoading?.();
-  }
+  })();
 }

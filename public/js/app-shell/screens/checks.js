@@ -1,3 +1,5 @@
+import { getUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -19,11 +21,6 @@ async function fetchJson(url, { token, method, body } = {}) {
     throw new Error(data.message || `Request failed (${res.status})`);
   }
   return data;
-}
-
-async function loadUserBrigades({ db, uid }) {
-  const snapshot = await db.collection("users").doc(uid).collection("userBrigades").get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 function clearCheckSession() {
@@ -171,7 +168,6 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
     setAlert(successEl, "");
     applianceList.innerHTML =
       '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching appliances</div></div></div>';
-    showLoading?.();
     try {
       const token = await user.getIdToken();
       const data = await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, { token });
@@ -277,50 +273,48 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
       console.error("Failed to load appliance data:", err);
       applianceList.innerHTML = "";
       setAlert(errorEl, err.message);
-    } finally {
-      hideLoading?.();
     }
   }
 
-  showLoading?.();
-  try {
-    const brigades = await loadUserBrigades({ db, uid: user.uid });
-    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
-    select.innerHTML = "";
-    if (brigades.length === 0) {
-      select.innerHTML = '<option value="">No brigades found</option>';
-      applianceList.innerHTML =
-        '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
-      return;
+  // Don't block route transitions on network reads; render immediately and hydrate async.
+  void (async () => {
+    try {
+      const brigades = await getUserBrigades({ db, uid: user.uid });
+      brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
+      select.innerHTML = "";
+      if (brigades.length === 0) {
+        select.innerHTML = '<option value="">No brigades found</option>';
+        applianceList.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
+        return;
+      }
+
+      brigades.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.textContent = b.brigadeName || b.id;
+        select.appendChild(opt);
+      });
+
+      const stored = localStorage.getItem("activeBrigadeId");
+      const storedExists = stored && brigades.some((b) => b.id === stored);
+      const active = storedExists ? stored : brigades[0].id;
+      localStorage.setItem("activeBrigadeId", active);
+      select.value = active;
+
+      updateSetupButton(active);
+      await loadAppliancesForBrigade(active);
+
+      select.addEventListener("change", async (e) => {
+        const brigadeId = e.target.value;
+        if (!brigadeId) return;
+        localStorage.setItem("activeBrigadeId", brigadeId);
+        updateSetupButton(brigadeId);
+        await loadAppliancesForBrigade(brigadeId);
+      });
+    } catch (err) {
+      console.error("Failed to load brigades:", err);
+      setAlert(errorEl, "Could not load your brigades.");
     }
-
-    brigades.forEach((b) => {
-      const opt = document.createElement("option");
-      opt.value = b.id;
-      opt.textContent = b.brigadeName || b.id;
-      select.appendChild(opt);
-    });
-
-    const stored = localStorage.getItem("activeBrigadeId");
-    const storedExists = stored && brigades.some((b) => b.id === stored);
-    const active = storedExists ? stored : brigades[0].id;
-    localStorage.setItem("activeBrigadeId", active);
-    select.value = active;
-
-    updateSetupButton(active);
-    await loadAppliancesForBrigade(active);
-
-    select.addEventListener("change", async (e) => {
-      const brigadeId = e.target.value;
-      if (!brigadeId) return;
-      localStorage.setItem("activeBrigadeId", brigadeId);
-      updateSetupButton(brigadeId);
-      await loadAppliancesForBrigade(brigadeId);
-    });
-  } catch (err) {
-    console.error("Failed to load brigades:", err);
-    setAlert(errorEl, "Could not load your brigades.");
-  } finally {
-    hideLoading?.();
-  }
+  })();
 }

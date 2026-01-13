@@ -366,5 +366,6 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
     }
   });
 
-  await loadBrigadeData();
+  // Initial hydrate without blocking route transition.
+  void loadBrigadeData();
 }

@@ -1,12 +1,9 @@
+import { getUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   return node;
-}
-
-async function loadUserBrigades({ db, uid }) {
-  const snapshot = await db.collection("users").doc(uid).collection("userBrigades").get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 function buildActionCard({ iconSrc, title, subtitle, onClick }) {
@@ -127,46 +124,46 @@ export async function renderMenu({ root, auth, db, showLoading, hideLoading }) {
     }
   }
 
-  showLoading?.();
-  try {
-    const brigades = await loadUserBrigades({ db, uid: user.uid });
-    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
-    select.innerHTML = "";
+  // Don't block route transitions on network reads; render immediately and hydrate async.
+  void (async () => {
+    try {
+      const brigades = await getUserBrigades({ db, uid: user.uid });
+      brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
+      select.innerHTML = "";
 
-    if (brigades.length === 0) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "No brigades found";
-      select.appendChild(opt);
-      localStorage.removeItem("activeBrigadeId");
+      if (brigades.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No brigades found";
+        select.appendChild(opt);
+        localStorage.removeItem("activeBrigadeId");
+        updateActionAccess("");
+        return;
+      }
+
+      brigades.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.textContent = b.brigadeName || b.id;
+        select.appendChild(opt);
+      });
+
+      const stored = localStorage.getItem("activeBrigadeId");
+      const storedExists = stored && brigades.some((b) => b.id === stored);
+      const active = storedExists ? stored : brigades[0].id;
+      localStorage.setItem("activeBrigadeId", active);
+      select.value = active;
+      updateActionAccess(active);
+
+      select.addEventListener("change", (e) => {
+        const next = e.target.value;
+        localStorage.setItem("activeBrigadeId", next);
+        updateActionAccess(next);
+      });
+    } catch (err) {
+      console.error("Failed to load brigades:", err);
+      select.innerHTML = '<option value="">Error loading brigades</option>';
       updateActionAccess("");
-      return;
     }
-
-    brigades.forEach((b) => {
-      const opt = document.createElement("option");
-      opt.value = b.id;
-      opt.textContent = b.brigadeName || b.id;
-      select.appendChild(opt);
-    });
-
-    const stored = localStorage.getItem("activeBrigadeId");
-    const storedExists = stored && brigades.some((b) => b.id === stored);
-    const active = storedExists ? stored : brigades[0].id;
-    localStorage.setItem("activeBrigadeId", active);
-    select.value = active;
-    updateActionAccess(active);
-
-    select.addEventListener("change", (e) => {
-      const next = e.target.value;
-      localStorage.setItem("activeBrigadeId", next);
-      updateActionAccess(next);
-    });
-  } catch (err) {
-    console.error("Failed to load brigades:", err);
-    select.innerHTML = '<option value="">Error loading brigades</option>';
-    updateActionAccess("");
-  } finally {
-    hideLoading?.();
-  }
+  })();
 }

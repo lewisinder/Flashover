@@ -1,3 +1,5 @@
+import { getUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -17,11 +19,6 @@ async function fetchJson(url, { token, method, body } = {}) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
   return data;
-}
-
-async function loadUserBrigades({ db, uid }) {
-  const snapshot = await db.collection("users").doc(uid).collection("userBrigades").get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function renderSetupHome({ root, auth, db, showLoading, hideLoading }) {
@@ -281,7 +278,6 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     setAlert(errorEl, "");
     list.innerHTML =
       '<div class="fs-row"><div><div class="fs-row-title">Loading…</div><div class="fs-row-meta">Fetching appliances</div></div></div>';
-    showLoading?.();
     try {
       const token = await auth.currentUser.getIdToken();
       truckData = await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, { token });
@@ -291,8 +287,6 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       console.error("Error loading brigade data (setup):", err);
       list.innerHTML = "";
       setAlert(errorEl, err.message);
-    } finally {
-      hideLoading?.();
     }
   }
 
@@ -351,46 +345,46 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   if (!user) return;
 
   let brigadeMetaById = new Map();
-  showLoading?.();
-  try {
-    const brigades = await loadUserBrigades({ db, uid: user.uid });
-    brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
-    select.innerHTML = "";
-    if (brigades.length === 0) {
-      select.innerHTML = '<option value="">No brigades found</option>';
-      list.innerHTML =
-        '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
-      return;
+  // Don't block route transitions on network reads; render immediately and hydrate async.
+  void (async () => {
+    try {
+      const brigades = await getUserBrigades({ db, uid: user.uid });
+      brigadeMetaById = new Map(brigades.map((b) => [b.id, b]));
+      select.innerHTML = "";
+      if (brigades.length === 0) {
+        select.innerHTML = '<option value="">No brigades found</option>';
+        list.innerHTML =
+          '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create one from the Brigades tab.</div></div></div>';
+        return;
+      }
+
+      brigades.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.id;
+        opt.textContent = b.brigadeName || b.id;
+        select.appendChild(opt);
+      });
+
+      const stored = localStorage.getItem("activeBrigadeId");
+      const storedExists = stored && brigades.some((b) => b.id === stored);
+      activeBrigadeId = storedExists ? stored : brigades[0].id;
+      localStorage.setItem("activeBrigadeId", activeBrigadeId);
+      select.value = activeBrigadeId;
+
+      updateAdminUi(activeBrigadeId);
+      await loadBrigadeData(activeBrigadeId);
+
+      select.addEventListener("change", async (e) => {
+        const brigadeId = e.target.value;
+        if (!brigadeId) return;
+        activeBrigadeId = brigadeId;
+        localStorage.setItem("activeBrigadeId", brigadeId);
+        updateAdminUi(brigadeId);
+        await loadBrigadeData(brigadeId);
+      });
+    } catch (err) {
+      console.error("Failed to load brigades (setup):", err);
+      setAlert(errorEl, "Could not load your brigades.");
     }
-
-    brigades.forEach((b) => {
-      const opt = document.createElement("option");
-      opt.value = b.id;
-      opt.textContent = b.brigadeName || b.id;
-      select.appendChild(opt);
-    });
-
-    const stored = localStorage.getItem("activeBrigadeId");
-    const storedExists = stored && brigades.some((b) => b.id === stored);
-    activeBrigadeId = storedExists ? stored : brigades[0].id;
-    localStorage.setItem("activeBrigadeId", activeBrigadeId);
-    select.value = activeBrigadeId;
-
-    updateAdminUi(activeBrigadeId);
-    await loadBrigadeData(activeBrigadeId);
-
-    select.addEventListener("change", async (e) => {
-      const brigadeId = e.target.value;
-      if (!brigadeId) return;
-      activeBrigadeId = brigadeId;
-      localStorage.setItem("activeBrigadeId", brigadeId);
-      updateAdminUi(brigadeId);
-      await loadBrigadeData(brigadeId);
-    });
-  } catch (err) {
-    console.error("Failed to load brigades (setup):", err);
-    setAlert(errorEl, "Could not load your brigades.");
-  } finally {
-    hideLoading?.();
-  }
+  })();
 }
