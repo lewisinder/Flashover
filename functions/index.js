@@ -876,17 +876,47 @@ brigadeRouter.delete('/:brigadeId', async (req, res) => {
         if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to delete a brigade.' });
         }
-        const batch = db.batch();
+
         const membersSnapshot = await brigadeRef.collection('members').get();
-        membersSnapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-            const userBrigadeRef = db.collection('users').doc(doc.id).collection('userBrigades').doc(brigadeId);
-            batch.delete(userBrigadeRef);
-        });
-        const joinRequestsSnapshot = await brigadeRef.collection('joinRequests').get();
-        joinRequestsSnapshot.docs.forEach(doc => { batch.delete(doc.ref); });
-        batch.delete(brigadeRef);
-        await batch.commit();
+        const memberIds = membersSnapshot.docs.map((doc) => doc.id);
+
+        // Delete cross-collection membership references first (these are not under the brigade doc).
+        const USER_BRIGADE_BATCH_LIMIT = 450;
+        for (let i = 0; i < memberIds.length; i += USER_BRIGADE_BATCH_LIMIT) {
+            const batch = db.batch();
+            const chunk = memberIds.slice(i, i + USER_BRIGADE_BATCH_LIMIT);
+            chunk.forEach((memberId) => {
+                const userBrigadeRef = db.collection('users').doc(memberId).collection('userBrigades').doc(brigadeId);
+                batch.delete(userBrigadeRef);
+            });
+            await batch.commit();
+        }
+
+        // Now delete the brigade doc and all nested subcollections (members, joinRequests, reports, etc).
+        if (typeof db.recursiveDelete === 'function') {
+            await db.recursiveDelete(brigadeRef);
+        } else {
+            // Fallback for older SDKs: manually delete known subcollections.
+            const deleteCollection = async (collectionRef, batchSize = 450) => {
+                while (true) {
+                    const snapshot = await collectionRef
+                        .orderBy(admin.firestore.FieldPath.documentId())
+                        .limit(batchSize)
+                        .get();
+                    if (snapshot.empty) return;
+                    const batch = db.batch();
+                    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+                    await batch.commit();
+                    if (snapshot.size < batchSize) return;
+                }
+            };
+
+            await deleteCollection(brigadeRef.collection('reports'));
+            await deleteCollection(brigadeRef.collection('members'));
+            await deleteCollection(brigadeRef.collection('joinRequests'));
+            await brigadeRef.delete();
+        }
+
         res.status(200).json({ message: 'Brigade deleted successfully.' });
     } catch (error) {
         console.error(`Error deleting brigade ${req.params.brigadeId}:`, error);
