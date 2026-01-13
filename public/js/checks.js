@@ -251,8 +251,9 @@ function initChecksPage(options = {}) {
         const strokes = Array.isArray(data.strokes) ? data.strokes : null;
         if (!strokes) return null;
 
-        const MAX_STROKES = 16;
-        const MAX_POINTS_TOTAL = 2000;
+        // Keep the signature payload compact so report saving stays fast and reliable.
+        const MAX_STROKES = 12;
+        const MAX_POINTS_TOTAL = 700;
         let pointsTotal = 0;
 
         const cleanedStrokes = [];
@@ -264,7 +265,7 @@ function initChecksPage(options = {}) {
                 if (pointsTotal >= MAX_POINTS_TOTAL) break;
                 const x = clamp01(pt[0]);
                 const y = clamp01(pt[1]);
-                cleanedStroke.push([Number(x.toFixed(4)), Number(y.toFixed(4))]);
+                cleanedStroke.push([Number(x.toFixed(3)), Number(y.toFixed(3))]);
                 pointsTotal += 1;
             }
             if (cleanedStroke.length > 0) cleanedStrokes.push(cleanedStroke);
@@ -377,7 +378,7 @@ function initChecksPage(options = {}) {
         function getData() {
             const hasAny = state.data.strokes.some((stroke) => Array.isArray(stroke) && stroke.length > 0);
             if (!hasAny) return null;
-            return { version: 1, strokes: state.data.strokes };
+            return sanitizeSignatureData(state.data);
         }
 
         function setData(data) {
@@ -415,7 +416,7 @@ function initChecksPage(options = {}) {
             if (!state.drawing || !state.currentStroke) return;
             const p = getPointFromEvent(e);
             const prev = state.lastPoint;
-            if (prev && distanceSq(prev, p) < 0.00002) return; // de-noise tiny moves
+            if (prev && distanceSq(prev, p) < 0.00005) return; // de-noise tiny moves
             state.currentStroke.push(p);
             if (prev) drawSegment(prev, p);
             state.lastPoint = p;
@@ -429,6 +430,8 @@ function initChecksPage(options = {}) {
 
             if (state.currentStroke && state.currentStroke.length > 0) {
                 state.data.strokes.push(state.currentStroke);
+                state.data = sanitizeSignatureData(state.data) || { version: 1, strokes: [] };
+                redraw();
                 state.currentStroke = null;
                 state.lastPoint = null;
                 if (typeof onChange === 'function') onChange(getData());
