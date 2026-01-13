@@ -590,6 +590,11 @@ brigadeRouter.put('/:brigadeId/members/:memberId', async (req, res) => {
         if (!role) {
             return res.status(400).json({ message: 'Role is required.' });
         }
+        const roleRaw = String(role || '').trim().toLowerCase();
+        const normalizedRole = roleRaw === 'admin' ? 'Admin' : roleRaw === 'member' ? 'Member' : null;
+        if (!normalizedRole) {
+            return res.status(400).json({ message: 'Invalid role. Allowed roles: Admin, Member.' });
+        }
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const adminMemberRef = brigadeRef.collection('members').doc(adminId);
         const targetMemberRef = brigadeRef.collection('members').doc(memberId);
@@ -598,9 +603,27 @@ brigadeRouter.put('/:brigadeId/members/:memberId', async (req, res) => {
         if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to update roles.' });
         }
+
+        const targetMemberDoc = await targetMemberRef.get();
+        if (!targetMemberDoc.exists) {
+            return res.status(404).json({ message: 'Member not found.' });
+        }
+
+        // Safety: prevent demoting the last remaining admin (including yourself).
+        const targetIsAdmin = String(targetMemberDoc.data().role || '') === 'Admin';
+        const wouldRemoveAdmin = targetIsAdmin && normalizedRole !== 'Admin';
+        if (wouldRemoveAdmin) {
+            const adminsSnapshot = await brigadeRef.collection('members').where('role', '==', 'Admin').get();
+            if (adminsSnapshot.size <= 1) {
+                return res.status(400).json({
+                    message: 'You cannot demote the last admin. Promote another member to Admin first.',
+                });
+            }
+        }
+
         await db.runTransaction(async (transaction) => {
-            transaction.update(targetMemberRef, { role: role });
-            transaction.update(targetUserBrigadeRef, { role: role });
+            transaction.update(targetMemberRef, { role: normalizedRole });
+            transaction.update(targetUserBrigadeRef, { role: normalizedRole });
         });
         res.status(200).json({ message: 'Role updated successfully.' });
     } catch (error) {
@@ -623,6 +646,23 @@ brigadeRouter.delete('/:brigadeId/members/:memberId', async (req, res) => {
         if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to remove members.' });
         }
+
+        const targetMemberDoc = await targetMemberRef.get();
+        if (!targetMemberDoc.exists) {
+            return res.status(404).json({ message: 'Member not found.' });
+        }
+
+        // Safety: prevent removing the last remaining admin.
+        const targetIsAdmin = String(targetMemberDoc.data().role || '') === 'Admin';
+        if (targetIsAdmin) {
+            const adminsSnapshot = await brigadeRef.collection('members').where('role', '==', 'Admin').get();
+            if (adminsSnapshot.size <= 1) {
+                return res.status(400).json({
+                    message: 'You cannot remove the last admin. Promote another member to Admin first.',
+                });
+            }
+        }
+
         await db.runTransaction(async (transaction) => {
             transaction.delete(targetMemberRef);
             transaction.delete(targetUserBrigadeRef);
