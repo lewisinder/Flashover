@@ -148,12 +148,15 @@ function initChecksPage(options = {}) {
         }
 
         const fallbackName = (currentUser && (currentUser.displayName || currentUser.email)) || '';
-        if (!reportSignedName && fallbackName) reportSignedName = fallbackName;
-        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName || '';
+        if (signoffUI && signoffUI.appUsername) {
+            signoffUI.appUsername.textContent = `App username: ${fallbackName || 'Unknown'}`;
+        }
+        if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName || fallbackName || '';
         if (signaturePad) {
             if (reportSignature) signaturePad.setData(reportSignature);
             else signaturePad.clear();
         }
+        updateSignoffConfirmState();
     }
 
     function saveStateToSession() {
@@ -171,6 +174,7 @@ function initChecksPage(options = {}) {
         lockerCheck: getElement('locker-check-screen'), 
         nextLockerChoice: getElement('next-locker-choice-screen'), 
         summary: getElement('summary-screen'), 
+        signoff: getElement('signoff-screen'),
     };
 
     const checkerUI = { 
@@ -209,9 +213,12 @@ function initChecksPage(options = {}) {
     };
 
     const signoffUI = {
-        nameInput: getElement('report-signed-name'),
-        canvas: getElement('report-signature-canvas'),
-        clearBtn: getElement('clear-signature-btn')
+        appUsername: getElement('signoff-app-username'),
+        nameInput: getElement('signoff-name'),
+        canvas: getElement('signoff-signature-canvas'),
+        clearBtn: getElement('signoff-clear-signature-btn'),
+        backBtn: getElement('signoff-back-btn'),
+        confirmBtn: getElement('signoff-confirm-btn'),
     };
 
     function persistSignoffState() {
@@ -236,6 +243,7 @@ function initChecksPage(options = {}) {
         } catch (e) {}
         if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = '';
         if (signaturePad) signaturePad.clear();
+        updateSignoffConfirmState();
     }
 
     function clamp01(value) {
@@ -299,7 +307,7 @@ function initChecksPage(options = {}) {
         return { version: 1, strokes: cleanedStrokes };
     }
 
-    function createSignaturePad(canvas, { onChange } = {}) {
+    function createSignaturePad(canvas, { onChange, onActivity } = {}) {
         if (!canvas) return null;
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
@@ -420,11 +428,13 @@ function initChecksPage(options = {}) {
         }
 
         function getData() {
-            const hasAny = state.data.strokes.some(
-                (stroke) => stroke && typeof stroke === 'object' && Array.isArray(stroke.points) && stroke.points.length > 0
-            );
-            if (!hasAny) return null;
-            return sanitizeSignatureData(state.data);
+            const strokesSnapshot = Array.isArray(state.data.strokes) ? state.data.strokes.slice() : [];
+            if (Array.isArray(state.currentStroke) && state.currentStroke.length > 0) {
+                strokesSnapshot.push({ points: state.currentStroke });
+            }
+
+            const snapshot = { version: 1, strokes: strokesSnapshot };
+            return sanitizeSignatureData(snapshot);
         }
 
         function setData(data) {
@@ -455,6 +465,7 @@ function initChecksPage(options = {}) {
             state.lastPoint = p;
             drawDot(p);
             try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+            if (typeof onActivity === 'function') onActivity();
             e.preventDefault();
         }
 
@@ -466,6 +477,7 @@ function initChecksPage(options = {}) {
             state.currentStroke.push(p);
             if (prev) drawSegment(prev, p);
             state.lastPoint = p;
+            if (typeof onActivity === 'function') onActivity();
             e.preventDefault();
         }
 
@@ -502,18 +514,51 @@ function initChecksPage(options = {}) {
         onChange: (data) => {
             reportSignature = data;
             persistSignoffState();
+            updateSignoffConfirmState();
+        },
+        onActivity: () => {
+            // Some browsers may not deliver pointerup to the canvas; keep UI state in sync while drawing.
+            updateSignoffConfirmState();
         },
     });
+
+    function updateSignoffConfirmState() {
+        const name = String(signoffUI?.nameInput?.value || '').trim();
+        const hasSig = !!(signaturePad && signaturePad.getData());
+        const enabled = !!name && hasSig;
+        if (signoffUI && signoffUI.confirmBtn) {
+            if (enabled) {
+                signoffUI.confirmBtn.disabled = false;
+                signoffUI.confirmBtn.removeAttribute('disabled');
+            } else {
+                signoffUI.confirmBtn.disabled = true;
+                signoffUI.confirmBtn.setAttribute('disabled', '');
+            }
+            signoffUI.confirmBtn.classList.toggle('opacity-60', !enabled);
+        }
+    }
 
     if (signoffUI && signoffUI.nameInput) {
         signoffUI.nameInput.addEventListener('input', () => {
             reportSignedName = String(signoffUI.nameInput.value || '').slice(0, 120);
             persistSignoffState();
+            updateSignoffConfirmState();
         });
     }
     if (signoffUI && signoffUI.clearBtn) {
         signoffUI.clearBtn.addEventListener('click', () => {
             signaturePad && signaturePad.clear();
+        });
+    }
+    if (signoffUI && signoffUI.backBtn) {
+        signoffUI.backBtn.addEventListener('click', () => {
+            showScreen('summary');
+        });
+    }
+    if (signoffUI && signoffUI.confirmBtn) {
+        signoffUI.confirmBtn.addEventListener('click', async () => {
+            if (signoffUI.confirmBtn.disabled) return;
+            await saveReport();
         });
     }
 
@@ -528,7 +573,7 @@ function initChecksPage(options = {}) {
             }
         });
 
-        if (screenId === 'summary') {
+        if (screenId === 'signoff') {
             requestAnimationFrame(() => {
                 try {
                     if (signaturePad) signaturePad.resize();
@@ -553,8 +598,6 @@ function initChecksPage(options = {}) {
             checkResults = [];
             checkInProgress = true;
             clearSignoffState();
-            reportSignedName = String((currentUser && (currentUser.displayName || currentUser.email)) || '');
-            if (signoffUI && signoffUI.nameInput) signoffUI.nameInput.value = reportSignedName;
             persistSignoffState();
             const firstLockerId = appliance.lockers[0].id;
             currentCheckState = { lockerId: firstLockerId, selectedItemId: null, isRechecking: false, isInsideContainer: false, parentItemId: null };
@@ -1059,13 +1102,13 @@ function initChecksPage(options = {}) {
         try {
             const signedName = String(signoffUI?.nameInput?.value || '').trim();
             if (!signedName) {
-                alert('Please type your name to sign off this report.');
+                alert('Please enter your name to sign off this report.');
                 hideLoading();
                 return;
             }
             const signature = signaturePad ? signaturePad.getData() : null;
             if (!signature) {
-                alert('Please add your signature before saving the report.');
+                alert('Please draw your initials before saving the report.');
                 hideLoading();
                 return;
             }
@@ -1199,7 +1242,19 @@ function initChecksPage(options = {}) {
             renderNextLockerChoices();
             showScreen('nextLockerChoice');
         });
-        addSafeEventListener('save-report-btn', 'click', saveReport);
+        addSafeEventListener('save-report-btn', 'click', () => {
+            // Summary screen only shows Edit / Sign-off / Exit.
+            // Saving is done from the sign-off screen after initials + signature.
+            const fallbackName = (currentUser && (currentUser.displayName || currentUser.email)) || '';
+            if (signoffUI && signoffUI.appUsername) {
+                signoffUI.appUsername.textContent = `App username: ${fallbackName || 'Unknown'}`;
+            }
+            if (signoffUI && signoffUI.nameInput && !signoffUI.nameInput.value) {
+                signoffUI.nameInput.value = reportSignedName || fallbackName || '';
+            }
+            updateSignoffConfirmState();
+            showScreen('signoff');
+        });
         addSafeEventListener('exit-summary-btn', 'click', () => {
             if (isReportSaved) {
                 goToMenu();
