@@ -30,6 +30,58 @@ const statusIcons = {
   untouched: "/design_assets/Note Icon.png",
 };
 
+function drawSignatureOnCanvas(canvas, signature) {
+  if (!canvas) return;
+  const strokes = signature && Array.isArray(signature.strokes) ? signature.strokes : null;
+  if (!strokes || strokes.length === 0) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const cssWidth = Math.max(1, Math.round(rect.width || 0));
+  const cssHeight = Math.max(1, Math.round(rect.height || 0));
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 2.5;
+
+  ctx.beginPath();
+  strokes.forEach((stroke) => {
+    // Accept either:
+    // - New format: { points: [{x,y}, ...] }
+    // - Legacy format: [[x,y], ...]
+    const points = stroke && typeof stroke === "object" && Array.isArray(stroke.points) ? stroke.points : stroke;
+    if (!Array.isArray(points) || points.length === 0) return;
+
+    const first = points[0];
+    if (first && typeof first === "object" && !Array.isArray(first)) {
+      ctx.moveTo(first.x * cssWidth, first.y * cssHeight);
+    } else if (Array.isArray(first) && first.length >= 2) {
+      ctx.moveTo(first[0] * cssWidth, first[1] * cssHeight);
+    } else {
+      return;
+    }
+
+    for (let i = 1; i < points.length; i += 1) {
+      const pt = points[i];
+      if (pt && typeof pt === "object" && !Array.isArray(pt)) {
+        ctx.lineTo(pt.x * cssWidth, pt.y * cssHeight);
+      } else if (Array.isArray(pt) && pt.length >= 2) {
+        ctx.lineTo(pt[0] * cssWidth, pt[1] * cssHeight);
+      }
+    }
+  });
+  ctx.stroke();
+}
+
 function normalizeSearchText(value) {
   return String(value || "")
     .toLowerCase()
@@ -146,9 +198,11 @@ export async function renderReport({
   const metaTitle = el("div");
   metaTitle.innerHTML = `<div class="fs-card-title">Report details</div><div class="fs-card-subtitle">Who completed this check and when.</div>`;
   const metaBy = el("div", "fs-row-meta");
+  const metaByApp = el("div", "fs-row-meta fs-row-meta-subtle");
   const metaDate = el("div", "fs-row-meta");
   metaInner.appendChild(metaTitle);
   metaInner.appendChild(metaBy);
+  metaInner.appendChild(metaByApp);
   metaInner.appendChild(metaDate);
   metaCard.appendChild(metaInner);
 
@@ -346,7 +400,12 @@ export async function renderReport({
       const title = `Report for ${report.applianceName || "Appliance"}`;
       setTitle?.(title);
 
-      metaBy.textContent = `Checked by: ${report.username || report.creatorName || "Unknown"}`;
+      const appUsername = report.username || report.creatorName || "Unknown";
+      const signedName = typeof report.signedName === "string" ? report.signedName.trim() : "";
+      const who = signedName || appUsername;
+
+      metaBy.textContent = `Checked by: ${who}`;
+      metaByApp.textContent = `app username: ${appUsername}`;
       metaDate.textContent = `Date: ${report.date ? new Date(report.date).toLocaleString() : ""}`;
 
       content.innerHTML = "";
@@ -391,6 +450,45 @@ export async function renderReport({
         content.innerHTML =
           '<div class="fs-card"><div class="fs-card-inner"><div class="fs-card-title">No locker data</div><div class="fs-card-subtitle">This report didn’t include any lockers.</div></div></div>';
       }
+
+      const signoffCard = el("div", "fs-card");
+      const signoffInner = el("div", "fs-card-inner fs-stack");
+      signoffInner.innerHTML = `
+        <div>
+          <div class="fs-card-title">Sign-off report</div>
+          <div class="fs-card-subtitle">Recorded name and signature for this report.</div>
+        </div>
+      `;
+
+      const signoffName = el("div", "fs-row-meta");
+      signoffName.textContent = `Name: ${who}`;
+      const signoffApp = el("div", "fs-row-meta fs-row-meta-subtle");
+      signoffApp.textContent = `app username: ${appUsername}`;
+      signoffInner.appendChild(signoffName);
+      signoffInner.appendChild(signoffApp);
+
+      if (report.signature && Array.isArray(report.signature.strokes) && report.signature.strokes.length > 0) {
+        const canvasWrap = el("div");
+        canvasWrap.style.border = "1px solid rgba(15, 23, 42, 0.10)";
+        canvasWrap.style.borderRadius = "14px";
+        canvasWrap.style.background = "rgba(15, 23, 42, 0.04)";
+        canvasWrap.style.overflow = "hidden";
+
+        const canvas = el("canvas");
+        canvas.style.width = "100%";
+        canvas.style.height = "160px";
+        canvasWrap.appendChild(canvas);
+        signoffInner.appendChild(canvasWrap);
+
+        requestAnimationFrame(() => drawSignatureOnCanvas(canvas, report.signature));
+      } else {
+        const empty = el("div", "fs-row-meta");
+        empty.textContent = "No signature recorded for this report.";
+        signoffInner.appendChild(empty);
+      }
+
+      signoffCard.appendChild(signoffInner);
+      content.appendChild(signoffCard);
 
       indexReady = true;
       // If the user started typing before the report loaded, apply the filter now.

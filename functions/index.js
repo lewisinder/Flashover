@@ -405,7 +405,21 @@ apiRouter.delete('/image/:fileName', async (req, res) => {
     }
 });
 
-apiRouter.use(express.json());
+apiRouter.use(express.json({ limit: '2mb' }));
+apiRouter.use((err, req, res, next) => {
+    // Handle body-parser / express.json size and parse errors explicitly so clients get a useful status.
+    if (err) {
+        const status = Number(err.status || err.statusCode || 0);
+        const type = String(err.type || '');
+        if (status === 413 || type === 'entity.too.large') {
+            return res.status(413).json({ message: 'Request payload too large.' });
+        }
+        if (status === 400) {
+            return res.status(400).json({ message: 'Invalid JSON payload.' });
+        }
+    }
+    return next(err);
+});
 
 // --- User Data Routes ---
 const userRouter = express.Router();
@@ -733,7 +747,17 @@ brigadeRouter.get('/:brigadeId/reports/:reportId', async (req, res) => {
         if (!reportDoc.exists) {
             return res.status(404).json({ message: 'Report not found.' });
         }
-        res.status(200).json({ id: reportDoc.id, ...reportDoc.data() });
+        let signature = null;
+        try {
+            const signoffDoc = await reportRef.collection('meta').doc('signoff').get();
+            if (signoffDoc.exists) {
+                const signoffData = signoffDoc.data() || {};
+                if (signoffData && signoffData.signature) signature = signoffData.signature;
+            }
+        } catch (e) {
+            // If the signature doc is missing or unreadable, still return the report.
+        }
+        res.status(200).json({ id: reportDoc.id, ...reportDoc.data(), signature });
     } catch (error) {
         console.error(`Error fetching report ${req.params.reportId}:`, error);
         res.status(500).json({ message: 'Failed to fetch report.' });
@@ -965,6 +989,72 @@ brigadeRouter.delete('/:brigadeId', async (req, res) => {
 });
 apiRouter.use('/brigades', brigadeRouter);
 
+function normalizeSignedName(value) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return '';
+    // Avoid control chars / obvious HTML injection in downstream email rendering.
+    const cleaned = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').replace(/[<>]/g, '');
+    return cleaned.slice(0, 120);
+}
+
+function clamp01Number(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    if (n < 0) return 0;
+    if (n > 1) return 1;
+    return n;
+}
+
+function sanitizeSignatureData(data) {
+    if (!data || typeof data !== 'object') return null;
+    const rawStrokes = Array.isArray(data.strokes) ? data.strokes : null;
+    if (!rawStrokes) return null;
+
+    // Firestore does not allow arrays containing arrays. Keep strokes as arrays of objects.
+    const MAX_STROKES = 12;
+    const MAX_POINTS_TOTAL = 800;
+    let pointsTotal = 0;
+    const cleanedStrokes = [];
+
+    for (const rawStroke of rawStrokes.slice(0, MAX_STROKES)) {
+        let points = [];
+
+        // Accept either legacy array points ([[x,y], ...]) or object points ({points:[{x,y}, ...]})
+        if (rawStroke && typeof rawStroke === 'object' && Array.isArray(rawStroke.points)) {
+            points = rawStroke.points;
+        } else if (Array.isArray(rawStroke)) {
+            points = rawStroke;
+        } else {
+            continue;
+        }
+
+        const cleanedPoints = [];
+        for (const pt of points) {
+            if (pointsTotal >= MAX_POINTS_TOTAL) break;
+            let x = null;
+            let y = null;
+            if (pt && typeof pt === 'object' && !Array.isArray(pt)) {
+                x = pt.x;
+                y = pt.y;
+            } else if (Array.isArray(pt) && pt.length >= 2) {
+                x = pt[0];
+                y = pt[1];
+            }
+            if (x == null || y == null) continue;
+            const cx = clamp01Number(x);
+            const cy = clamp01Number(y);
+            cleanedPoints.push({ x: Number(cx.toFixed(4)), y: Number(cy.toFixed(4)) });
+            pointsTotal += 1;
+        }
+
+        if (cleanedPoints.length > 0) cleanedStrokes.push({ points: cleanedPoints });
+        if (pointsTotal >= MAX_POINTS_TOTAL) break;
+    }
+
+    if (cleanedStrokes.length === 0) return null;
+    return { version: 1, strokes: cleanedStrokes };
+}
+
 // --- Report Routes ---
 const reportRouter = express.Router();
 reportRouter.get('/brigade/:brigadeId', async (req, res) => {
@@ -994,6 +1084,7 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
                 applianceName: data.applianceName,
                 date: data.date,
                 username: data.username || data.creatorName,
+                signedName: data.signedName,
                 uid: data.uid,
             };
         });
@@ -1005,7 +1096,15 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
 });
 // A helper function to generate a clearer HTML email for the report
 const generateReportHtml = (reportData) => {
-    const { applianceName = 'Unknown Appliance', date, username = 'Unknown User', lockers = [] } = reportData || {};
+    const {
+        applianceName = 'Unknown Appliance',
+        date,
+        username = 'Unknown User',
+        signedName,
+        lockers = [],
+    } = reportData || {};
+
+    const completedBy = String(signedName || '').trim() || username;
 
     let formattedDate = 'an unknown date';
     try {
@@ -1114,7 +1213,7 @@ const generateReportHtml = (reportData) => {
 
     let html = `<div style="${styles.body}"><div style="${styles.card}">`;
     html += `<h2 style="${styles.header}">Report for ${applianceName}</h2>`;
-    html += `<p style="${styles.sub}">Completed by <strong>${username}</strong> on ${formattedDate}</p>`;
+    html += `<p style="${styles.sub}">Completed by <strong>${completedBy}</strong> on ${formattedDate}<br/><span style="${styles.subtle}">app username: ${username}</span></p>`;
     html += `<div style="${styles.summary}">`;
     html += `<span style="${styles.pill}">Issues: ${issuesCount}</span>`;
     html += `<span style="${styles.pill}">Items: ${itemsCount}</span>`;
@@ -1208,8 +1307,10 @@ reportRouter.post('/', async (req, res) => {
             return res.status(404).json({ message: 'Appliance not found.' });
         }
 
+        const signedName = normalizeSignedName(reportData.signedName);
+        const signature = sanitizeSignatureData(reportData.signature);
+
         const safeReportData = {
-            ...reportData,
             brigadeId,
             applianceId,
             applianceName: reportData.applianceName || appliance.name,
@@ -1217,11 +1318,27 @@ reportRouter.post('/', async (req, res) => {
             lockers: Array.isArray(reportData.lockers) ? reportData.lockers : [],
             uid: req.user.uid,
             username: req.user.name || req.user.email || reportData.username || 'Unknown',
+            signedName,
+            hasSignature: !!signature,
         };
 
         const reportRef = brigade.ref.collection('reports').doc();
         await reportRef.set(safeReportData);
         const reportId = reportRef.id;
+
+        // Store the signature separately so large reports don't risk hitting Firestore's 1MiB document limit.
+        if (signature) {
+            await reportRef.collection('meta').doc('signoff').set(
+                {
+                    signature,
+                    signedName,
+                    username: safeReportData.username,
+                    uid: safeReportData.uid,
+                    createdAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+        }
         const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
         if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
             delete applianceData.appliances[applianceIndex].checkStatus;
@@ -1259,7 +1376,9 @@ reportRouter.post('/', async (req, res) => {
         res.status(201).json({ message: 'Report saved successfully.', reportId: reportId });
     } catch (err) {
         console.error('Error saving report:', err);
-        res.status(500).json({ message: 'Error saving report.' });
+        const detail = (err && err.message) ? String(err.message) : '';
+        const safeDetail = detail.replace(/[\r\n\t]+/g, ' ').slice(0, 220);
+        res.status(500).json({ message: `Error saving report.${safeDetail ? ` ${safeDetail}` : ''}` });
     }
 });
 apiRouter.use('/reports', reportRouter);
