@@ -29,6 +29,11 @@ body {
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+.fs-viewport {
+  /* iOS Safari: prefer a JS-measured viewport height to keep the tab bar visible above browser UI. */
+  height: var(--app-height, 100vh);
+}
+
 /* ------------------------------------------------------------------ */
 /* Shell chrome */
 /* ------------------------------------------------------------------ */
