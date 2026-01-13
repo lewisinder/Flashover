@@ -356,12 +356,33 @@ function initChecksPage(options = {}) {
             setCanvasStyle();
             ctx.beginPath();
             state.data.strokes.forEach((stroke) => {
-                if (!Array.isArray(stroke) || stroke.length === 0) return;
-                const first = normToCss(stroke[0]);
-                ctx.moveTo(first.x, first.y);
-                for (let i = 1; i < stroke.length; i += 1) {
-                    const p = normToCss(stroke[i]);
-                    ctx.lineTo(p.x, p.y);
+                // Accept either:
+                // - New format: { points: [{x,y}, ...] }
+                // - Legacy format: [{x,y}, ...] (or even [[x,y], ...])
+                const points =
+                    stroke && typeof stroke === 'object' && Array.isArray(stroke.points) ? stroke.points : stroke;
+                if (!Array.isArray(points) || points.length === 0) return;
+
+                const first = points[0];
+                if (first && typeof first === 'object' && !Array.isArray(first)) {
+                    const p0 = normToCss(first);
+                    ctx.moveTo(p0.x, p0.y);
+                } else if (Array.isArray(first) && first.length >= 2) {
+                    const p0 = normToCss({ x: first[0], y: first[1] });
+                    ctx.moveTo(p0.x, p0.y);
+                } else {
+                    return;
+                }
+
+                for (let i = 1; i < points.length; i += 1) {
+                    const pt = points[i];
+                    if (pt && typeof pt === 'object' && !Array.isArray(pt)) {
+                        const p = normToCss(pt);
+                        ctx.lineTo(p.x, p.y);
+                    } else if (Array.isArray(pt) && pt.length >= 2) {
+                        const p = normToCss({ x: pt[0], y: pt[1] });
+                        ctx.lineTo(p.x, p.y);
+                    }
                 }
             });
             ctx.stroke();
