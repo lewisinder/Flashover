@@ -149,10 +149,36 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   deleteModal.appendChild(deleteCard);
   root.appendChild(deleteModal);
 
+  const actionSheet = el("div", "fs-sheet-backdrop hidden");
+  const sheet = el("div", "fs-sheet");
+  const sheetTitle = el("div", "fs-sheet-title");
+  sheetTitle.textContent = "Appliance actions";
+  const sheetSubtitle = el("div", "fs-row-meta");
+  const sheetActions = el("div", "fs-sheet-actions");
+  const sheetRename = el("button", "fs-btn fs-btn-secondary");
+  sheetRename.type = "button";
+  sheetRename.textContent = "Rename";
+  const sheetDelete = el("button", "fs-btn fs-btn-danger");
+  sheetDelete.type = "button";
+  sheetDelete.textContent = "Delete";
+  const sheetCancel = el("button", "fs-btn fs-btn-secondary");
+  sheetCancel.type = "button";
+  sheetCancel.textContent = "Cancel";
+  sheetActions.appendChild(sheetRename);
+  sheetActions.appendChild(sheetDelete);
+  sheetActions.appendChild(sheetCancel);
+  sheet.appendChild(sheetTitle);
+  sheet.appendChild(sheetSubtitle);
+  sheet.appendChild(sheetActions);
+  actionSheet.appendChild(sheet);
+  root.appendChild(actionSheet);
+
   let activeBrigadeId = null;
   let truckData = { appliances: [] };
   let editingApplianceId = null;
   let deletingApplianceId = null;
+  let actionApplianceId = null;
+  let actionApplianceName = "";
   let canEdit = true;
 
   function setAlert(el, message) {
@@ -199,6 +225,35 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     deletingApplianceId = null;
   }
 
+  function openActionSheet(appliance) {
+    actionApplianceId = appliance?.id || null;
+    actionApplianceName = appliance?.name || "";
+    sheetSubtitle.textContent = actionApplianceName;
+    actionSheet.classList.remove("hidden");
+  }
+
+  function closeActionSheet() {
+    actionSheet.classList.add("hidden");
+    actionApplianceId = null;
+    actionApplianceName = "";
+  }
+
+  actionSheet.addEventListener("click", (e) => {
+    if (e.target === actionSheet) closeActionSheet();
+  });
+
+  sheetCancel.addEventListener("click", closeActionSheet);
+  sheetRename.addEventListener("click", () => {
+    if (!actionApplianceId) return;
+    closeActionSheet();
+    openModal(actionApplianceId);
+  });
+  sheetDelete.addEventListener("click", () => {
+    if (!actionApplianceId) return;
+    closeActionSheet();
+    openDeleteModal(actionApplianceId, actionApplianceName);
+  });
+
   function renderList() {
     list.innerHTML = "";
     const appliances = Array.isArray(truckData?.appliances) ? truckData.appliances : [];
@@ -209,8 +264,8 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     }
 
     appliances.forEach((appliance) => {
-      const row = el("div", "fs-row");
-      row.style.cursor = "pointer";
+      const row = el("button", "fs-row");
+      row.type = "button";
       const left = el("div");
       left.style.display = "flex";
       left.style.alignItems = "center";
@@ -224,22 +279,15 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
 
       const actions = el("div");
       actions.style.display = "flex";
-      actions.style.gap = "8px";
       actions.style.alignItems = "center";
 
-      const edit = el("button", "fs-btn fs-btn-secondary");
-      edit.type = "button";
-      edit.textContent = "Edit";
-      edit.style.width = "auto";
-      edit.style.padding = "8px 10px";
-      const del = el("button", "fs-btn fs-btn-danger");
-      del.type = "button";
-      del.textContent = "Delete";
-      del.style.width = "auto";
-      del.style.padding = "8px 10px";
+      const menu = el("button", "fs-icon-btn");
+      menu.type = "button";
+      menu.textContent = "⋯";
+      menu.setAttribute("aria-label", "More actions");
+      if (!canEdit) menu.style.display = "none";
 
-      actions.appendChild(edit);
-      actions.appendChild(del);
+      actions.appendChild(menu);
 
       row.appendChild(left);
       row.appendChild(actions);
@@ -253,21 +301,13 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
         window.location.hash = `#/setup/${encodeURIComponent(appliance.id)}`;
       });
 
-      edit.addEventListener("click", (e) => {
+      menu.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!canEdit) {
           alert("Admins only: you don't have permission to edit appliance setup.");
           return;
         }
-        openModal(appliance.id);
-      });
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!canEdit) {
-          alert("Admins only: you don't have permission to edit appliance setup.");
-          return;
-        }
-        openDeleteModal(appliance.id, appliance.name);
+        openActionSheet(appliance);
       });
 
       list.appendChild(row);
