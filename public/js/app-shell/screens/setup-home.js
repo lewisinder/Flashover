@@ -204,9 +204,12 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   function openModal(applianceId) {
-    editingApplianceId = applianceId || null;
-    if (editingApplianceId) {
-      const appliance = truckData.appliances.find((a) => a.id === editingApplianceId);
+    const isEditing = applianceId !== undefined && applianceId !== null;
+    editingApplianceId = isEditing ? applianceId : null;
+    if (isEditing) {
+      const appliance = truckData.appliances.find(
+        (a) => String(a.id) === String(editingApplianceId)
+      );
       modalTitle.textContent = "Rename appliance";
       nameInput.value = appliance?.name || "";
       saveBtn.textContent = "Save";
