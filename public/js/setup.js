@@ -38,6 +38,7 @@ let dragJustEndedAt = 0;
 let dragOverCard = null;
 let dragOverPosition = null;
 const dragThreshold = 6;
+let pendingItemDelete = null;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -88,10 +89,6 @@ const sectionEnterContainerBtn = document.getElementById('section-enter-containe
 const sectionCancelEditBtn = document.getElementById('section-cancel-edit-btn');
 const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
 const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
-const itemEditorActions = document.getElementById('item-editor-actions');
-const itemDeleteConfirm = document.getElementById('item-delete-confirm');
-const itemDeleteConfirmBtn = document.getElementById('item-delete-confirm-btn');
-const itemDeleteCancelBtn = document.getElementById('item-delete-cancel-btn');
 
 const cItemEditorOverlay = document.getElementById('c-item-editor-overlay');
 const cItemEditorSection = document.getElementById('c-item-editor-section');
@@ -102,10 +99,6 @@ const cSectionItemDescInput = document.getElementById('c-section-item-desc-input
 const cSectionCancelEditBtn = document.getElementById('c-section-cancel-edit-btn');
 const cSectionSaveItemBtn = document.getElementById('c-section-save-item-btn');
 const cSectionDeleteItemBtn = document.getElementById('c-section-delete-item-btn');
-const cItemEditorActions = document.getElementById('c-item-editor-actions');
-const cItemDeleteConfirm = document.getElementById('c-item-delete-confirm');
-const cItemDeleteConfirmBtn = document.getElementById('c-item-delete-confirm-btn');
-const cItemDeleteCancelBtn = document.getElementById('c-item-delete-cancel-btn');
 
 const progressModal = document.getElementById('progress-modal');
 const progressBar = document.getElementById('progress-bar');
@@ -181,9 +174,7 @@ function addEventListeners() {
     // Main Item Editor Listeners
     sectionSaveItemBtn.addEventListener('click', saveItem);
     sectionCancelEditBtn.addEventListener('click', closeItemEditor);
-    sectionDeleteItemBtn.addEventListener('click', () => showItemDeleteConfirm('locker'));
-    itemDeleteCancelBtn?.addEventListener('click', () => hideItemDeleteConfirm('locker'));
-    itemDeleteConfirmBtn?.addEventListener('click', () => deleteActiveItem('locker'));
+    sectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('locker'));
     sectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'locker'));
     sectionItemTypeSelect.addEventListener('change', (e) => {
        sectionEnterContainerBtn.classList.toggle('hidden', e.target.value !== 'container');
@@ -193,9 +184,7 @@ function addEventListeners() {
    // Container Sub-Item Editor Listeners
    cSectionSaveItemBtn.addEventListener('click', saveItem);
    cSectionCancelEditBtn.addEventListener('click', closeItemEditor);
-   cSectionDeleteItemBtn.addEventListener('click', () => showItemDeleteConfirm('container'));
-   cItemDeleteCancelBtn?.addEventListener('click', () => hideItemDeleteConfirm('container'));
-   cItemDeleteConfirmBtn?.addEventListener('click', () => deleteActiveItem('container'));
+   cSectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('container'));
    cSectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'container'));
 
     // Navigation
@@ -220,7 +209,14 @@ function addEventListeners() {
     addShelfBtn.addEventListener('click', addShelf);
 
     // Delete Confirmation
-    cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
+    cancelDeleteBtn.addEventListener('click', () => {
+        deleteConfirmModal.classList.add('hidden');
+        if (pendingItemDelete) {
+            const { context, shelfId, itemId } = pendingItemDelete;
+            pendingItemDelete = null;
+            openItemEditor(shelfId, itemId, context);
+        }
+    });
 
     lockerActionsModal?.addEventListener('click', (e) => {
         if (e.target === lockerActionsModal) closeLockerActions();
@@ -772,7 +768,6 @@ function openItemEditor(shelfId, itemId, context) {
        itemEditorOverlay?.classList.remove('hidden');
        itemEditorSection.style.visibility = 'visible';
        itemEditorSection.style.opacity = 1;
-       hideItemDeleteConfirm('locker');
     } else { // context === 'container'
        cSectionItemNameInput.value = item.name;
        cSectionItemDescInput.value = item.desc;
@@ -781,7 +776,6 @@ function openItemEditor(shelfId, itemId, context) {
        cItemEditorOverlay?.classList.remove('hidden');
        cItemEditorSection.style.visibility = 'visible';
        cItemEditorSection.style.opacity = 1;
-       hideItemDeleteConfirm('container');
     }
 }
 
@@ -809,8 +803,6 @@ function closeItemEditor() {
     itemEditorSection.style.opacity = 0;
     cItemEditorSection.style.visibility = 'hidden';
     cItemEditorSection.style.opacity = 0;
-    hideItemDeleteConfirm('locker');
-    hideItemDeleteConfirm('container');
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
 }
 
@@ -973,18 +965,19 @@ function cleanupPendingUploads() {
     pendingUploads.clear();
 }
 
-function showItemDeleteConfirm(context) {
-    const confirmEl = context === 'container' ? cItemDeleteConfirm : itemDeleteConfirm;
-    const actionsEl = context === 'container' ? cItemEditorActions : itemEditorActions;
-    if (actionsEl) actionsEl.classList.add('hidden');
-    confirmEl?.classList.remove('hidden');
-}
-
-function hideItemDeleteConfirm(context) {
-    const confirmEl = context === 'container' ? cItemDeleteConfirm : itemDeleteConfirm;
-    const actionsEl = context === 'container' ? cItemEditorActions : itemEditorActions;
-    confirmEl?.classList.add('hidden');
-    if (actionsEl) actionsEl.classList.remove('hidden');
+function openItemDeleteConfirm(context) {
+    if (!activeItemId) return;
+    const item = findItem(activeShelfId, activeItemId, context);
+    if (!item) return;
+    pendingItemDelete = {
+        context,
+        itemId: activeItemId,
+        shelfId: activeShelfId,
+        parentId: context === 'container' ? activeContainerId : null,
+        name: item.name || 'item'
+    };
+    closeItemEditor();
+    confirmDelete('item', pendingItemDelete.itemId, pendingItemDelete.name, pendingItemDelete.parentId);
 }
 
 function deleteItemFromShelf(itemId, parentId = null) {
@@ -998,15 +991,6 @@ function deleteItemFromShelf(itemId, parentId = null) {
         }
         shelf.items = shelf.items.filter(i => i.id !== itemId);
     }
-}
-
-function deleteActiveItem(context) {
-    if (!activeItemId) return;
-    const parentId = context === 'container' ? activeContainerId : null;
-    deleteItemFromShelf(activeItemId, parentId);
-    closeItemEditor();
-    setUnsavedChanges(true);
-    refreshCurrentView();
 }
 
 function confirmDelete(type, id, name, parentId = null) {
@@ -1024,6 +1008,7 @@ function confirmDelete(type, id, name, parentId = null) {
         } else if (type === 'item') {
             deleteItemFromShelf(id, parentId);
             closeItemEditor();
+            pendingItemDelete = null;
         }
         
         if (shouldSaveImmediately) {
