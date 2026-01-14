@@ -271,6 +271,57 @@ body {
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
 }
 
+.fs-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--fs-muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.fs-icon-btn:active {
+  transform: translateY(1px);
+}
+
+.fs-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+}
+
+.fs-sheet {
+  width: 92%;
+  max-width: 520px;
+  background: var(--fs-surface);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+}
+
+.fs-sheet-title {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.fs-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 @keyframes fsSearchHitPulse {
   0% {
     box-shadow: 0 0 0 0 var(--fs-focus), 0 6px 16px rgba(15, 23, 42, 0.05);
@@ -292,6 +343,10 @@ button.fs-card,
 button.fs-row {
   appearance: none;
   text-align: left;
+  cursor: pointer;
+}
+
+.fs-row-action {
   cursor: pointer;
 }
 
@@ -317,8 +372,17 @@ button.fs-row:hover {
   border-color: rgba(37, 99, 235, 0.28);
 }
 
+.fs-row-action:hover {
+  border-color: rgba(37, 99, 235, 0.28);
+}
+
 button.fs-card:focus,
 button.fs-row:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--fs-focus), 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.fs-row-action:focus {
   outline: none;
   box-shadow: 0 0 0 4px var(--fs-focus), 0 10px 30px rgba(15, 23, 42, 0.06);
 }

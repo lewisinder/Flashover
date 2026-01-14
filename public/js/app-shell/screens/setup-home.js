@@ -81,9 +81,15 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   container.appendChild(stack);
   root.appendChild(container);
 
+  document.getElementById("setup-appliance-modal")?.remove();
+  document.getElementById("setup-delete-modal")?.remove();
+  document.getElementById("setup-action-sheet")?.remove();
+
   const applianceModal = el("div", "fixed inset-0 w-full h-full flex items-center justify-center hidden");
+  applianceModal.id = "setup-appliance-modal";
   applianceModal.style.backgroundColor = "rgba(0,0,0,0.6)";
   applianceModal.style.backdropFilter = "blur(4px)";
+  applianceModal.style.zIndex = "80";
   const modalCard = el("div", "fs-card");
   modalCard.style.width = "92%";
   modalCard.style.maxWidth = "420px";
@@ -113,11 +119,13 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   modalInner.appendChild(modalBtnRow);
   modalCard.appendChild(modalInner);
   applianceModal.appendChild(modalCard);
-  root.appendChild(applianceModal);
+  document.body.appendChild(applianceModal);
 
   const deleteModal = el("div", "fixed inset-0 w-full h-full flex items-center justify-center hidden");
+  deleteModal.id = "setup-delete-modal";
   deleteModal.style.backgroundColor = "rgba(0,0,0,0.6)";
   deleteModal.style.backdropFilter = "blur(4px)";
+  deleteModal.style.zIndex = "80";
   const deleteCard = el("div", "fs-card");
   deleteCard.style.width = "92%";
   deleteCard.style.maxWidth = "420px";
@@ -147,12 +155,39 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   deleteInner.appendChild(deleteBtnRow);
   deleteCard.appendChild(deleteInner);
   deleteModal.appendChild(deleteCard);
-  root.appendChild(deleteModal);
+  document.body.appendChild(deleteModal);
+
+  const actionSheet = el("div", "fs-sheet-backdrop hidden");
+  actionSheet.id = "setup-action-sheet";
+  const sheet = el("div", "fs-sheet");
+  const sheetTitle = el("div", "fs-sheet-title");
+  sheetTitle.textContent = "Appliance actions";
+  const sheetSubtitle = el("div", "fs-row-meta");
+  const sheetActions = el("div", "fs-sheet-actions");
+  const sheetRename = el("button", "fs-btn fs-btn-secondary");
+  sheetRename.type = "button";
+  sheetRename.textContent = "Rename";
+  const sheetDelete = el("button", "fs-btn fs-btn-danger");
+  sheetDelete.type = "button";
+  sheetDelete.textContent = "Delete";
+  const sheetCancel = el("button", "fs-btn fs-btn-secondary");
+  sheetCancel.type = "button";
+  sheetCancel.textContent = "Cancel";
+  sheetActions.appendChild(sheetRename);
+  sheetActions.appendChild(sheetDelete);
+  sheetActions.appendChild(sheetCancel);
+  sheet.appendChild(sheetTitle);
+  sheet.appendChild(sheetSubtitle);
+  sheet.appendChild(sheetActions);
+  actionSheet.appendChild(sheet);
+  document.body.appendChild(actionSheet);
 
   let activeBrigadeId = null;
   let truckData = { appliances: [] };
   let editingApplianceId = null;
   let deletingApplianceId = null;
+  let actionApplianceId = null;
+  let actionApplianceName = "";
   let canEdit = true;
 
   function setAlert(el, message) {
@@ -169,14 +204,17 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   function openModal(applianceId) {
-    editingApplianceId = applianceId || null;
-    if (editingApplianceId) {
-      const appliance = truckData.appliances.find((a) => a.id === editingApplianceId);
-      modalTitle.textContent = "Edit Appliance";
+    const isEditing = applianceId !== undefined && applianceId !== null;
+    editingApplianceId = isEditing ? applianceId : null;
+    if (isEditing) {
+      const appliance = truckData.appliances.find(
+        (a) => String(a.id) === String(editingApplianceId)
+      );
+      modalTitle.textContent = "Rename appliance";
       nameInput.value = appliance?.name || "";
       saveBtn.textContent = "Save";
     } else {
-      modalTitle.textContent = "Create New Appliance";
+      modalTitle.textContent = "Create new appliance";
       nameInput.value = "";
       saveBtn.textContent = "Create";
     }
@@ -199,6 +237,35 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     deletingApplianceId = null;
   }
 
+  function openActionSheet(appliance) {
+    actionApplianceId = appliance?.id ?? null;
+    actionApplianceName = appliance?.name || "";
+    sheetSubtitle.textContent = actionApplianceName;
+    actionSheet.classList.remove("hidden");
+  }
+
+  function closeActionSheet() {
+    actionSheet.classList.add("hidden");
+    actionApplianceId = null;
+    actionApplianceName = "";
+  }
+
+  actionSheet.addEventListener("click", (e) => {
+    if (e.target === actionSheet) closeActionSheet();
+  });
+
+  sheetCancel.addEventListener("click", closeActionSheet);
+  sheetRename.addEventListener("click", () => {
+    if (!actionApplianceId) return;
+    closeActionSheet();
+    openModal(actionApplianceId);
+  });
+  sheetDelete.addEventListener("click", () => {
+    if (!actionApplianceId) return;
+    closeActionSheet();
+    openDeleteModal(actionApplianceId, actionApplianceName);
+  });
+
   function renderList() {
     list.innerHTML = "";
     const appliances = Array.isArray(truckData?.appliances) ? truckData.appliances : [];
@@ -209,8 +276,9 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
     }
 
     appliances.forEach((appliance) => {
-      const row = el("div", "fs-row");
-      row.style.cursor = "pointer";
+      const row = el("div", "fs-row fs-row-action");
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
       const left = el("div");
       left.style.display = "flex";
       left.style.alignItems = "center";
@@ -224,50 +292,44 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
 
       const actions = el("div");
       actions.style.display = "flex";
-      actions.style.gap = "8px";
       actions.style.alignItems = "center";
 
-      const edit = el("button", "fs-btn fs-btn-secondary");
-      edit.type = "button";
-      edit.textContent = "Edit";
-      edit.style.width = "auto";
-      edit.style.padding = "8px 10px";
-      const del = el("button", "fs-btn fs-btn-danger");
-      del.type = "button";
-      del.textContent = "Delete";
-      del.style.width = "auto";
-      del.style.padding = "8px 10px";
+      const menu = el("button", "fs-icon-btn");
+      menu.type = "button";
+      menu.textContent = "⋯";
+      menu.setAttribute("aria-label", "More actions");
+      if (!canEdit) menu.style.display = "none";
 
-      actions.appendChild(edit);
-      actions.appendChild(del);
+      actions.appendChild(menu);
 
       row.appendChild(left);
       row.appendChild(actions);
 
-      row.addEventListener("click", () => {
+      const openAppliance = () => {
         if (!canEdit) {
           alert("Admins only: you don't have permission to edit appliance setup.");
           return;
         }
         localStorage.setItem("selectedApplianceId", appliance.id);
         window.location.hash = `#/setup/${encodeURIComponent(appliance.id)}`;
+      };
+
+      row.addEventListener("click", openAppliance);
+
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openAppliance();
+        }
       });
 
-      edit.addEventListener("click", (e) => {
+      menu.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!canEdit) {
           alert("Admins only: you don't have permission to edit appliance setup.");
           return;
         }
-        openModal(appliance.id);
-      });
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!canEdit) {
-          alert("Admins only: you don't have permission to edit appliance setup.");
-          return;
-        }
-        openDeleteModal(appliance.id, appliance.name);
+        openActionSheet(appliance);
       });
 
       list.appendChild(row);
@@ -320,8 +382,10 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       return;
     }
 
-    if (editingApplianceId) {
-      const appliance = truckData.appliances.find((a) => a.id === editingApplianceId);
+    if (editingApplianceId !== null && editingApplianceId !== undefined) {
+      const appliance = truckData.appliances.find(
+        (a) => String(a.id) === String(editingApplianceId)
+      );
       if (appliance) appliance.name = name;
     } else {
       truckData.appliances.push({ id: String(Date.now()), name, lockers: [] });
