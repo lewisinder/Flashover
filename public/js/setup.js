@@ -23,6 +23,9 @@ let pendingUploads = new Map(); // blobUrl -> File object
 let activeBrigadeId = null;
 let activeApplianceId = null;
 let activeLockerId = null;
+let editingLockerId = null;
+let actionLockerId = null;
+let actionLockerName = '';
 let activeShelfId = null;
 let activeItemId = null;
 let activeContainerId = null;
@@ -30,6 +33,11 @@ let isNewItem = false;
 let currentEditingContext = 'locker'; // 'locker' or 'container'
 let draggedItemInfo = null; // { itemId, fromShelfId, fromContext }
 let pendingNavigation = null; // For handling async navigation prompts
+let dragState = null;
+let dragJustEndedAt = 0;
+let dragOverCard = null;
+let dragOverPosition = null;
+const dragThreshold = 6;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -38,6 +46,7 @@ const lockerEditorScreen = document.getElementById('locker-editor-screen');
 const containerEditorScreen = document.getElementById('container-editor-screen');
 const applianceNameTitle = document.getElementById('appliance-name-title');
 const lockerListContainer = document.getElementById('locker-list-container');
+const createLockerBtn = document.getElementById('create-locker-btn');
 const lockerEditorName = document.getElementById('locker-editor-name');
 const lockerEditorShelves = document.getElementById('locker-editor-shelves');
 const addShelfBtn = document.getElementById('add-shelf-btn');
@@ -46,12 +55,19 @@ const headerSaveBtn = document.getElementById('header-save-btn');
 
 // Modals
 const nameLockerModal = document.getElementById('name-locker-modal');
+const lockerNameModalTitle = document.getElementById('locker-name-modal-title');
 const newLockerNameInput = document.getElementById('new-locker-name-input');
 const saveNewLockerBtn = document.getElementById('save-new-locker-btn');
 const cancelCreateLockerBtn = document.getElementById('cancel-create-locker-btn');
 const deleteConfirmModal = document.getElementById('delete-confirm-modal');
 const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+const lockerActionsModal = document.getElementById('locker-actions-modal');
+const lockerActionsTitle = document.getElementById('locker-actions-title');
+const lockerActionsSubtitle = document.getElementById('locker-actions-subtitle');
+const lockerActionsRenameBtn = document.getElementById('locker-actions-rename-btn');
+const lockerActionsDeleteBtn = document.getElementById('locker-actions-delete-btn');
+const lockerActionsCancelBtn = document.getElementById('locker-actions-cancel-btn');
 const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
 const saveUnsavedBtn = document.getElementById('save-unsaved-btn');
 const discardUnsavedBtn = document.getElementById('discard-unsaved-btn');
@@ -101,10 +117,24 @@ function updateSaveButtonVisibility() {
     }
 }
 
+function hoistModal(el) {
+    if (!el || el.parentElement === document.body) return;
+    document.body.appendChild(el);
+}
+
+function hoistSetupModals() {
+    hoistModal(nameLockerModal);
+    hoistModal(lockerActionsModal);
+    hoistModal(deleteConfirmModal);
+    hoistModal(progressModal);
+    hoistModal(unsavedChangesModal);
+}
+
 // --- Data Handling & Initialization ---
 let unsubscribeAuth = null;
 
 function start() {
+    hoistSetupModals();
     Promise.resolve(window.__authReady).finally(() => {
         unsubscribeAuth = auth.onAuthStateChanged(user => {
             if (user) {
@@ -164,8 +194,9 @@ function addEventListeners() {
     backBtn.addEventListener('click', () => handleNavigation(navigateBack));
 
     // Locker Management
+    createLockerBtn?.addEventListener('click', () => openLockerNameModal());
     saveNewLockerBtn.addEventListener('click', saveNewLocker);
-    cancelCreateLockerBtn.addEventListener('click', () => nameLockerModal.classList.add('hidden'));
+    cancelCreateLockerBtn.addEventListener('click', closeLockerNameModal);
     lockerEditorName.addEventListener('change', updateLockerName);
 
     // Shelf Management
@@ -173,6 +204,22 @@ function addEventListeners() {
 
     // Delete Confirmation
     cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
+
+    lockerActionsModal?.addEventListener('click', (e) => {
+        if (e.target === lockerActionsModal) closeLockerActions();
+    });
+    lockerActionsCancelBtn?.addEventListener('click', closeLockerActions);
+    lockerActionsRenameBtn?.addEventListener('click', () => {
+        if (!actionLockerId) return;
+        const locker = findLockerById(actionLockerId);
+        closeLockerActions();
+        if (locker) openLockerNameModal(locker);
+    });
+    lockerActionsDeleteBtn?.addEventListener('click', () => {
+        if (!actionLockerId) return;
+        closeLockerActions();
+        confirmDelete('locker', actionLockerId, actionLockerName);
+    });
     
     // Unsaved Changes Modal
     saveUnsavedBtn.addEventListener('click', async () => {
@@ -207,6 +254,116 @@ function beforeUnloadHandler(e) {
             e.preventDefault();
             e.returnValue = ''; // Required for Chrome
         }
+}
+
+function findLockerById(lockerId) {
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    return appliance?.lockers?.find(l => String(l.id) === String(lockerId)) || null;
+}
+
+function openLockerActions(locker) {
+    actionLockerId = locker?.id ?? null;
+    actionLockerName = locker?.name || '';
+    if (lockerActionsSubtitle) lockerActionsSubtitle.textContent = actionLockerName || 'Locker';
+    lockerActionsModal?.classList.remove('hidden');
+}
+
+function closeLockerActions() {
+    lockerActionsModal?.classList.add('hidden');
+    actionLockerId = null;
+    actionLockerName = '';
+}
+
+function clearDragIndicator() {
+    if (!dragOverCard) return;
+    dragOverCard.classList.remove('locker-drop-before', 'locker-drop-after');
+    dragOverCard = null;
+    dragOverPosition = null;
+}
+
+function startLockerDrag(e, card) {
+    if (!card || card.classList.contains('add-new')) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest('.locker-menu-btn')) return;
+    dragState = {
+        card,
+        hasMoved: false,
+        active: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        pointerId: e.pointerId
+    };
+}
+
+function handleLockerDragMove(e) {
+    if (!dragState) return;
+    if (!dragState.active) {
+        const dx = Math.abs(e.clientX - dragState.startX);
+        const dy = Math.abs(e.clientY - dragState.startY);
+        if (dx < dragThreshold && dy < dragThreshold) return;
+        dragState.active = true;
+        dragState.card.classList.add('is-dragging');
+        try {
+            e.target.setPointerCapture?.(dragState.pointerId);
+        } catch (err) {}
+    }
+    const card = dragState.card;
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.locker-card');
+    if (!target || target === card || target.classList.contains('add-new')) {
+        clearDragIndicator();
+        return;
+    }
+    const rect = target.getBoundingClientRect();
+    const insertAfter = e.clientY > rect.top + rect.height / 2;
+    const position = insertAfter ? 'after' : 'before';
+    if (dragOverCard !== target || dragOverPosition !== position) {
+        clearDragIndicator();
+        dragOverCard = target;
+        dragOverPosition = position;
+        target.classList.add(insertAfter ? 'locker-drop-after' : 'locker-drop-before');
+    }
+    if (insertAfter) {
+        if (target.nextSibling !== card) target.after(card);
+    } else {
+        if (target.previousSibling !== card) target.before(card);
+    }
+    dragState.hasMoved = true;
+}
+
+async function endLockerDrag(e) {
+    if (!dragState) return;
+    const { card, hasMoved } = dragState;
+    if (dragState.active) {
+        card.classList.remove('is-dragging');
+        try {
+            e.target.releasePointerCapture?.(dragState.pointerId);
+        } catch (err) {}
+    }
+    dragState = null;
+    clearDragIndicator();
+    if (hasMoved) {
+        dragJustEndedAt = Date.now();
+        await persistLockerOrder();
+    }
+}
+
+async function persistLockerOrder() {
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    if (!appliance || !Array.isArray(appliance.lockers)) return;
+    const orderedIds = Array.from(
+        lockerListContainer.querySelectorAll('.locker-card[data-locker-id]')
+    ).map((el) => el.dataset.lockerId);
+    const existingIds = appliance.lockers.map((l) => String(l.id));
+    const hasChanged = orderedIds.some((id, index) => id !== existingIds[index]);
+    if (!hasChanged) return;
+    const lockerMap = new Map(appliance.lockers.map((locker) => [String(locker.id), locker]));
+    appliance.lockers = orderedIds.map((id) => lockerMap.get(String(id))).filter(Boolean);
+    try {
+        await saveBrigadeData('reorderLockers');
+        renderLockerList();
+    } catch (error) {
+        console.error('Error saving locker order:', error);
+    }
 }
 
 async function loadBrigadeData() {
@@ -348,25 +505,90 @@ function navigateBack() {
 }
 
 // --- Locker Management ---
+function openLockerNameModal(locker) {
+    editingLockerId = locker?.id ?? null;
+    if (lockerNameModalTitle) {
+        lockerNameModalTitle.textContent = editingLockerId ? 'Rename locker' : 'Create new locker';
+    }
+    saveNewLockerBtn.textContent = editingLockerId ? 'Save' : 'Create';
+    newLockerNameInput.value = locker?.name || '';
+    nameLockerModal.classList.remove('hidden');
+    newLockerNameInput.focus();
+}
+
+function closeLockerNameModal() {
+    nameLockerModal.classList.add('hidden');
+    newLockerNameInput.value = '';
+    editingLockerId = null;
+    if (lockerNameModalTitle) lockerNameModalTitle.textContent = 'Create new locker';
+    saveNewLockerBtn.textContent = 'Create';
+}
+
 function renderLockerList() {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     if (!appliance) return;
     lockerListContainer.innerHTML = '';
     (appliance.lockers || []).forEach(locker => {
         const card = document.createElement('div');
+        const shelfCount = (locker.shelves || []).length;
+        const metaText = shelfCount ? `${shelfCount} shelf${shelfCount === 1 ? '' : 's'}` : 'No shelves yet';
+        const initial = (locker.name || 'L').trim().charAt(0).toUpperCase();
         card.className = 'locker-card';
-        card.innerHTML = `<div class="locker-name">${locker.name}</div><button class="delete-locker-btn" data-id="${locker.id}"><img src="/design_assets/No Icon.png" alt="Delete" class="h-8 w-8"></button>`;
-        card.addEventListener('click', () => openLockerEditor(locker.id));
-        card.querySelector('.delete-locker-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            confirmDelete('locker', locker.id, locker.name);
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.dataset.lockerId = locker.id;
+        card.innerHTML = `
+            <div class="locker-card-main">
+                <div class="locker-icon">${initial}</div>
+                <div class="locker-card-text">
+                    <div class="locker-name">${locker.name}</div>
+                    <div class="locker-meta">${metaText}</div>
+                </div>
+            </div>
+            <div class="locker-card-actions">
+                <button class="locker-menu-btn" aria-label="Locker actions" type="button">⋯</button>
+            </div>
+        `;
+        card.addEventListener('click', () => {
+            if (Date.now() - dragJustEndedAt < 250) return;
+            openLockerEditor(locker.id);
         });
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openLockerEditor(locker.id);
+            }
+        });
+        card.querySelector('.locker-menu-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLockerActions(locker);
+        });
+        card.addEventListener('pointerdown', (e) => startLockerDrag(e, card));
+        card.addEventListener('pointermove', handleLockerDragMove);
+        card.addEventListener('pointerup', endLockerDrag);
+        card.addEventListener('pointercancel', endLockerDrag);
         lockerListContainer.appendChild(card);
     });
     const addCard = document.createElement('div');
     addCard.className = 'locker-card add-new';
-    addCard.innerHTML = `<div class="locker-name text-5xl">+</div>`;
-    addCard.addEventListener('click', () => nameLockerModal.classList.remove('hidden'));
+    addCard.setAttribute('role', 'button');
+    addCard.setAttribute('tabindex', '0');
+    addCard.innerHTML = `
+        <div class="locker-card-main">
+            <div class="locker-add-icon">+</div>
+            <div class="locker-card-text">
+                <div class="locker-name">Create a new locker</div>
+                <div class="locker-meta">Name it, then add shelves and items.</div>
+            </div>
+        </div>
+    `;
+    addCard.addEventListener('click', () => openLockerNameModal());
+    addCard.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openLockerNameModal();
+        }
+    });
     lockerListContainer.appendChild(addCard);
 }
 
@@ -394,12 +616,17 @@ async function saveNewLocker() {
     if (name) {
         const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
         if (!appliance.lockers) appliance.lockers = [];
-        const newLocker = { id: String(Date.now()), name, shelves: [] };
-        appliance.lockers.push(newLocker);
-        await saveBrigadeData('addLocker'); // Immediate save as requested
+        if (editingLockerId !== null && editingLockerId !== undefined) {
+            const locker = appliance.lockers.find(l => String(l.id) === String(editingLockerId));
+            if (locker) locker.name = name;
+            await saveBrigadeData('renameLocker');
+        } else {
+            const newLocker = { id: String(Date.now()), name, shelves: [] };
+            appliance.lockers.push(newLocker);
+            await saveBrigadeData('addLocker'); // Immediate save as requested
+        }
         renderLockerList();
-        newLockerNameInput.value = '';
-        nameLockerModal.classList.add('hidden');
+        closeLockerNameModal();
     }
 }
 
