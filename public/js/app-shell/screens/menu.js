@@ -47,11 +47,7 @@ export async function renderMenu({ root, auth, db, showLoading, hideLoading }) {
   selectWrap.appendChild(label);
   selectWrap.appendChild(select);
 
-  const selectorMsg = el("div", "fs-alert");
-  selectorMsg.textContent = "Tip: if you’re just testing, you can use the demo brigade in the emulator.";
-
   selectorInner.appendChild(selectWrap);
-  selectorInner.appendChild(selectorMsg);
   selectorCard.appendChild(selectorInner);
 
   const actionsCard = el("div", "fs-card");
