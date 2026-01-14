@@ -88,6 +88,10 @@ const sectionEnterContainerBtn = document.getElementById('section-enter-containe
 const sectionCancelEditBtn = document.getElementById('section-cancel-edit-btn');
 const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
 const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
+const itemEditorActions = document.getElementById('item-editor-actions');
+const itemDeleteConfirm = document.getElementById('item-delete-confirm');
+const itemDeleteConfirmBtn = document.getElementById('item-delete-confirm-btn');
+const itemDeleteCancelBtn = document.getElementById('item-delete-cancel-btn');
 
 const cItemEditorOverlay = document.getElementById('c-item-editor-overlay');
 const cItemEditorSection = document.getElementById('c-item-editor-section');
@@ -98,6 +102,10 @@ const cSectionItemDescInput = document.getElementById('c-section-item-desc-input
 const cSectionCancelEditBtn = document.getElementById('c-section-cancel-edit-btn');
 const cSectionSaveItemBtn = document.getElementById('c-section-save-item-btn');
 const cSectionDeleteItemBtn = document.getElementById('c-section-delete-item-btn');
+const cItemEditorActions = document.getElementById('c-item-editor-actions');
+const cItemDeleteConfirm = document.getElementById('c-item-delete-confirm');
+const cItemDeleteConfirmBtn = document.getElementById('c-item-delete-confirm-btn');
+const cItemDeleteCancelBtn = document.getElementById('c-item-delete-cancel-btn');
 
 const progressModal = document.getElementById('progress-modal');
 const progressBar = document.getElementById('progress-bar');
@@ -173,12 +181,9 @@ function addEventListeners() {
     // Main Item Editor Listeners
     sectionSaveItemBtn.addEventListener('click', saveItem);
     sectionCancelEditBtn.addEventListener('click', closeItemEditor);
-    sectionDeleteItemBtn.addEventListener('click', () => {
-        if(activeItemId) {
-            const item = findItem(activeShelfId, activeItemId, currentEditingContext);
-            confirmDelete('item', activeItemId, item.name);
-        }
-    });
+    sectionDeleteItemBtn.addEventListener('click', () => showItemDeleteConfirm('locker'));
+    itemDeleteCancelBtn?.addEventListener('click', () => hideItemDeleteConfirm('locker'));
+    itemDeleteConfirmBtn?.addEventListener('click', () => deleteActiveItem('locker'));
     sectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'locker'));
     sectionItemTypeSelect.addEventListener('change', (e) => {
        sectionEnterContainerBtn.classList.toggle('hidden', e.target.value !== 'container');
@@ -188,12 +193,9 @@ function addEventListeners() {
    // Container Sub-Item Editor Listeners
    cSectionSaveItemBtn.addEventListener('click', saveItem);
    cSectionCancelEditBtn.addEventListener('click', closeItemEditor);
-   cSectionDeleteItemBtn.addEventListener('click', () => {
-       if(activeItemId) {
-           const item = findItem(activeContainerId, activeItemId, 'container');
-           confirmDelete('item', activeItemId, item.name, activeContainerId);
-       }
-   });
+   cSectionDeleteItemBtn.addEventListener('click', () => showItemDeleteConfirm('container'));
+   cItemDeleteCancelBtn?.addEventListener('click', () => hideItemDeleteConfirm('container'));
+   cItemDeleteConfirmBtn?.addEventListener('click', () => deleteActiveItem('container'));
    cSectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'container'));
 
     // Navigation
@@ -770,6 +772,7 @@ function openItemEditor(shelfId, itemId, context) {
        itemEditorOverlay?.classList.remove('hidden');
        itemEditorSection.style.visibility = 'visible';
        itemEditorSection.style.opacity = 1;
+       hideItemDeleteConfirm('locker');
     } else { // context === 'container'
        cSectionItemNameInput.value = item.name;
        cSectionItemDescInput.value = item.desc;
@@ -778,6 +781,7 @@ function openItemEditor(shelfId, itemId, context) {
        cItemEditorOverlay?.classList.remove('hidden');
        cItemEditorSection.style.visibility = 'visible';
        cItemEditorSection.style.opacity = 1;
+       hideItemDeleteConfirm('container');
     }
 }
 
@@ -805,10 +809,13 @@ function closeItemEditor() {
     itemEditorSection.style.opacity = 0;
     cItemEditorSection.style.visibility = 'hidden';
     cItemEditorSection.style.opacity = 0;
+    hideItemDeleteConfirm('locker');
+    hideItemDeleteConfirm('container');
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
 }
 
-function saveItem() {
+function saveItem(options = {}) {
+    const shouldClose = options.closeEditor !== false;
     if (!activeItemId) return;
     
     const context = currentEditingContext;
@@ -840,6 +847,7 @@ function saveItem() {
         const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
         if (activeBox) activeBox.classList.add('editing');
     });
+    if (shouldClose) closeItemEditor();
 }
 
 function openContainerEditor() {
@@ -848,9 +856,10 @@ function openContainerEditor() {
         alert('Please give the container a name before adding items to it.');
         return;
     }
-    
-    saveItem(); 
-    activeContainerId = activeItemId;
+
+    const containerId = activeItemId;
+    saveItem({ closeEditor: false }); 
+    activeContainerId = containerId;
     closeItemEditor();
 
     const container = findContainer(activeContainerId);
@@ -964,6 +973,42 @@ function cleanupPendingUploads() {
     pendingUploads.clear();
 }
 
+function showItemDeleteConfirm(context) {
+    const confirmEl = context === 'container' ? cItemDeleteConfirm : itemDeleteConfirm;
+    const actionsEl = context === 'container' ? cItemEditorActions : itemEditorActions;
+    if (actionsEl) actionsEl.classList.add('hidden');
+    confirmEl?.classList.remove('hidden');
+}
+
+function hideItemDeleteConfirm(context) {
+    const confirmEl = context === 'container' ? cItemDeleteConfirm : itemDeleteConfirm;
+    const actionsEl = context === 'container' ? cItemEditorActions : itemEditorActions;
+    confirmEl?.classList.add('hidden');
+    if (actionsEl) actionsEl.classList.remove('hidden');
+}
+
+function deleteItemFromShelf(itemId, parentId = null) {
+    const context = parentId ? 'container' : 'locker';
+    const shelf = findShelf(parentId || activeShelfId, context);
+    if (shelf && shelf.items) {
+        const itemToDelete = shelf.items.find(i => i.id === itemId);
+        if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
+            URL.revokeObjectURL(itemToDelete.img);
+            pendingUploads.delete(itemToDelete.img);
+        }
+        shelf.items = shelf.items.filter(i => i.id !== itemId);
+    }
+}
+
+function deleteActiveItem(context) {
+    if (!activeItemId) return;
+    const parentId = context === 'container' ? activeContainerId : null;
+    deleteItemFromShelf(activeItemId, parentId);
+    closeItemEditor();
+    setUnsavedChanges(true);
+    refreshCurrentView();
+}
+
 function confirmDelete(type, id, name, parentId = null) {
     document.getElementById('delete-confirm-text').textContent = `This will permanently delete the ${type} "${name}" and all its contents. This action cannot be undone.`;
     deleteConfirmModal.classList.remove('hidden');
@@ -977,16 +1022,7 @@ function confirmDelete(type, id, name, parentId = null) {
             const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
             locker.shelves = locker.shelves.filter(s => s.id !== id);
         } else if (type === 'item') {
-            const context = parentId ? 'container' : 'locker';
-            const shelf = findShelf(parentId || activeShelfId, context);
-            if (shelf && shelf.items) {
-                const itemToDelete = shelf.items.find(i => i.id === id);
-                if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
-                    URL.revokeObjectURL(itemToDelete.img);
-                    pendingUploads.delete(itemToDelete.img);
-                }
-                shelf.items = shelf.items.filter(i => i.id !== id);
-            }
+            deleteItemFromShelf(id, parentId);
             closeItemEditor();
         }
         

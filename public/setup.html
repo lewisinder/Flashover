@@ -490,6 +490,25 @@
             flex-wrap: wrap;
             gap: 0.5rem;
         }
+        .item-delete-confirm {
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            border-radius: 0.85rem;
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .item-delete-text {
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+        .item-delete-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
         .editor-btn {
             border-radius: 0.85rem;
             padding: 0.6rem 0.9rem;
@@ -800,11 +819,18 @@
                             <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
                         </div>
                     </div>
-                    <div class="item-editor-actions">
+                    <div id="item-editor-actions" class="item-editor-actions">
                         <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
                         <div class="item-editor-action-group">
                             <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
                             <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+                        </div>
+                    </div>
+                    <div id="item-delete-confirm" class="item-delete-confirm hidden">
+                        <div class="item-delete-text">Are you sure? This will delete this item.</div>
+                        <div class="item-delete-actions">
+                            <button id="item-delete-cancel-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                            <button id="item-delete-confirm-btn" class="editor-btn editor-btn-danger" type="button">Yes, delete</button>
                         </div>
                     </div>
                 </div>
@@ -835,11 +861,18 @@
                             </div>
                         </div>
                     </div>
-                    <div class="item-editor-actions">
+                    <div id="c-item-editor-actions" class="item-editor-actions">
                         <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
                         <div class="item-editor-action-group">
                             <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
                             <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+                        </div>
+                    </div>
+                    <div id="c-item-delete-confirm" class="item-delete-confirm hidden">
+                        <div class="item-delete-text">Are you sure? This will delete this item.</div>
+                        <div class="item-delete-actions">
+                            <button id="c-item-delete-cancel-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                            <button id="c-item-delete-confirm-btn" class="editor-btn editor-btn-danger" type="button">Yes, delete</button>
                         </div>
                     </div>
                 </div>
