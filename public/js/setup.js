@@ -165,7 +165,9 @@ function start() {
 start();
 
 function addEventListeners() {
-    editLockerNameIcon.addEventListener('click', () => lockerEditorName.focus());
+    if (editLockerNameIcon) {
+        editLockerNameIcon.addEventListener('click', () => lockerEditorName.focus());
+    }
     headerSaveBtn.addEventListener('click', () => saveBrigadeData('manualSave'));
 
     // Main Item Editor Listeners
@@ -201,7 +203,9 @@ function addEventListeners() {
     createLockerBtn?.addEventListener('click', () => openLockerNameModal());
     saveNewLockerBtn.addEventListener('click', saveNewLocker);
     cancelCreateLockerBtn.addEventListener('click', closeLockerNameModal);
-    lockerEditorName.addEventListener('change', updateLockerName);
+    if (lockerEditorName && !lockerEditorName.readOnly) {
+        lockerEditorName.addEventListener('change', updateLockerName);
+    }
 
     itemEditorOverlay?.addEventListener('click', (e) => {
         if (e.target === itemEditorOverlay) closeItemEditor();

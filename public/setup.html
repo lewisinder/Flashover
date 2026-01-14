@@ -335,6 +335,11 @@
             color: #0f172a;
             width: 100%;
         }
+        .locker-editor-name-input[readonly] {
+            background: transparent;
+            border-color: transparent;
+            padding: 0;
+        }
         .locker-editor-name-input:focus {
             outline: none;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
@@ -710,10 +715,7 @@
                     <div class="locker-editor-meta">
                         <div class="locker-editor-label">Locker</div>
                         <div class="locker-editor-name-row">
-                            <input type="text" id="locker-editor-name" placeholder="Locker name" class="locker-editor-name-input">
-                            <button id="edit-locker-name-icon" class="locker-editor-name-btn" type="button" aria-label="Edit locker name">
-                                <img src="/design_assets/Pencil Icon.png" alt="Edit">
-                            </button>
+                            <input type="text" id="locker-editor-name" placeholder="Locker name" class="locker-editor-name-input" readonly>
                         </div>
                         <div class="locker-editor-subtitle">Organize shelves and items for this locker.</div>
                         <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
