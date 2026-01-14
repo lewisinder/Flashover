@@ -290,18 +290,18 @@ body {
   background: rgba(15, 23, 42, 0.5);
   backdrop-filter: blur(6px);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 80;
 }
 
 .fs-sheet {
-  width: 100%;
+  width: 92%;
   max-width: 520px;
   background: var(--fs-surface);
-  border-radius: 22px 22px 0 0;
+  border-radius: 18px;
   padding: 16px;
-  box-shadow: 0 -18px 40px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
 }
 
 .fs-sheet-title {
@@ -341,6 +341,10 @@ button.fs-row {
   cursor: pointer;
 }
 
+.fs-row-action {
+  cursor: pointer;
+}
+
 button.fs-card:active,
 button.fs-row:active {
   transform: translateY(1px);
@@ -363,8 +367,17 @@ button.fs-row:hover {
   border-color: rgba(37, 99, 235, 0.28);
 }
 
+.fs-row-action:hover {
+  border-color: rgba(37, 99, 235, 0.28);
+}
+
 button.fs-card:focus,
 button.fs-row:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--fs-focus), 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.fs-row-action:focus {
   outline: none;
   box-shadow: 0 0 0 4px var(--fs-focus), 0 10px 30px rgba(15, 23, 42, 0.06);
 }
