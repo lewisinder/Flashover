@@ -37,6 +37,7 @@ let dragState = null;
 let dragJustEndedAt = 0;
 let dragOverCard = null;
 let dragOverPosition = null;
+const dragThreshold = 6;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -269,16 +270,29 @@ function clearDragIndicator() {
 function startLockerDrag(e, card) {
     if (!card || card.classList.contains('add-new')) return;
     if (e.button !== undefined && e.button !== 0) return;
-    dragState = { card, hasMoved: false };
-    card.classList.add('is-dragging');
-    try {
-        e.target.setPointerCapture?.(e.pointerId);
-    } catch (err) {}
-    e.preventDefault();
+    if (e.target.closest('.locker-menu-btn')) return;
+    dragState = {
+        card,
+        hasMoved: false,
+        active: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        pointerId: e.pointerId
+    };
 }
 
 function handleLockerDragMove(e) {
     if (!dragState) return;
+    if (!dragState.active) {
+        const dx = Math.abs(e.clientX - dragState.startX);
+        const dy = Math.abs(e.clientY - dragState.startY);
+        if (dx < dragThreshold && dy < dragThreshold) return;
+        dragState.active = true;
+        dragState.card.classList.add('is-dragging');
+        try {
+            e.target.setPointerCapture?.(dragState.pointerId);
+        } catch (err) {}
+    }
     const card = dragState.card;
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.locker-card');
     if (!target || target === card || target.classList.contains('add-new')) {
@@ -305,10 +319,12 @@ function handleLockerDragMove(e) {
 async function endLockerDrag(e) {
     if (!dragState) return;
     const { card, hasMoved } = dragState;
-    card.classList.remove('is-dragging');
-    try {
-        e.target.releasePointerCapture?.(e.pointerId);
-    } catch (err) {}
+    if (dragState.active) {
+        card.classList.remove('is-dragging');
+        try {
+            e.target.releasePointerCapture?.(dragState.pointerId);
+        } catch (err) {}
+    }
     dragState = null;
     clearDragIndicator();
     if (hasMoved) {
@@ -517,7 +533,6 @@ function renderLockerList() {
             </div>
             <div class="locker-card-actions">
                 <button class="locker-menu-btn" aria-label="Locker actions" type="button">⋯</button>
-                <button class="locker-drag-handle" aria-label="Drag to reorder" type="button">⠿</button>
             </div>
         `;
         card.addEventListener('click', () => {
@@ -534,11 +549,10 @@ function renderLockerList() {
             e.stopPropagation();
             openLockerActions(locker);
         });
-        const dragHandle = card.querySelector('.locker-drag-handle');
-        dragHandle.addEventListener('pointerdown', (e) => startLockerDrag(e, card));
-        dragHandle.addEventListener('pointermove', handleLockerDragMove);
-        dragHandle.addEventListener('pointerup', endLockerDrag);
-        dragHandle.addEventListener('pointercancel', endLockerDrag);
+        card.addEventListener('pointerdown', (e) => startLockerDrag(e, card));
+        card.addEventListener('pointermove', handleLockerDragMove);
+        card.addEventListener('pointerup', endLockerDrag);
+        card.addEventListener('pointercancel', endLockerDrag);
         lockerListContainer.appendChild(card);
     });
     const addCard = document.createElement('div');
