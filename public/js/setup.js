@@ -78,6 +78,7 @@ const containerEditorItems = document.getElementById('container-editor-items');
 const editLockerNameIcon = document.getElementById('edit-locker-name-icon');
 
 const itemEditorSection = document.getElementById('item-editor-section');
+const itemEditorEmpty = document.getElementById('item-editor-empty');
 const sectionImagePreview = document.getElementById('section-image-preview');
 const sectionFileUpload = document.getElementById('section-file-upload');
 const sectionItemNameInput = document.getElementById('section-item-name-input');
@@ -89,6 +90,7 @@ const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
 const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
 
 const cItemEditorSection = document.getElementById('c-item-editor-section');
+const cItemEditorEmpty = document.getElementById('c-item-editor-empty');
 const cSectionImagePreview = document.getElementById('c-section-image-preview');
 const cSectionFileUpload = document.getElementById('c-section-file-upload');
 const cSectionItemNameInput = document.getElementById('c-section-item-name-input');
@@ -752,15 +754,19 @@ function openItemEditor(shelfId, itemId, context) {
        sectionImagePreview.src = item.img || '';
        sectionImagePreview.classList.toggle('hidden', !item.img);
        sectionEnterContainerBtn.classList.toggle('hidden', item.type !== 'container');
+       itemEditorSection.style.display = 'flex';
        itemEditorSection.style.visibility = 'visible';
        itemEditorSection.style.opacity = 1;
+       if (itemEditorEmpty) itemEditorEmpty.style.display = 'none';
     } else { // context === 'container'
        cSectionItemNameInput.value = item.name;
        cSectionItemDescInput.value = item.desc;
        cSectionImagePreview.src = item.img || '';
        cSectionImagePreview.classList.toggle('hidden', !item.img);
+       cItemEditorSection.style.display = 'flex';
        cItemEditorSection.style.visibility = 'visible';
        cItemEditorSection.style.opacity = 1;
+       if (cItemEditorEmpty) cItemEditorEmpty.style.display = 'none';
     }
 }
 
@@ -782,10 +788,14 @@ function closeItemEditor() {
     }
     activeItemId = null;
     isNewItem = false;
+    itemEditorSection.style.display = 'none';
     itemEditorSection.style.visibility = 'hidden';
     itemEditorSection.style.opacity = 0;
+    cItemEditorSection.style.display = 'none';
     cItemEditorSection.style.visibility = 'hidden';
     cItemEditorSection.style.opacity = 0;
+    if (itemEditorEmpty) itemEditorEmpty.style.display = 'flex';
+    if (cItemEditorEmpty) cItemEditorEmpty.style.display = 'flex';
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
 }
 

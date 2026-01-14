@@ -282,6 +282,10 @@
             flex: 1 1 auto;
             min-height: 0;
         }
+        .item-editor-empty {
+            align-items: center;
+            text-align: center;
+        }
         .locker-editor-header {
             display: flex;
             flex-direction: column;
@@ -375,6 +379,9 @@
             display: flex;
             flex-direction: column;
             gap: 1rem;
+            flex: 0 0 auto;
+            max-height: 38vh;
+            overflow-y: auto;
         }
         .item-editor-header {
             display: flex;
@@ -405,6 +412,7 @@
             justify-content: center;
             text-align: center;
             position: relative;
+            overflow: hidden;
         }
         .item-upload img {
             width: 100%;
@@ -671,14 +679,14 @@
 
         <div id="locker-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
             <!-- Item Editor Section (Initially Hidden) -->
-            <div id="item-editor-section" class="item-editor-panel" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
+            <div id="item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
                 <div class="item-editor-header">
                     <div class="item-editor-title">Item details</div>
                     <div class="item-editor-subtitle">Update the name, photo, and description.</div>
                 </div>
                 <div class="item-editor-grid">
                     <label for="section-file-upload" class="item-upload cursor-pointer">
-                        <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                        <img id="section-image-preview" src="" alt="" class="w-full h-full object-cover rounded absolute top-0 left-0 hidden">
                         <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
                             <span class="font-bold text-lg leading-tight">Item image</span>
                             <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
@@ -714,6 +722,10 @@
             </div>
 
             <!-- Locker Editor -->
+            <div id="item-editor-empty" class="item-editor-panel item-editor-empty">
+                <div class="item-editor-title">Select or add an item to edit</div>
+                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
+            </div>
             <div class="locker-editor-shell">
                 <div class="locker-editor-header">
                     <div class="locker-editor-meta">
@@ -739,7 +751,7 @@
         <!-- =================================================================== -->
         <div id="container-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
             <!-- Container's Item Editor Section -->
-            <div id="c-item-editor-section" class="item-editor-panel" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
+            <div id="c-item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
                 <div class="item-editor-header">
                     <div class="item-editor-title">Container item</div>
                     <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
@@ -769,6 +781,11 @@
                         <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
                     </div>
                 </div>
+            </div>
+
+            <div id="c-item-editor-empty" class="item-editor-panel item-editor-empty">
+                <div class="item-editor-title">Select or add an item to edit</div>
+                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
             </div>
 
             <!-- Main Container View -->
