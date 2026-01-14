@@ -645,10 +645,10 @@ function renderLockerShelves() {
     lockerEditorShelves.innerHTML = '';
     (locker.shelves || []).forEach((shelf, index) => {
         const shelfWrapper = document.createElement('div');
-        shelfWrapper.className = 'flex-1 flex flex-col min-h-0';
+        shelfWrapper.className = 'locker-shelf-wrapper';
         const shelfDiv = createShelfElement(shelf, 'locker');
         const label = document.createElement('h3');
-        label.className = 'text-white text-center font-bold text-sm mt-1';
+        label.className = 'locker-shelf-label';
         label.textContent = `Shelf ${index + 1}`;
         shelfWrapper.appendChild(shelfDiv);
         shelfWrapper.appendChild(label);
