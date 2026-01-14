@@ -35,6 +35,8 @@ let draggedItemInfo = null; // { itemId, fromShelfId, fromContext }
 let pendingNavigation = null; // For handling async navigation prompts
 let dragState = null;
 let dragJustEndedAt = 0;
+let dragOverCard = null;
+let dragOverPosition = null;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -257,6 +259,13 @@ function closeLockerActions() {
     actionLockerName = '';
 }
 
+function clearDragIndicator() {
+    if (!dragOverCard) return;
+    dragOverCard.classList.remove('locker-drop-before', 'locker-drop-after');
+    dragOverCard = null;
+    dragOverPosition = null;
+}
+
 function startLockerDrag(e, card) {
     if (!card || card.classList.contains('add-new')) return;
     if (e.button !== undefined && e.button !== 0) return;
@@ -272,9 +281,19 @@ function handleLockerDragMove(e) {
     if (!dragState) return;
     const card = dragState.card;
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.locker-card');
-    if (!target || target === card || target.classList.contains('add-new')) return;
+    if (!target || target === card || target.classList.contains('add-new')) {
+        clearDragIndicator();
+        return;
+    }
     const rect = target.getBoundingClientRect();
     const insertAfter = e.clientY > rect.top + rect.height / 2;
+    const position = insertAfter ? 'after' : 'before';
+    if (dragOverCard !== target || dragOverPosition !== position) {
+        clearDragIndicator();
+        dragOverCard = target;
+        dragOverPosition = position;
+        target.classList.add(insertAfter ? 'locker-drop-after' : 'locker-drop-before');
+    }
     if (insertAfter) {
         if (target.nextSibling !== card) target.after(card);
     } else {
@@ -291,6 +310,7 @@ async function endLockerDrag(e) {
         e.target.releasePointerCapture?.(e.pointerId);
     } catch (err) {}
     dragState = null;
+    clearDragIndicator();
     if (hasMoved) {
         dragJustEndedAt = Date.now();
         await persistLockerOrder();
@@ -496,7 +516,7 @@ function renderLockerList() {
                 </div>
             </div>
             <div class="locker-card-actions">
-                <button class="locker-menu-btn" aria-label="Locker actions" type="button">☰</button>
+                <button class="locker-menu-btn" aria-label="Locker actions" type="button">⋯</button>
                 <button class="locker-drag-handle" aria-label="Drag to reorder" type="button">⠿</button>
             </div>
         `;

@@ -45,6 +45,9 @@
             color: #ffffff;
             background: linear-gradient(135deg, #1b2775 0%, #2563eb 100%);
             box-shadow: 0 18px 35px rgba(24, 15, 94, 0.25);
+            display: flex;
+            align-items: center;
+            min-height: 150px;
         }
         .setup-locker-hero::after {
             content: "";
@@ -63,6 +66,8 @@
             flex-direction: column;
             align-items: center;
             gap: 0.75rem;
+            width: 100%;
+            justify-content: center;
         }
         .setup-locker-hero-top {
             display: flex;
@@ -137,6 +142,7 @@
             cursor: pointer;
             box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
             transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            position: relative;
         }
         .locker-card:hover {
             transform: translateY(-2px);
@@ -206,7 +212,7 @@
         .locker-menu-btn,
         .locker-drag-handle {
             padding: 0.35rem 0.55rem;
-            font-size: 1rem;
+            font-size: 1.1rem;
             line-height: 1;
         }
         .locker-drag-handle {
@@ -231,9 +237,27 @@
             box-shadow: none;
         }
         .locker-card.is-dragging {
-            opacity: 0.85;
+            opacity: 0.6;
+            background: #f8fafc;
+            border-color: rgba(24, 15, 94, 0.2);
             transform: scale(1.01);
             box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
+        }
+        .locker-drop-before::before,
+        .locker-drop-after::after {
+            content: "";
+            position: absolute;
+            left: 12px;
+            right: 12px;
+            height: 3px;
+            background: #2563eb;
+            border-radius: 999px;
+        }
+        .locker-drop-before::before {
+            top: -6px;
+        }
+        .locker-drop-after::after {
+            bottom: -6px;
         }
         .locker-add-icon {
             width: 44px;
