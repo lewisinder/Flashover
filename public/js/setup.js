@@ -117,10 +117,24 @@ function updateSaveButtonVisibility() {
     }
 }
 
+function hoistModal(el) {
+    if (!el || el.parentElement === document.body) return;
+    document.body.appendChild(el);
+}
+
+function hoistSetupModals() {
+    hoistModal(nameLockerModal);
+    hoistModal(lockerActionsModal);
+    hoistModal(deleteConfirmModal);
+    hoistModal(progressModal);
+    hoistModal(unsavedChangesModal);
+}
+
 // --- Data Handling & Initialization ---
 let unsubscribeAuth = null;
 
 function start() {
+    hoistSetupModals();
     Promise.resolve(window.__authReady).finally(() => {
         unsubscribeAuth = auth.onAuthStateChanged(user => {
             if (user) {
