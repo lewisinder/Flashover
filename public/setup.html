@@ -287,6 +287,23 @@
             align-items: center;
             text-align: center;
         }
+        .item-editor-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 70;
+        }
+        .item-editor-overlay.hidden {
+            display: none;
+        }
+        .item-editor-panel {
+            width: 92%;
+            max-width: 560px;
+        }
         .locker-editor-header {
             display: flex;
             flex-direction: column;
@@ -687,54 +704,7 @@
         </div>
 
         <div id="locker-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
-            <!-- Item Editor Section (Initially Hidden) -->
-            <div id="item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
-                <div class="item-editor-header">
-                    <div class="item-editor-title">Item details</div>
-                    <div class="item-editor-subtitle">Update the name, photo, and description.</div>
-                </div>
-                <div class="item-editor-grid">
-                    <label for="section-file-upload" class="item-upload cursor-pointer">
-                        <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
-                        <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
-                            <span class="font-bold text-lg leading-tight">Item image</span>
-                            <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
-                        </span>
-                        <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-                    </label>
-                    <div class="item-fields">
-                        <div>
-                            <label class="item-field-label" for="section-item-name-input">Item name</label>
-                            <input type="text" id="section-item-name-input" placeholder="Item name" class="item-input">
-                        </div>
-                        <div>
-                            <label class="item-field-label" for="section-item-desc-input">Details</label>
-                            <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
-                        </div>
-                        <div>
-                            <label class="item-field-label" for="section-item-type-select">Item type</label>
-                            <select id="section-item-type-select" class="item-select">
-                                <option value="item">Standard Item</option>
-                                <option value="container">Container</option>
-                            </select>
-                        </div>
-                        <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
-                    </div>
-                </div>
-                <div class="item-editor-actions">
-                    <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
-                    <div class="item-editor-action-group">
-                        <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
-                        <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
-                    </div>
-                </div>
-            </div>
-
             <!-- Locker Editor -->
-            <div id="item-editor-empty" class="item-editor-panel item-editor-empty">
-                <div class="item-editor-title">Select or add an item to edit</div>
-                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
-            </div>
             <div class="locker-editor-shell">
                 <div class="locker-editor-header">
                     <div class="locker-editor-meta">
@@ -746,6 +716,7 @@
                             </button>
                         </div>
                         <div class="locker-editor-subtitle">Organize shelves and items for this locker.</div>
+                        <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
                     </div>
                     <button id="add-shelf-btn" class="editor-btn editor-btn-primary" type="button">+ Add shelf</button>
                 </div>
@@ -759,51 +730,13 @@
         <!-- SCREEN: CONTAINER EDITOR                                            -->
         <!-- =================================================================== -->
         <div id="container-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
-            <!-- Container's Item Editor Section -->
-            <div id="c-item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
-                <div class="item-editor-header">
-                    <div class="item-editor-title">Container item</div>
-                    <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
-                </div>
-                <div class="item-editor-grid">
-                    <label for="c-section-file-upload" class="item-upload cursor-pointer">
-                        <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
-                        <span class="text-blue font-bold text-lg">Item image</span>
-                        <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
-                        <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-                    </label>
-                    <div class="item-fields">
-                        <div>
-                            <label class="item-field-label" for="c-section-item-name-input">Item name</label>
-                            <input type="text" id="c-section-item-name-input" placeholder="Item name" class="item-input">
-                        </div>
-                        <div>
-                            <label class="item-field-label" for="c-section-item-desc-input">Details</label>
-                            <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
-                        </div>
-                    </div>
-                </div>
-                <div class="item-editor-actions">
-                    <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
-                    <div class="item-editor-action-group">
-                        <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
-                        <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="c-item-editor-empty" class="item-editor-panel item-editor-empty">
-                <div class="item-editor-title">Select or add an item to edit</div>
-                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
-            </div>
-
             <!-- Main Container View -->
             <div class="locker-editor-shell">
                 <div class="locker-editor-header">
                     <div class="locker-editor-meta">
                         <div class="locker-editor-label">Container</div>
                         <h1 id="container-editor-title" class="locker-editor-heading">Editing Container</h1>
-                        <div class="locker-editor-subtitle">Tap an item to edit details or drag to reposition.</div>
+                        <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
                     </div>
                 </div>
                 <div class="shelf-container">
@@ -830,31 +763,82 @@
                     </div>
                 </div>
             </div>
-            <!-- Item Editor Modal -->
-            <div id="item-editor-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
-                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-                    <h3 id="item-editor-title" class="text-xl font-bold mb-4">Edit Item</h3>
-                    <div class="space-y-4">
-                        <label for="file-upload" class="cursor-pointer bg-gray-200 rounded p-4 text-center">
-                            <img id="image-preview" src="" alt="Preview" class="mx-auto mb-2 h-24 object-contain hidden">
-                            <span class="text-blue font-bold">Item Image</span>
-                            <span class="text-gray-600 text-sm block">Click to upload or change</span>
-                        </label>
-                        <input id="file-upload" type="file" accept="image/*" class="hidden-file-input">
-                        <input type="text" id="item-name-input" placeholder="Item Name" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
-                        <textarea id="item-desc-input" rows="3" placeholder="Description" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500"></textarea>
-                        <div id="item-type-selector-container">
-                            <label class="block text-sm font-medium text-gray-700">Item Type</label>
-                            <select id="item-type-select" class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 mt-1">
-                                <option value="item">Standard Item</option>
-                                <option value="container">Container</option>
-                            </select>
-                        </div>
-                        <button id="enter-container-btn" class="hidden w-full bg-blue text-white font-bold py-2 px-4 rounded-lg">Edit Container Items</button>
+            <!-- Item Editor Overlay -->
+            <div id="item-editor-overlay" class="item-editor-overlay hidden">
+                <div id="item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
+                    <div class="item-editor-header">
+                        <div class="item-editor-title">Item details</div>
+                        <div class="item-editor-subtitle">Update the name, photo, and description.</div>
                     </div>
-                    <div class="flex justify-between mt-6">
-                        <button id="delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
-                        <div><button id="cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button><button id="save-item-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Save</button></div>
+                    <div class="item-editor-grid">
+                        <label for="section-file-upload" class="item-upload cursor-pointer">
+                            <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                            <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
+                                <span class="font-bold text-lg leading-tight">Item image</span>
+                                <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
+                            </span>
+                            <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                        </label>
+                        <div class="item-fields">
+                            <div>
+                                <label class="item-field-label" for="section-item-name-input">Item name</label>
+                                <input type="text" id="section-item-name-input" placeholder="Item name" class="item-input">
+                            </div>
+                            <div>
+                                <label class="item-field-label" for="section-item-desc-input">Details</label>
+                                <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+                            </div>
+                            <div>
+                                <label class="item-field-label" for="section-item-type-select">Item type</label>
+                                <select id="section-item-type-select" class="item-select">
+                                    <option value="item">Standard Item</option>
+                                    <option value="container">Container</option>
+                                </select>
+                            </div>
+                            <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
+                        </div>
+                    </div>
+                    <div class="item-editor-actions">
+                        <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+                        <div class="item-editor-action-group">
+                            <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                            <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Container Item Editor Overlay -->
+            <div id="c-item-editor-overlay" class="item-editor-overlay hidden">
+                <div id="c-item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
+                    <div class="item-editor-header">
+                        <div class="item-editor-title">Container item</div>
+                        <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
+                    </div>
+                    <div class="item-editor-grid">
+                        <label for="c-section-file-upload" class="item-upload cursor-pointer">
+                            <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                            <span class="text-blue font-bold text-lg">Item image</span>
+                            <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
+                            <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                        </label>
+                        <div class="item-fields">
+                            <div>
+                                <label class="item-field-label" for="c-section-item-name-input">Item name</label>
+                                <input type="text" id="c-section-item-name-input" placeholder="Item name" class="item-input">
+                            </div>
+                            <div>
+                                <label class="item-field-label" for="c-section-item-desc-input">Details</label>
+                                <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="item-editor-actions">
+                        <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+                        <div class="item-editor-action-group">
+                            <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                            <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+                        </div>
                     </div>
                 </div>
             </div>
