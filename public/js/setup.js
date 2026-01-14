@@ -24,6 +24,8 @@ let activeBrigadeId = null;
 let activeApplianceId = null;
 let activeLockerId = null;
 let editingLockerId = null;
+let actionLockerId = null;
+let actionLockerName = '';
 let activeShelfId = null;
 let activeItemId = null;
 let activeContainerId = null;
@@ -31,6 +33,8 @@ let isNewItem = false;
 let currentEditingContext = 'locker'; // 'locker' or 'container'
 let draggedItemInfo = null; // { itemId, fromShelfId, fromContext }
 let pendingNavigation = null; // For handling async navigation prompts
+let dragState = null;
+let dragJustEndedAt = 0;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -55,6 +59,12 @@ const cancelCreateLockerBtn = document.getElementById('cancel-create-locker-btn'
 const deleteConfirmModal = document.getElementById('delete-confirm-modal');
 const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+const lockerActionsModal = document.getElementById('locker-actions-modal');
+const lockerActionsTitle = document.getElementById('locker-actions-title');
+const lockerActionsSubtitle = document.getElementById('locker-actions-subtitle');
+const lockerActionsRenameBtn = document.getElementById('locker-actions-rename-btn');
+const lockerActionsDeleteBtn = document.getElementById('locker-actions-delete-btn');
+const lockerActionsCancelBtn = document.getElementById('locker-actions-cancel-btn');
 const unsavedChangesModal = document.getElementById('unsaved-changes-modal');
 const saveUnsavedBtn = document.getElementById('save-unsaved-btn');
 const discardUnsavedBtn = document.getElementById('discard-unsaved-btn');
@@ -177,6 +187,22 @@ function addEventListeners() {
 
     // Delete Confirmation
     cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
+
+    lockerActionsModal?.addEventListener('click', (e) => {
+        if (e.target === lockerActionsModal) closeLockerActions();
+    });
+    lockerActionsCancelBtn?.addEventListener('click', closeLockerActions);
+    lockerActionsRenameBtn?.addEventListener('click', () => {
+        if (!actionLockerId) return;
+        const locker = findLockerById(actionLockerId);
+        closeLockerActions();
+        if (locker) openLockerNameModal(locker);
+    });
+    lockerActionsDeleteBtn?.addEventListener('click', () => {
+        if (!actionLockerId) return;
+        closeLockerActions();
+        confirmDelete('locker', actionLockerId, actionLockerName);
+    });
     
     // Unsaved Changes Modal
     saveUnsavedBtn.addEventListener('click', async () => {
@@ -211,6 +237,83 @@ function beforeUnloadHandler(e) {
             e.preventDefault();
             e.returnValue = ''; // Required for Chrome
         }
+}
+
+function findLockerById(lockerId) {
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    return appliance?.lockers?.find(l => String(l.id) === String(lockerId)) || null;
+}
+
+function openLockerActions(locker) {
+    actionLockerId = locker?.id ?? null;
+    actionLockerName = locker?.name || '';
+    if (lockerActionsSubtitle) lockerActionsSubtitle.textContent = actionLockerName || 'Locker';
+    lockerActionsModal?.classList.remove('hidden');
+}
+
+function closeLockerActions() {
+    lockerActionsModal?.classList.add('hidden');
+    actionLockerId = null;
+    actionLockerName = '';
+}
+
+function startLockerDrag(e, card) {
+    if (!card || card.classList.contains('add-new')) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    dragState = { card, hasMoved: false };
+    card.classList.add('is-dragging');
+    try {
+        e.target.setPointerCapture?.(e.pointerId);
+    } catch (err) {}
+    e.preventDefault();
+}
+
+function handleLockerDragMove(e) {
+    if (!dragState) return;
+    const card = dragState.card;
+    const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.locker-card');
+    if (!target || target === card || target.classList.contains('add-new')) return;
+    const rect = target.getBoundingClientRect();
+    const insertAfter = e.clientY > rect.top + rect.height / 2;
+    if (insertAfter) {
+        if (target.nextSibling !== card) target.after(card);
+    } else {
+        if (target.previousSibling !== card) target.before(card);
+    }
+    dragState.hasMoved = true;
+}
+
+async function endLockerDrag(e) {
+    if (!dragState) return;
+    const { card, hasMoved } = dragState;
+    card.classList.remove('is-dragging');
+    try {
+        e.target.releasePointerCapture?.(e.pointerId);
+    } catch (err) {}
+    dragState = null;
+    if (hasMoved) {
+        dragJustEndedAt = Date.now();
+        await persistLockerOrder();
+    }
+}
+
+async function persistLockerOrder() {
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    if (!appliance || !Array.isArray(appliance.lockers)) return;
+    const orderedIds = Array.from(
+        lockerListContainer.querySelectorAll('.locker-card[data-locker-id]')
+    ).map((el) => el.dataset.lockerId);
+    const existingIds = appliance.lockers.map((l) => String(l.id));
+    const hasChanged = orderedIds.some((id, index) => id !== existingIds[index]);
+    if (!hasChanged) return;
+    const lockerMap = new Map(appliance.lockers.map((locker) => [String(locker.id), locker]));
+    appliance.lockers = orderedIds.map((id) => lockerMap.get(String(id))).filter(Boolean);
+    try {
+        await saveBrigadeData('reorderLockers');
+        renderLockerList();
+    } catch (error) {
+        console.error('Error saving locker order:', error);
+    }
 }
 
 async function loadBrigadeData() {
@@ -383,6 +486,7 @@ function renderLockerList() {
         card.className = 'locker-card';
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
+        card.dataset.lockerId = locker.id;
         card.innerHTML = `
             <div class="locker-card-main">
                 <div class="locker-icon">${initial}</div>
@@ -392,25 +496,29 @@ function renderLockerList() {
                 </div>
             </div>
             <div class="locker-card-actions">
-                <button class="locker-action-btn rename-locker-btn" data-id="${locker.id}">Rename</button>
-                <button class="locker-action-btn locker-delete-btn delete-locker-btn" data-id="${locker.id}">Delete</button>
+                <button class="locker-menu-btn" aria-label="Locker actions" type="button">☰</button>
+                <button class="locker-drag-handle" aria-label="Drag to reorder" type="button">⠿</button>
             </div>
         `;
-        card.addEventListener('click', () => openLockerEditor(locker.id));
+        card.addEventListener('click', () => {
+            if (Date.now() - dragJustEndedAt < 250) return;
+            openLockerEditor(locker.id);
+        });
         card.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 openLockerEditor(locker.id);
             }
         });
-        card.querySelector('.rename-locker-btn').addEventListener('click', (e) => {
+        card.querySelector('.locker-menu-btn').addEventListener('click', (e) => {
             e.stopPropagation();
-            openLockerNameModal(locker);
+            openLockerActions(locker);
         });
-        card.querySelector('.delete-locker-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            confirmDelete('locker', locker.id, locker.name);
-        });
+        const dragHandle = card.querySelector('.locker-drag-handle');
+        dragHandle.addEventListener('pointerdown', (e) => startLockerDrag(e, card));
+        dragHandle.addEventListener('pointermove', handleLockerDragMove);
+        dragHandle.addEventListener('pointerup', endLockerDrag);
+        dragHandle.addEventListener('pointercancel', endLockerDrag);
         lockerListContainer.appendChild(card);
     });
     const addCard = document.createElement('div');
