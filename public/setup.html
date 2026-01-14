@@ -36,47 +36,200 @@
         }
         .shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
 
-        /* New Locker Card Styles */
-        .locker-card {
-            background-color: white;
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
-            aspect-ratio: 1 / 1;
+        /* Locker List Redesign */
+        .setup-locker-hero {
+            position: relative;
+            overflow: hidden;
+            border-radius: 1.25rem;
+            padding: 1.25rem;
+            color: #ffffff;
+            background: linear-gradient(135deg, #1b2775 0%, #2563eb 100%);
+            box-shadow: 0 18px 35px rgba(24, 15, 94, 0.25);
+        }
+        .setup-locker-hero::after {
+            content: "";
+            position: absolute;
+            top: -90px;
+            right: -90px;
+            width: 220px;
+            height: 220px;
+            background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 70%);
+            opacity: 0.8;
+        }
+        .setup-locker-hero-content {
+            position: relative;
+            z-index: 1;
             display: flex;
             flex-direction: column;
+            gap: 0.75rem;
+        }
+        .setup-locker-hero-top {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .setup-locker-eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.7rem;
+            opacity: 0.75;
+        }
+        .setup-locker-title {
+            font-size: 1.75rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+        .setup-locker-subtitle {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .setup-locker-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .setup-primary-btn {
+            background: #ffffff;
+            color: var(--blue);
+            font-weight: 700;
+            padding: 0.6rem 0.9rem;
+            border-radius: 0.75rem;
+            border: none;
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.18);
+        }
+        .setup-primary-btn:hover {
+            transform: translateY(-1px);
+        }
+        .setup-locker-list-header {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            margin-top: 1.25rem;
+        }
+        .setup-locker-list-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .setup-locker-list-subtitle {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        .setup-locker-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 0.75rem 0.1rem 1rem;
+        }
+
+        .locker-card {
+            background: #ffffff;
+            border-radius: 1rem;
+            border: 1px solid #e5e7eb;
+            padding: 0.85rem 0.9rem;
+            display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;
+            gap: 0.75rem;
             cursor: pointer;
-            position: relative;
-            transition: transform 0.2s;
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
         }
         .locker-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-2px);
+            box-shadow: 0 16px 24px rgba(15, 23, 42, 0.12);
+            border-color: rgba(24, 15, 94, 0.25);
+        }
+        .locker-card:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 16px 24px rgba(15, 23, 42, 0.12);
+        }
+        .locker-card-main {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            min-width: 0;
+            flex: 1;
+        }
+        .locker-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 0.75rem;
+            background: rgba(24, 15, 94, 0.12);
+            color: var(--blue);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .locker-card-text {
+            min-width: 0;
         }
         .locker-card .locker-name {
-            font-weight: bold;
-            font-size: 1.25rem;
-            text-align: center;
-            padding: 0.5rem;
+            font-weight: 700;
+            font-size: 1rem;
+            color: #0f172a;
         }
-        .locker-card .delete-locker-btn {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            line-height: 1;
-            color: #ef4444; /* red-500 */
-            cursor: pointer;
-            padding: 0.25rem;
+        .locker-meta {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+        .locker-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+        .locker-action-btn {
+            border: 1px solid #e5e7eb;
+            background: #f8fafc;
+            border-radius: 0.6rem;
+            padding: 0.35rem 0.65rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+        .locker-action-btn:hover {
+            background: #eef2ff;
+            border-color: rgba(24, 15, 94, 0.3);
+        }
+        .locker-delete-btn {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.08);
+            color: #b91c1c;
+        }
+        .locker-delete-btn:hover {
+            background: rgba(239, 68, 68, 0.16);
+            border-color: rgba(239, 68, 68, 0.6);
         }
         .locker-card.add-new {
-            background-color: #f3f4f6; /* gray-100 */
-            color: #6b7280; /* gray-500 */
+            border: 1px dashed rgba(24, 15, 94, 0.35);
+            background: rgba(24, 15, 94, 0.04);
+            box-shadow: none;
         }
-        .locker-card.add-new:hover {
-            background-color: #e5e7eb; /* gray-200 */
+        .locker-add-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 0.75rem;
+            background: rgba(24, 15, 94, 0.12);
+            color: var(--blue);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+        }
+        @media (min-width: 640px) {
+            .setup-locker-hero-content {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .setup-locker-actions {
+                justify-content: flex-end;
+            }
         }
 
         /* New Shelf Styles */
@@ -216,9 +369,24 @@
         <!-- =================================================================== -->
         <!-- SCREEN: SELECT LOCKER TO EDIT                                       -->
         <!-- =================================================================== -->
-        <div id="select-locker-screen" class="screen active p-6 flex-col h-full">
-            <h1 id="appliance-name-title" class="text-3xl font-bold text-center mb-6">Appliance Name</h1>
-            <div id="locker-list-container" class="flex-grow grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto p-4 content-start">
+        <div id="select-locker-screen" class="screen active p-4 sm:p-6 flex-col h-full">
+            <div class="setup-locker-hero">
+                <div class="setup-locker-hero-content">
+                    <div class="setup-locker-hero-top">
+                        <div class="setup-locker-eyebrow">Appliance</div>
+                        <h1 id="appliance-name-title" class="setup-locker-title">Appliance Name</h1>
+                        <div class="setup-locker-subtitle">Choose a locker to edit shelves and items.</div>
+                    </div>
+                    <div class="setup-locker-actions">
+                        <button id="create-locker-btn" class="setup-primary-btn">New locker</button>
+                    </div>
+                </div>
+            </div>
+            <div class="setup-locker-list-header">
+                <div class="setup-locker-list-title">Lockers</div>
+                <div class="setup-locker-list-subtitle">Tap a locker to edit, or use quick actions on the right.</div>
+            </div>
+            <div id="locker-list-container" class="setup-locker-list flex-grow overflow-y-auto">
                 <!-- Locker list generated by JS -->
             </div>
         </div>
@@ -372,7 +540,7 @@
             <!-- Name Locker Modal -->
             <div id="name-locker-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
                 <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-                    <h3 class="text-xl font-bold mb-4">Create New Locker</h3>
+                    <h3 id="locker-name-modal-title" class="text-xl font-bold mb-4">Create new locker</h3>
                     <input type="text" id="new-locker-name-input" placeholder="Enter locker name..." class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
                     <div class="flex justify-end mt-6">
                         <button id="cancel-create-locker-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>

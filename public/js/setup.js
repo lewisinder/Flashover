@@ -23,6 +23,7 @@ let pendingUploads = new Map(); // blobUrl -> File object
 let activeBrigadeId = null;
 let activeApplianceId = null;
 let activeLockerId = null;
+let editingLockerId = null;
 let activeShelfId = null;
 let activeItemId = null;
 let activeContainerId = null;
@@ -38,6 +39,7 @@ const lockerEditorScreen = document.getElementById('locker-editor-screen');
 const containerEditorScreen = document.getElementById('container-editor-screen');
 const applianceNameTitle = document.getElementById('appliance-name-title');
 const lockerListContainer = document.getElementById('locker-list-container');
+const createLockerBtn = document.getElementById('create-locker-btn');
 const lockerEditorName = document.getElementById('locker-editor-name');
 const lockerEditorShelves = document.getElementById('locker-editor-shelves');
 const addShelfBtn = document.getElementById('add-shelf-btn');
@@ -46,6 +48,7 @@ const headerSaveBtn = document.getElementById('header-save-btn');
 
 // Modals
 const nameLockerModal = document.getElementById('name-locker-modal');
+const lockerNameModalTitle = document.getElementById('locker-name-modal-title');
 const newLockerNameInput = document.getElementById('new-locker-name-input');
 const saveNewLockerBtn = document.getElementById('save-new-locker-btn');
 const cancelCreateLockerBtn = document.getElementById('cancel-create-locker-btn');
@@ -164,8 +167,9 @@ function addEventListeners() {
     backBtn.addEventListener('click', () => handleNavigation(navigateBack));
 
     // Locker Management
+    createLockerBtn?.addEventListener('click', () => openLockerNameModal());
     saveNewLockerBtn.addEventListener('click', saveNewLocker);
-    cancelCreateLockerBtn.addEventListener('click', () => nameLockerModal.classList.add('hidden'));
+    cancelCreateLockerBtn.addEventListener('click', closeLockerNameModal);
     lockerEditorName.addEventListener('change', updateLockerName);
 
     // Shelf Management
@@ -348,15 +352,61 @@ function navigateBack() {
 }
 
 // --- Locker Management ---
+function openLockerNameModal(locker) {
+    editingLockerId = locker?.id ?? null;
+    if (lockerNameModalTitle) {
+        lockerNameModalTitle.textContent = editingLockerId ? 'Rename locker' : 'Create new locker';
+    }
+    saveNewLockerBtn.textContent = editingLockerId ? 'Save' : 'Create';
+    newLockerNameInput.value = locker?.name || '';
+    nameLockerModal.classList.remove('hidden');
+    newLockerNameInput.focus();
+}
+
+function closeLockerNameModal() {
+    nameLockerModal.classList.add('hidden');
+    newLockerNameInput.value = '';
+    editingLockerId = null;
+    if (lockerNameModalTitle) lockerNameModalTitle.textContent = 'Create new locker';
+    saveNewLockerBtn.textContent = 'Create';
+}
+
 function renderLockerList() {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     if (!appliance) return;
     lockerListContainer.innerHTML = '';
     (appliance.lockers || []).forEach(locker => {
         const card = document.createElement('div');
+        const shelfCount = (locker.shelves || []).length;
+        const metaText = shelfCount ? `${shelfCount} shelf${shelfCount === 1 ? '' : 's'}` : 'No shelves yet';
+        const initial = (locker.name || 'L').trim().charAt(0).toUpperCase();
         card.className = 'locker-card';
-        card.innerHTML = `<div class="locker-name">${locker.name}</div><button class="delete-locker-btn" data-id="${locker.id}"><img src="/design_assets/No Icon.png" alt="Delete" class="h-8 w-8"></button>`;
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.innerHTML = `
+            <div class="locker-card-main">
+                <div class="locker-icon">${initial}</div>
+                <div class="locker-card-text">
+                    <div class="locker-name">${locker.name}</div>
+                    <div class="locker-meta">${metaText}</div>
+                </div>
+            </div>
+            <div class="locker-card-actions">
+                <button class="locker-action-btn rename-locker-btn" data-id="${locker.id}">Rename</button>
+                <button class="locker-action-btn locker-delete-btn delete-locker-btn" data-id="${locker.id}">Delete</button>
+            </div>
+        `;
         card.addEventListener('click', () => openLockerEditor(locker.id));
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openLockerEditor(locker.id);
+            }
+        });
+        card.querySelector('.rename-locker-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLockerNameModal(locker);
+        });
         card.querySelector('.delete-locker-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             confirmDelete('locker', locker.id, locker.name);
@@ -365,8 +415,24 @@ function renderLockerList() {
     });
     const addCard = document.createElement('div');
     addCard.className = 'locker-card add-new';
-    addCard.innerHTML = `<div class="locker-name text-5xl">+</div>`;
-    addCard.addEventListener('click', () => nameLockerModal.classList.remove('hidden'));
+    addCard.setAttribute('role', 'button');
+    addCard.setAttribute('tabindex', '0');
+    addCard.innerHTML = `
+        <div class="locker-card-main">
+            <div class="locker-add-icon">+</div>
+            <div class="locker-card-text">
+                <div class="locker-name">Create a new locker</div>
+                <div class="locker-meta">Name it, then add shelves and items.</div>
+            </div>
+        </div>
+    `;
+    addCard.addEventListener('click', () => openLockerNameModal());
+    addCard.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openLockerNameModal();
+        }
+    });
     lockerListContainer.appendChild(addCard);
 }
 
@@ -394,12 +460,17 @@ async function saveNewLocker() {
     if (name) {
         const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
         if (!appliance.lockers) appliance.lockers = [];
-        const newLocker = { id: String(Date.now()), name, shelves: [] };
-        appliance.lockers.push(newLocker);
-        await saveBrigadeData('addLocker'); // Immediate save as requested
+        if (editingLockerId !== null && editingLockerId !== undefined) {
+            const locker = appliance.lockers.find(l => String(l.id) === String(editingLockerId));
+            if (locker) locker.name = name;
+            await saveBrigadeData('renameLocker');
+        } else {
+            const newLocker = { id: String(Date.now()), name, shelves: [] };
+            appliance.lockers.push(newLocker);
+            await saveBrigadeData('addLocker'); // Immediate save as requested
+        }
         renderLockerList();
-        newLockerNameInput.value = '';
-        nameLockerModal.classList.add('hidden');
+        closeLockerNameModal();
     }
 }
 
