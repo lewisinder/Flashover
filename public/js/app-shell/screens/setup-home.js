@@ -238,7 +238,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   function openActionSheet(appliance) {
-    actionApplianceId = appliance?.id || null;
+    actionApplianceId = appliance?.id ?? null;
     actionApplianceName = appliance?.name || "";
     sheetSubtitle.textContent = actionApplianceName;
     actionSheet.classList.remove("hidden");
@@ -382,8 +382,10 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       return;
     }
 
-    if (editingApplianceId) {
-      const appliance = truckData.appliances.find((a) => a.id === editingApplianceId);
+    if (editingApplianceId !== null && editingApplianceId !== undefined) {
+      const appliance = truckData.appliances.find(
+        (a) => String(a.id) === String(editingApplianceId)
+      );
       if (appliance) appliance.name = name;
     } else {
       truckData.appliances.push({ id: String(Date.now()), name, lockers: [] });
