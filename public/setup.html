@@ -18,10 +18,10 @@
             flex-grow: 1;
             min-height: 0;
         }
-        .shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f3f4f6; border: 2px solid #e5e7eb; border-radius: 0.75rem; padding: 0.75rem; display: flex; flex-direction: column; }
+        .shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.9rem; padding: 0.85rem; display: flex; flex-direction: column; }
         .shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
-        .item-editor-box { flex: 1 1 0px; background-color: #e5e7eb; border-radius: 0.5rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.5rem; overflow: hidden; position: relative; }
-        .item-editor-box:hover { background-color: #d1d5db; }
+        .item-editor-box { flex: 1 1 0px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.6rem; overflow: hidden; position: relative; transition: background-color 0.2s; }
+        .item-editor-box:hover { background-color: #e2e8f0; }
         .item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
         .item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
         .hidden-file-input { display: none; }
@@ -264,6 +264,250 @@
             font-size: 1.5rem;
             font-weight: 800;
         }
+
+        /* Locker Editor Redesign */
+        .locker-editor-screen {
+            gap: 1rem;
+            min-height: 0;
+        }
+        .locker-editor-shell {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 1.25rem;
+            padding: 1rem;
+            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            flex: 1 1 60%;
+            min-height: 0;
+            min-height: 320px;
+        }
+        .item-editor-empty {
+            align-items: center;
+            text-align: center;
+        }
+        .locker-editor-header {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .locker-editor-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .locker-editor-label {
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            font-size: 0.65rem;
+            color: #94a3b8;
+        }
+        .locker-editor-name-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .locker-editor-name-input {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.85rem;
+            padding: 0.6rem 0.9rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #0f172a;
+            width: 100%;
+        }
+        .locker-editor-name-input:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+        .locker-editor-name-btn {
+            border: 1px solid #e2e8f0;
+            background: #f1f5f9;
+            border-radius: 0.75rem;
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .locker-editor-name-btn img {
+            width: 18px;
+            height: 18px;
+        }
+        .locker-editor-subtitle {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+        .locker-editor-shelves {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            min-height: 0;
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .locker-shelf-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .locker-shelf-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #64748b;
+            text-align: center;
+        }
+        .locker-editor-heading {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .item-editor-panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 1.25rem;
+            padding: 0.9rem;
+            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            flex: 0 0 auto;
+            max-height: none;
+            overflow: visible;
+        }
+        .item-editor-empty {
+            padding: 0.9rem;
+            min-height: 110px;
+        }
+        .item-editor-empty .item-editor-title {
+            font-size: 0.95rem;
+        }
+        .item-editor-header {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        .item-editor-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .item-editor-subtitle {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+        .item-editor-grid {
+            display: grid;
+            gap: 0.75rem;
+        }
+        .item-upload {
+            border: 2px dashed #cbd5f5;
+            background: #f8fafc;
+            border-radius: 1rem;
+            padding: 0;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .item-upload img {
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            object-position: center;
+        }
+        .item-fields {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .item-field-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: #94a3b8;
+            font-weight: 700;
+        }
+        .item-input,
+        .item-textarea,
+        .item-select {
+            width: 100%;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 0.6rem 0.85rem;
+            color: #0f172a;
+        }
+        .item-textarea {
+            min-height: 70px;
+            resize: vertical;
+        }
+        .item-editor-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .item-editor-action-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .editor-btn {
+            border-radius: 0.85rem;
+            padding: 0.6rem 0.9rem;
+            font-weight: 700;
+            border: 1px solid transparent;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .editor-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+        }
+        .editor-btn-primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+        .editor-btn-secondary {
+            background: #eef2ff;
+            color: #1e1b4b;
+            border-color: rgba(37, 99, 235, 0.2);
+        }
+        .editor-btn-ghost {
+            background: #ffffff;
+            color: #0f172a;
+            border-color: #e2e8f0;
+        }
+        .editor-btn-danger {
+            background: #ef4444;
+            color: #ffffff;
+        }
+
+        @media (min-width: 768px) {
+            .locker-editor-header {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .item-editor-grid {
+                grid-template-columns: 1fr 1.5fr;
+            }
+        }
         @media (min-width: 640px) {
             .setup-locker-hero-content {
                 flex-direction: row;
@@ -280,22 +524,24 @@
 
         /* New Shelf Styles */
         .shelf-container {
-            background-color: #FFFFFF; /* White */
-            border-radius: 0.75rem; /* 12px */
-            padding: 0.75rem; /* 12px */
-            box-shadow: inset 0 4px 8px 3px rgba(0,0,0,0.25);
+            background-color: #f8fafc;
+            border-radius: 1rem;
+            padding: 0.9rem;
+            box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.12);
+            border: 1px solid #e2e8f0;
             position: relative;
             display: flex;
             flex-direction: column;
             flex-grow: 1;
             flex-shrink: 1;
             flex-basis: 0;
+            min-height: 180px;
         }
 
         .delete-shelf-btn {
             position: absolute;
-            top: -0.5rem; /* -8px */
-            right: -0.5rem; /* -8px */
+            top: 0.5rem;
+            right: 0.5rem;
             background-color: #E41E25; /* Red Action 1 */
             color: white;
             width: 1.75rem; /* 28px */
@@ -334,19 +580,21 @@
         }
 
         .add-item-btn-circle {
-            background-color: #E5E7EB; /* gray-200 */
-            border-radius: 0.5rem; /* 8px */
+            background-color: #e2e8f0;
+            border-radius: 0.75rem;
             aspect-ratio: 1 / 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2.5rem; /* 40px */
-            color: #9CA3AF; /* gray-400 */
+            font-size: 2.2rem;
+            color: #94a3b8;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: background-color 0.2s, border-color 0.2s;
+            border: 1px dashed #cbd5f5;
         }
         .add-item-btn-circle:hover {
-            background-color: #D1D5DB; /* gray-300 */
+            background-color: #dbeafe;
+            border-color: rgba(37, 99, 235, 0.35);
         }
         .item-editor-box {
             aspect-ratio: 1 / 1;
@@ -357,8 +605,8 @@
             justify-content: center;
             cursor: pointer;
             transition: all 0.2s;
-            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
             position: relative;
+            box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
         }
         .item-editor-box.editing {
             border: 4px solid #180F5E; /* Blue */
@@ -438,105 +686,131 @@
             </div>
         </div>
 
-        <div id="locker-editor-screen" class="screen p-4 flex-col h-full">
+        <div id="locker-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
             <!-- Item Editor Section (Initially Hidden) -->
-            <div id="item-editor-section" class="mb-4" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
-                <div class="grid grid-cols-3 gap-4 items-start">
-                    <!-- Image Section -->
-                    <div class="col-span-1 bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col">
-                        <label for="section-file-upload" class="flex-grow flex flex-col items-center justify-center cursor-pointer relative bg-gray-200 rounded text-center aspect-square">
-                            <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
-                            <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
-                                <span class="font-bold text-lg leading-tight">Item Image</span>
-                                <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
-                            </span>
-                            <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-                        </label>
+            <div id="item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
+                <div class="item-editor-header">
+                    <div class="item-editor-title">Item details</div>
+                    <div class="item-editor-subtitle">Update the name, photo, and description.</div>
+                </div>
+                <div class="item-editor-grid">
+                    <label for="section-file-upload" class="item-upload cursor-pointer">
+                        <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                        <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
+                            <span class="font-bold text-lg leading-tight">Item image</span>
+                            <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
+                        </span>
+                        <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                    </label>
+                    <div class="item-fields">
+                        <div>
+                            <label class="item-field-label" for="section-item-name-input">Item name</label>
+                            <input type="text" id="section-item-name-input" placeholder="Item name" class="item-input">
+                        </div>
+                        <div>
+                            <label class="item-field-label" for="section-item-desc-input">Details</label>
+                            <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+                        </div>
+                        <div>
+                            <label class="item-field-label" for="section-item-type-select">Item type</label>
+                            <select id="section-item-type-select" class="item-select">
+                                <option value="item">Standard Item</option>
+                                <option value="container">Container</option>
+                            </select>
+                        </div>
+                        <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
                     </div>
-                    <!-- Details Section -->
-                    <div class="col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col">
-                        <div class="space-y-2 flex-grow">
-                            <input type="text" id="section-item-name-input" placeholder="Item Name" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500">
-                            <textarea id="section-item-desc-input" rows="2" placeholder="Item Details" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500"></textarea>
-                            <div>
-                                <label class="block text-sm font-medium text-white mb-1">Item Type</label>
-                                <select id="section-item-type-select" class="w-full bg-white text-blue rounded-lg p-2">
-                                    <option value="item">Standard Item</option>
-                                    <option value="container">Container</option>
-                                </select>
-                            </div>
-                            <button id="section-enter-container-btn" class="hidden w-full bg-orange-action-1 text-white font-bold py-2 px-4 rounded-lg">Edit Container Items</button>
-                        </div>
-                        <div class="flex justify-between items-center mt-2">
-                            <button id="section-delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
-                            <div>
-                                <button id="section-cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
-                                <button id="section-save-item-btn" class="bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg">Save</button>
-                            </div>
-                        </div>
+                </div>
+                <div class="item-editor-actions">
+                    <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+                    <div class="item-editor-action-group">
+                        <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                        <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
                     </div>
                 </div>
             </div>
 
             <!-- Locker Editor -->
-            <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow min-h-0">
-                <div class="flex items-center justify-center mb-4">
-                    <input type="text" id="locker-editor-name" placeholder="Locker Name" class="bg-transparent text-white text-2xl font-bold w-full text-center uppercase tracking-wider focus:bg-gray-800 rounded p-1">
-                    <img src="/design_assets/Pencil Icon.png" alt="Edit" id="edit-locker-name-icon" class="h-8 w-8 ml-2 cursor-pointer">
+            <div id="item-editor-empty" class="item-editor-panel item-editor-empty">
+                <div class="item-editor-title">Select or add an item to edit</div>
+                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
+            </div>
+            <div class="locker-editor-shell">
+                <div class="locker-editor-header">
+                    <div class="locker-editor-meta">
+                        <div class="locker-editor-label">Locker</div>
+                        <div class="locker-editor-name-row">
+                            <input type="text" id="locker-editor-name" placeholder="Locker name" class="locker-editor-name-input">
+                            <button id="edit-locker-name-icon" class="locker-editor-name-btn" type="button" aria-label="Edit locker name">
+                                <img src="/design_assets/Pencil Icon.png" alt="Edit">
+                            </button>
+                        </div>
+                        <div class="locker-editor-subtitle">Organize shelves and items for this locker.</div>
+                    </div>
+                    <button id="add-shelf-btn" class="editor-btn editor-btn-primary" type="button">+ Add shelf</button>
                 </div>
-                <div id="locker-editor-shelves" class="flex flex-col flex-grow gap-4 min-h-0">
+                <div id="locker-editor-shelves" class="locker-editor-shelves">
                     <!-- Shelves and items generated by JS -->
                 </div>
-            </div>
-            <div class="pt-4 flex-shrink-0">
-                <button id="add-shelf-btn" class="w-full bg-green-action-1 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:bg-green-700 transition-transform transform hover:scale-105">+ Add Shelf</button>
             </div>
         </div>
         
         <!-- =================================================================== -->
         <!-- SCREEN: CONTAINER EDITOR                                            -->
         <!-- =================================================================== -->
-        <div id="container-editor-screen" class="screen p-4 flex-col h-full">
+        <div id="container-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
             <!-- Container's Item Editor Section -->
-            <div id="c-item-editor-section" class="mb-4" style="visibility: hidden; opacity: 0; transition: opacity 0.3s ease;">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-white border-4 border-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-2 flex flex-col">
-                        <label for="c-section-file-upload" class="flex-grow flex flex-col items-center justify-center cursor-pointer relative bg-gray-200 rounded p-4 text-center">
-                            <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-cover rounded absolute top-0 left-0 hidden">
-                            <span class="text-blue font-bold text-lg">Item Image</span>
-                            <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
-                            <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-                        </label>
+            <div id="c-item-editor-section" class="item-editor-panel" style="display: none; opacity: 0; transition: opacity 0.3s ease;">
+                <div class="item-editor-header">
+                    <div class="item-editor-title">Container item</div>
+                    <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
+                </div>
+                <div class="item-editor-grid">
+                    <label for="c-section-file-upload" class="item-upload cursor-pointer">
+                        <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+                        <span class="text-blue font-bold text-lg">Item image</span>
+                        <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
+                        <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+                    </label>
+                    <div class="item-fields">
+                        <div>
+                            <label class="item-field-label" for="c-section-item-name-input">Item name</label>
+                            <input type="text" id="c-section-item-name-input" placeholder="Item name" class="item-input">
+                        </div>
+                        <div>
+                            <label class="item-field-label" for="c-section-item-desc-input">Details</label>
+                            <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+                        </div>
                     </div>
-                    <div class="bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col">
-                        <div class="space-y-4 flex-grow">
-                            <input type="text" id="c-section-item-name-input" placeholder="Item Name" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500">
-                            <textarea id="c-section-item-desc-input" rows="3" placeholder="Item Details" class="w-full bg-white text-blue rounded-lg p-2 placeholder-gray-500"></textarea>
-                        </div>
-                        <div class="flex justify-between mt-4">
-                             <button id="c-section-delete-item-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
-                            <div>
-                                <button id="c-section-cancel-edit-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
-                                <button id="c-section-save-item-btn" class="bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg">Save</button>
-                            </div>
-                        </div>
+                </div>
+                <div class="item-editor-actions">
+                    <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+                    <div class="item-editor-action-group">
+                        <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+                        <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
                     </div>
                 </div>
             </div>
 
+            <div id="c-item-editor-empty" class="item-editor-panel item-editor-empty">
+                <div class="item-editor-title">Select or add an item to edit</div>
+                <div class="item-editor-subtitle">Tap any item to see its details here.</div>
+            </div>
+
             <!-- Main Container View -->
-            <div class="bg-blue rounded-lg p-4 flex flex-col flex-grow min-h-0">
-                <div class="flex items-center justify-center mb-4">
-                    <h1 id="container-editor-title" class="text-white text-2xl font-bold w-full text-center uppercase tracking-wider">Editing Container</h1>
+            <div class="locker-editor-shell">
+                <div class="locker-editor-header">
+                    <div class="locker-editor-meta">
+                        <div class="locker-editor-label">Container</div>
+                        <h1 id="container-editor-title" class="locker-editor-heading">Editing Container</h1>
+                        <div class="locker-editor-subtitle">Tap an item to edit details or drag to reposition.</div>
+                    </div>
                 </div>
                 <div class="shelf-container">
-                    <div id="container-editor-items" class="shelf-items-grid flex-grow overflow-y-auto p-1">
+                    <div id="container-editor-items" class="shelf-items-grid flex-grow overflow-y-auto">
                         <!-- Container sub-items generated here -->
                     </div>
                 </div>
-            </div>
-            <div class="pt-4 flex-shrink-0">
-                <!-- Add Sub-Item button removed -->
             </div>
         </div>
 
