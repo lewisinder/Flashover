@@ -851,6 +851,7 @@ function openContainerEditor() {
     
     saveItem(); 
     activeContainerId = activeItemId;
+    closeItemEditor();
 
     const container = findContainer(activeContainerId);
     if (!container) return;
