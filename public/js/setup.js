@@ -46,7 +46,9 @@ const selectLockerScreen = document.getElementById('select-locker-screen');
 const lockerEditorScreen = document.getElementById('locker-editor-screen');
 const containerEditorScreen = document.getElementById('container-editor-screen');
 const applianceNameTitle = document.getElementById('appliance-name-title');
+const applianceNameSubtitle = document.getElementById('appliance-name-subtitle');
 const lockerListContainer = document.getElementById('locker-list-container');
+const lockerLoadingState = document.getElementById('locker-loading-state');
 const createLockerBtn = document.getElementById('create-locker-btn');
 const lockerEditorName = document.getElementById('locker-editor-name');
 const lockerEditorShelves = document.getElementById('locker-editor-shelves');
@@ -117,6 +119,19 @@ function setUnsavedChanges(isDirty) {
 function updateSaveButtonVisibility() {
     if (headerSaveBtn) {
         headerSaveBtn.classList.toggle('hidden', !hasUnsavedChanges);
+    }
+}
+
+const defaultLockerSubtitle = applianceNameSubtitle?.textContent || 'Choose a locker to edit shelves and items.';
+
+function setLockerLoading(isLoading) {
+    if (lockerLoadingState) lockerLoadingState.classList.toggle('hidden', !isLoading);
+    if (lockerListContainer) lockerListContainer.classList.toggle('hidden', isLoading);
+    if (applianceNameTitle && isLoading) {
+        applianceNameTitle.textContent = 'Loading appliance...';
+    }
+    if (applianceNameSubtitle) {
+        applianceNameSubtitle.textContent = isLoading ? 'Fetching setup details...' : defaultLockerSubtitle;
     }
 }
 
@@ -382,6 +397,7 @@ async function persistLockerOrder() {
 async function loadBrigadeData() {
     if (!currentUser || !activeBrigadeId) return;
     showLoading();
+    setLockerLoading(true);
     try {
         const token = await currentUser.getIdToken();
         const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -393,8 +409,12 @@ async function loadBrigadeData() {
         const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
         if (appliance) {
             applianceNameTitle.textContent = appliance.name;
+            if (applianceNameSubtitle) {
+                applianceNameSubtitle.textContent = defaultLockerSubtitle;
+            }
             setUnsavedChanges(false);
             renderLockerList();
+            setLockerLoading(false);
         } else {
             alert('Appliance not found in this brigade.');
             navigateToSetupHome();
@@ -403,6 +423,7 @@ async function loadBrigadeData() {
         console.error("Error loading data:", error);
         alert("Error loading data. Please try again.");
     } finally {
+        setLockerLoading(false);
         hideLoading();
     }
 }
@@ -540,6 +561,7 @@ function closeLockerNameModal() {
 function renderLockerList() {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     if (!appliance) return;
+    setLockerLoading(false);
     lockerListContainer.innerHTML = '';
     (appliance.lockers || []).forEach(locker => {
         const card = document.createElement('div');
