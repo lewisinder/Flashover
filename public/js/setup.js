@@ -18,7 +18,7 @@ let currentUser = null;
 let truckData = { appliances: [] };
 let lastSavedTruckData = null; // For discarding changes
 let hasUnsavedChanges = false;
-let pendingUploads = new Map(); // blobUrl -> File object
+let pendingUploads = new Map(); // blobUrl -> { file, status, promise }
 
 let activeBrigadeId = null;
 let activeApplianceId = null;
@@ -95,6 +95,7 @@ const sectionFileUpload = document.getElementById('section-file-upload');
 const sectionItemNameInput = document.getElementById('section-item-name-input');
 const sectionItemDescInput = document.getElementById('section-item-desc-input');
 const sectionItemTypeSelect = document.getElementById('section-item-type-select');
+const sectionImageStatus = document.getElementById('section-image-status');
 const sectionEnterContainerBtn = document.getElementById('section-enter-container-btn');
 const sectionCancelEditBtn = document.getElementById('section-cancel-edit-btn');
 const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
@@ -109,6 +110,7 @@ const cSectionImagePreview = document.getElementById('c-section-image-preview');
 const cSectionFileUpload = document.getElementById('c-section-file-upload');
 const cSectionItemNameInput = document.getElementById('c-section-item-name-input');
 const cSectionItemDescInput = document.getElementById('c-section-item-desc-input');
+const cSectionImageStatus = document.getElementById('c-section-image-status');
 const cSectionCancelEditBtn = document.getElementById('c-section-cancel-edit-btn');
 const cSectionSaveItemBtn = document.getElementById('c-section-save-item-btn');
 const cSectionDeleteItemBtn = document.getElementById('c-section-delete-item-btn');
@@ -463,8 +465,16 @@ async function saveBrigadeData(operation) {
         if (itemsWithPendingUploads.length > 0) {
             progressTitle.textContent = 'Uploading Images...';
             const uploadPromises = itemsWithPendingUploads.map((item, index) => {
-                const file = pendingUploads.get(item.img);
+                const pending = pendingUploads.get(item.img);
+                const file = pending && pending.file ? pending.file : pending;
                 if (!file) return Promise.resolve();
+                if (pending && pending.promise) {
+                    return pending.promise.then(() => {
+                        const overallProgress = ((index + 1) / itemsWithPendingUploads.length) * 100;
+                        progressBar.style.width = `${overallProgress}%`;
+                        progressText.textContent = `Finalizing image ${index + 1} of ${itemsWithPendingUploads.length}`;
+                    });
+                }
 
                 return (async () => {
                     progressText.textContent = `Compressing image ${index + 1} of ${itemsWithPendingUploads.length}`;
@@ -821,6 +831,7 @@ function openItemEditor(shelfId, itemId, context) {
        sectionItemTypeSelect.value = item.type;
        sectionImagePreview.src = item.img || '';
        sectionImagePreview.classList.toggle('hidden', !item.img);
+       setImageStatusForItem('locker', item);
        sectionEnterContainerBtn.classList.toggle('hidden', item.type !== 'container');
        if (moveLockerSection) moveLockerSection.classList.remove('hidden');
        populateMoveLockerOptions();
@@ -832,6 +843,7 @@ function openItemEditor(shelfId, itemId, context) {
        cSectionItemDescInput.value = item.desc;
        cSectionImagePreview.src = item.img || '';
        cSectionImagePreview.classList.toggle('hidden', !item.img);
+       setImageStatusForItem('container', item);
        if (moveLockerSection) moveLockerSection.classList.add('hidden');
        cItemEditorOverlay?.classList.remove('hidden');
        cItemEditorSection.style.visibility = 'visible';
@@ -1350,7 +1362,10 @@ function confirmDelete(type, id, name, parentId = null) {
 
 function handleImageUpload(e, context) {
     const file = e.target.files[0];
-    if (!file || !activeItemId) return;
+    if (!file || !activeItemId) {
+        updateImageStatus(context, 'Select an item first.', 'error');
+        return;
+    }
 
     const item = findItem(activeShelfId, activeItemId, context);
     if (!item) return;
@@ -1364,7 +1379,7 @@ function handleImageUpload(e, context) {
     }
 
     const blobUrl = URL.createObjectURL(file);
-    pendingUploads.set(blobUrl, file);
+    pendingUploads.set(blobUrl, { file, status: 'pending', promise: null });
 
     item.img = blobUrl;
     setUnsavedChanges(true);
@@ -1372,9 +1387,115 @@ function handleImageUpload(e, context) {
     const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
     previewEl.src = blobUrl;
     previewEl.classList.remove('hidden');
+    updateImageStatus(context, 'Uploading image...');
+    queueImageUpload(blobUrl, context);
     
     refreshCurrentView();
     e.target.value = '';
+}
+
+function updateImageStatus(context, message, state = '') {
+    const statusEl = context === 'locker' ? sectionImageStatus : cSectionImageStatus;
+    if (!statusEl) return;
+    statusEl.classList.remove('success', 'error');
+    if (!message) {
+        statusEl.textContent = '';
+        statusEl.classList.add('hidden');
+        return;
+    }
+    if (state) statusEl.classList.add(state);
+    statusEl.textContent = message;
+    statusEl.classList.remove('hidden');
+}
+
+function setImageStatusForItem(context, item) {
+    if (!item || !item.img || !item.img.startsWith('blob:')) {
+        updateImageStatus(context, '');
+        return;
+    }
+    const pending = pendingUploads.get(item.img);
+    if (!pending) {
+        updateImageStatus(context, 'Will upload on save.');
+        return;
+    }
+    if (pending.status === 'uploading') {
+        updateImageStatus(context, 'Uploading image...');
+        return;
+    }
+    if (pending.status === 'error') {
+        updateImageStatus(context, 'Upload failed - will retry on save.', 'error');
+        return;
+    }
+    updateImageStatus(context, 'Ready to upload.');
+}
+
+function findItemByImageUrl(imgUrl) {
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    if (!appliance || !appliance.lockers) return null;
+    for (const locker of appliance.lockers) {
+        for (const shelf of locker.shelves || []) {
+            for (const item of shelf.items || []) {
+                if (item.img === imgUrl) return item;
+                if (item.subItems) {
+                    const subItem = item.subItems.find(si => si.img === imgUrl);
+                    if (subItem) return subItem;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function queueImageUpload(blobUrl, context) {
+    const pending = pendingUploads.get(blobUrl);
+    if (!pending || pending.promise) return pending?.promise;
+    if (!currentUser || !activeBrigadeId) {
+        pending.status = 'pending';
+        updateImageStatus(context, 'Will upload on save.');
+        return null;
+    }
+
+    pending.status = 'uploading';
+    updateImageStatus(context, 'Uploading image...');
+    pending.promise = (async () => {
+        try {
+            const compressedFile = await imageCompression(pending.file, {
+                maxSizeMB: 1,
+                maxWidthOrHeight: 800,
+                useWebWorker: true
+            });
+
+            const formData = new FormData();
+            formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
+            const token = await currentUser.getIdToken();
+
+            const responseText = await uploadWithProgress(`/api/upload`, token, formData, (event) => {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    updateImageStatus(context, `Uploading ${percent}%`);
+                }
+            }, { 'x-brigade-id': activeBrigadeId });
+
+            const result = JSON.parse(responseText);
+            const item = findItemByImageUrl(blobUrl);
+            if (item && item.img === blobUrl) {
+                item.img = result.filePath;
+            }
+            URL.revokeObjectURL(blobUrl);
+            pendingUploads.delete(blobUrl);
+            updateImageStatus(context, 'Uploaded', 'success');
+            refreshCurrentView();
+        } catch (error) {
+            console.error('Image upload failed:', error);
+            pending.status = 'error';
+            updateImageStatus(context, 'Upload failed - will retry on save.', 'error');
+        } finally {
+            const current = pendingUploads.get(blobUrl);
+            if (current) current.promise = null;
+        }
+    })();
+
+    return pending.promise;
 }
 
 function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {}) {
