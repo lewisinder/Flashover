@@ -91,6 +91,9 @@ const sectionEnterContainerBtn = document.getElementById('section-enter-containe
 const sectionCancelEditBtn = document.getElementById('section-cancel-edit-btn');
 const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
 const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
+const moveLockerSection = document.getElementById('move-locker-section');
+const moveLockerSelect = document.getElementById('move-locker-select');
+const moveLockerBtn = document.getElementById('move-locker-btn');
 
 const cItemEditorOverlay = document.getElementById('c-item-editor-overlay');
 const cItemEditorSection = document.getElementById('c-item-editor-section');
@@ -190,6 +193,7 @@ function addEventListeners() {
     sectionSaveItemBtn.addEventListener('click', saveItem);
     sectionCancelEditBtn.addEventListener('click', closeItemEditor);
     sectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('locker'));
+    moveLockerBtn?.addEventListener('click', moveItemToLocker);
     sectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'locker'));
     sectionItemTypeSelect.addEventListener('change', (e) => {
        sectionEnterContainerBtn.classList.toggle('hidden', e.target.value !== 'container');
@@ -787,6 +791,8 @@ function openItemEditor(shelfId, itemId, context) {
        sectionImagePreview.src = item.img || '';
        sectionImagePreview.classList.toggle('hidden', !item.img);
        sectionEnterContainerBtn.classList.toggle('hidden', item.type !== 'container');
+       if (moveLockerSection) moveLockerSection.classList.remove('hidden');
+       populateMoveLockerOptions();
        itemEditorOverlay?.classList.remove('hidden');
        itemEditorSection.style.visibility = 'visible';
        itemEditorSection.style.opacity = 1;
@@ -795,6 +801,7 @@ function openItemEditor(shelfId, itemId, context) {
        cSectionItemDescInput.value = item.desc;
        cSectionImagePreview.src = item.img || '';
        cSectionImagePreview.classList.toggle('hidden', !item.img);
+       if (moveLockerSection) moveLockerSection.classList.add('hidden');
        cItemEditorOverlay?.classList.remove('hidden');
        cItemEditorSection.style.visibility = 'visible';
        cItemEditorSection.style.opacity = 1;
@@ -825,7 +832,63 @@ function closeItemEditor() {
     itemEditorSection.style.opacity = 0;
     cItemEditorSection.style.visibility = 'hidden';
     cItemEditorSection.style.opacity = 0;
+    if (moveLockerSection) moveLockerSection.classList.remove('hidden');
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
+}
+
+function populateMoveLockerOptions() {
+    if (!moveLockerSelect) return;
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    if (!appliance) return;
+    const lockers = appliance.lockers || [];
+    moveLockerSelect.innerHTML = '';
+    lockers.forEach((locker) => {
+        if (locker.id === activeLockerId) return;
+        const option = document.createElement('option');
+        option.value = locker.id;
+        option.textContent = locker.name || 'Locker';
+        moveLockerSelect.appendChild(option);
+    });
+    if (moveLockerSelect.options.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No other lockers';
+        moveLockerSelect.appendChild(option);
+        moveLockerSelect.disabled = true;
+        if (moveLockerBtn) moveLockerBtn.disabled = true;
+    } else {
+        moveLockerSelect.disabled = false;
+        if (moveLockerBtn) moveLockerBtn.disabled = false;
+    }
+}
+
+function moveItemToLocker() {
+    if (!activeItemId) return;
+    if (!moveLockerSelect || !moveLockerSelect.value) return;
+    const targetLockerId = moveLockerSelect.value;
+    if (targetLockerId === activeLockerId) return;
+
+    const sourceShelf = findShelf(activeShelfId, 'locker');
+    if (!sourceShelf || !sourceShelf.items) return;
+    const itemIndex = sourceShelf.items.findIndex((i) => i.id === activeItemId);
+    if (itemIndex < 0) return;
+    const [item] = sourceShelf.items.splice(itemIndex, 1);
+    if (!item) return;
+
+    const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
+    const targetLocker = appliance?.lockers?.find((l) => l.id === targetLockerId);
+    if (!targetLocker) return;
+    if (!targetLocker.shelves) targetLocker.shelves = [];
+    if (targetLocker.shelves.length === 0) {
+        targetLocker.shelves.push({ id: String(Date.now()), name: 'Shelf 1', items: [] });
+    }
+    const targetShelf = targetLocker.shelves[0];
+    if (!targetShelf.items) targetShelf.items = [];
+    targetShelf.items.unshift(item);
+
+    setUnsavedChanges(true);
+    closeItemEditor();
+    refreshCurrentView();
 }
 
 function saveItem(options = {}) {
