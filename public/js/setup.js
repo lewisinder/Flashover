@@ -45,6 +45,8 @@ let itemDropTarget = null;
 let itemDropShelf = null;
 let itemDropPosition = null;
 const itemDragThreshold = 6;
+const itemDragLongPressMs = 300;
+const itemDragCancelThreshold = 8;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -1048,6 +1050,9 @@ function handleDrop(e, toShelfId, toContext) {
 
 function startItemPointerDrag(e, itemEl) {
    if (!itemEl || (e.button !== undefined && e.button !== 0)) return;
+   if (itemDragState?.longPressTimer) {
+       clearTimeout(itemDragState.longPressTimer);
+   }
    itemDragState = {
        itemEl,
        itemId: itemEl.dataset.itemId,
@@ -1057,8 +1062,18 @@ function startItemPointerDrag(e, itemEl) {
        startY: e.clientY,
        pointerId: e.pointerId,
        active: false,
-       hasMoved: false
+       hasMoved: false,
+       cancelled: false,
+       longPressTimer: null
    };
+   itemDragState.longPressTimer = setTimeout(() => {
+       if (!itemDragState || itemDragState.cancelled) return;
+       itemDragState.active = true;
+       itemDragState.itemEl.classList.add('dragging');
+       try {
+           itemDragState.itemEl.setPointerCapture?.(itemDragState.pointerId);
+       } catch (err) {}
+   }, itemDragLongPressMs);
 }
 
 function moveItemPointerDrag(e) {
@@ -1066,12 +1081,14 @@ function moveItemPointerDrag(e) {
    if (!itemDragState.active) {
        const dx = Math.abs(e.clientX - itemDragState.startX);
        const dy = Math.abs(e.clientY - itemDragState.startY);
-       if (dx < itemDragThreshold && dy < itemDragThreshold) return;
-       itemDragState.active = true;
-       itemDragState.itemEl.classList.add('dragging');
-       try {
-           itemDragState.itemEl.setPointerCapture?.(itemDragState.pointerId);
-       } catch (err) {}
+       if (dx > itemDragCancelThreshold || dy > itemDragCancelThreshold) {
+           itemDragState.cancelled = true;
+           if (itemDragState.longPressTimer) {
+               clearTimeout(itemDragState.longPressTimer);
+               itemDragState.longPressTimer = null;
+           }
+       }
+       return;
    }
    const dropInfo = getItemDropInfoFromPoint(e.clientX, e.clientY);
    if (dropInfo) {
@@ -1086,6 +1103,14 @@ function moveItemPointerDrag(e) {
 function endItemPointerDrag(e) {
    if (!itemDragState) return;
    const { itemEl, hasMoved, fromShelfId, fromContext } = itemDragState;
+   if (itemDragState.longPressTimer) {
+       clearTimeout(itemDragState.longPressTimer);
+       itemDragState.longPressTimer = null;
+   }
+   if (!itemDragState.active) {
+       itemDragState = null;
+       return;
+   }
    if (itemDragState.active) {
        itemEl.classList.remove('dragging');
        try {
@@ -1107,7 +1132,7 @@ function endItemPointerDrag(e) {
        : false;
    clearItemDropIndicators();
    itemDragState = null;
-   if (hasMoved) itemDragJustEndedAt = Date.now();
+   itemDragJustEndedAt = Date.now();
    if (moved) {
        setUnsavedChanges(true);
        refreshCurrentView();
