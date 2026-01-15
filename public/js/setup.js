@@ -45,6 +45,10 @@ let itemDropTarget = null;
 let itemDropShelf = null;
 let itemDropPosition = null;
 const itemDragThreshold = 6;
+let isSaving = false;
+let showSavedIndicator = false;
+let saveIndicatorTimeout = null;
+const compressThresholdBytes = 900 * 1024;
 const itemDragLongPressMs = 300;
 const itemDragCancelThreshold = 8;
 
@@ -130,9 +134,50 @@ function setUnsavedChanges(isDirty) {
 }
 
 function updateSaveButtonVisibility() {
+    updateSaveButtons();
+}
+
+function hasActiveUploads() {
+    return Array.from(pendingUploads.values()).some((pending) => {
+        if (!pending) return false;
+        if (pending.promise) return true;
+        return pending.status === 'uploading';
+    });
+}
+
+function updateSaveButtons() {
+    const uploadsActive = hasActiveUploads();
+    const shouldShow = hasUnsavedChanges || showSavedIndicator || isSaving || uploadsActive;
     if (headerSaveBtn) {
-        headerSaveBtn.classList.toggle('hidden', !hasUnsavedChanges);
+        headerSaveBtn.classList.toggle('hidden', !shouldShow);
+        let label = 'Save';
+        if (showSavedIndicator) label = 'Saved';
+        else if (uploadsActive) label = 'Uploading...';
+        else if (isSaving) label = 'Saving...';
+        headerSaveBtn.textContent = label;
+        headerSaveBtn.disabled = isSaving || uploadsActive;
+        headerSaveBtn.classList.toggle('animate-pulse', hasUnsavedChanges && !showSavedIndicator && !isSaving && !uploadsActive);
+        headerSaveBtn.classList.toggle('opacity-60', headerSaveBtn.disabled);
+        headerSaveBtn.classList.toggle('cursor-not-allowed', headerSaveBtn.disabled);
     }
+    if (saveUnsavedBtn) {
+        if (uploadsActive) saveUnsavedBtn.textContent = 'Uploading...';
+        else if (isSaving) saveUnsavedBtn.textContent = 'Saving...';
+        else saveUnsavedBtn.textContent = 'Save & Continue';
+        saveUnsavedBtn.disabled = isSaving || uploadsActive;
+        saveUnsavedBtn.classList.toggle('opacity-60', saveUnsavedBtn.disabled);
+        saveUnsavedBtn.classList.toggle('cursor-not-allowed', saveUnsavedBtn.disabled);
+    }
+}
+
+function triggerSavedIndicator() {
+    showSavedIndicator = true;
+    if (saveIndicatorTimeout) clearTimeout(saveIndicatorTimeout);
+    saveIndicatorTimeout = setTimeout(() => {
+        showSavedIndicator = false;
+        updateSaveButtons();
+    }, 1500);
+    updateSaveButtons();
 }
 
 const defaultLockerSubtitle =
@@ -445,8 +490,18 @@ async function loadBrigadeData() {
 
 async function saveBrigadeData(operation) {
     if (!currentUser || !activeBrigadeId) return;
+    const isUserSave = operation === 'manualSave' || operation === 'promptedSave';
+    if (isSaving || (isUserSave && hasActiveUploads())) {
+        updateSaveButtons();
+        return;
+    }
 
-    progressModal.classList.remove('hidden');
+    isSaving = true;
+    const hadUnsavedChanges = hasUnsavedChanges;
+    triggerSavedIndicator();
+    if (hadUnsavedChanges) setUnsavedChanges(false);
+
+    progressModal.classList.add('hidden');
     progressTitle.textContent = 'Saving...';
     progressText.textContent = 'Preparing to save...';
     progressBar.style.width = '0%';
@@ -462,7 +517,9 @@ async function saveBrigadeData(operation) {
             });
         })));
 
-        if (itemsWithPendingUploads.length > 0) {
+        const shouldShowProgress = itemsWithPendingUploads.length > 0;
+        if (shouldShowProgress) {
+            progressModal.classList.remove('hidden');
             progressTitle.textContent = 'Uploading Images...';
             const uploadPromises = itemsWithPendingUploads.map((item, index) => {
                 const pending = pendingUploads.get(item.img);
@@ -478,9 +535,7 @@ async function saveBrigadeData(operation) {
 
                 return (async () => {
                     progressText.textContent = `Compressing image ${index + 1} of ${itemsWithPendingUploads.length}`;
-                    const compressedFile = await imageCompression(file, {
-                        maxSizeMB: 1, maxWidthOrHeight: 800, useWebWorker: true
-                    });
+                    const compressedFile = await compressIfNeeded(file);
 
                     const formData = new FormData();
                     formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
@@ -505,7 +560,7 @@ async function saveBrigadeData(operation) {
         }
 
         // --- Stage 2: Save the final data ---
-        progressTitle.textContent = 'Saving Data...';
+        if (itemsWithPendingUploads.length > 0) progressTitle.textContent = 'Saving Data...';
         progressText.textContent = 'Finalizing...';
         progressBar.style.width = '100%';
 
@@ -527,9 +582,13 @@ async function saveBrigadeData(operation) {
     } catch (error) {
         console.error("Error saving data:", error);
         alert("Error saving data. Your changes may not be persisted.");
+        showSavedIndicator = false;
+        if (hadUnsavedChanges) setUnsavedChanges(true);
         throw error; // Re-throw to allow promise rejection
     } finally {
+        isSaving = false;
         progressModal.classList.add('hidden');
+        updateSaveButtons();
     }
 }
 
@@ -1383,6 +1442,7 @@ function handleImageUpload(e, context) {
 
     item.img = blobUrl;
     setUnsavedChanges(true);
+    updateSaveButtons();
 
     const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
     previewEl.src = blobUrl;
@@ -1446,6 +1506,15 @@ function findItemByImageUrl(imgUrl) {
     return null;
 }
 
+function compressIfNeeded(file) {
+    if (!file || file.size <= compressThresholdBytes) return file;
+    return imageCompression(file, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 800,
+        useWebWorker: true
+    });
+}
+
 function queueImageUpload(blobUrl, context) {
     const pending = pendingUploads.get(blobUrl);
     if (!pending || pending.promise) return pending?.promise;
@@ -1457,13 +1526,10 @@ function queueImageUpload(blobUrl, context) {
 
     pending.status = 'uploading';
     updateImageStatus(context, 'Uploading image...');
+    updateSaveButtons();
     pending.promise = (async () => {
         try {
-            const compressedFile = await imageCompression(pending.file, {
-                maxSizeMB: 1,
-                maxWidthOrHeight: 800,
-                useWebWorker: true
-            });
+            const compressedFile = await compressIfNeeded(pending.file);
 
             const formData = new FormData();
             formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
@@ -1492,6 +1558,7 @@ function queueImageUpload(blobUrl, context) {
         } finally {
             const current = pendingUploads.get(blobUrl);
             if (current) current.promise = null;
+            updateSaveButtons();
         }
     })();
 
