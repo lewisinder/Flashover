@@ -45,7 +45,7 @@ const handleSuccessfulLogin = (user) => {
         })
         .then(data => {
             console.log('Data fetched successfully on sign-in:', data);
-            window.location.href = returnTo || '/menu.html'; // Redirect after login
+            window.location.href = returnTo || '/app.html#/menu'; // Redirect after login
         })
         .catch(error => {
             console.error("Failed to fetch user data on sign-in:", error);
@@ -53,7 +53,7 @@ const handleSuccessfulLogin = (user) => {
                 message.textContent = `Login successful, but could not load your profile: ${error.message}. Redirecting...`;
             }
             // Still redirect, the app can try loading again.
-            setTimeout(() => { window.location.href = returnTo || '/menu.html'; }, 2000);
+            setTimeout(() => { window.location.href = returnTo || '/app.html#/menu'; }, 2000);
         });
     });
 };
@@ -67,4 +67,3 @@ const handleAuthError = (error) => {
     console.error("Authentication Error:", error);
     message.textContent = `Error: ${error.message}`;
 };
-
