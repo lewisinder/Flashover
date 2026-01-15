@@ -981,8 +981,20 @@ function openItemDeleteConfirm(context) {
 }
 
 function deleteItemFromShelf(itemId, parentId = null) {
-    const context = parentId ? 'container' : 'locker';
-    const shelf = findShelf(parentId || activeShelfId, context);
+    if (parentId) {
+        const container = findContainer(parentId);
+        if (!container) return;
+        if (!container.subItems) container.subItems = [];
+        const itemToDelete = container.subItems.find(i => i.id === itemId);
+        if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
+            URL.revokeObjectURL(itemToDelete.img);
+            pendingUploads.delete(itemToDelete.img);
+        }
+        container.subItems = container.subItems.filter(i => i.id !== itemId);
+        return;
+    }
+
+    const shelf = findShelf(activeShelfId, 'locker');
     if (shelf && shelf.items) {
         const itemToDelete = shelf.items.find(i => i.id === itemId);
         if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
