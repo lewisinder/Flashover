@@ -20,7 +20,7 @@
         }
         .shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.9rem; padding: 0.85rem; display: flex; flex-direction: column; }
         .shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
-        .item-editor-box { flex: 1 1 0px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.6rem; overflow: hidden; position: relative; transition: background-color 0.2s; }
+        .item-editor-box { flex: 1 1 0px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.6rem; overflow: hidden; position: relative; transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
         .item-editor-box:hover { background-color: #e2e8f0; }
         .item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
         .item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
@@ -515,6 +515,21 @@
             flex-wrap: wrap;
             gap: 0.5rem;
         }
+        .item-move {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.4rem;
+        }
+        .item-move-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .item-move-row .item-select {
+            flex: 1 1 200px;
+        }
         .editor-btn {
             border-radius: 0.85rem;
             padding: 0.6rem 0.9rem;
@@ -568,6 +583,16 @@
                 justify-content: flex-end;
             }
         }
+        @media (max-width: 1024px) {
+            .locker-context .shelf-items-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 640px) {
+            .locker-context .shelf-items-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
 
         /* New Shelf Styles */
         .shelf-container {
@@ -579,10 +604,16 @@
             position: relative;
             display: flex;
             flex-direction: column;
-            flex-grow: 1;
-            flex-shrink: 1;
-            flex-basis: 0;
             min-height: 180px;
+        }
+        .locker-editor-shelves .shelf-container {
+            flex: 0 0 auto;
+        }
+        .shelf-container.locker-context {
+            padding-top: 2.4rem;
+        }
+        .locker-editor-shell > .shelf-container {
+            flex: 1 1 auto;
         }
 
         .delete-shelf-btn {
@@ -613,17 +644,23 @@
             grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
             gap: 0.75rem; /* 12px */
         }
+        .shelf-items-grid.shelf-drop {
+            outline: 2px dashed rgba(37, 99, 235, 0.5);
+            outline-offset: 4px;
+            background: rgba(37, 99, 235, 0.06);
+            border-radius: 0.75rem;
+        }
 
-        /* Locker-specific flex layout */
+        /* Locker-specific grid layout */
         .locker-context .shelf-items-grid {
-            display: flex;
-            flex-grow: 1;
-            align-items: stretch;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
         }
         .locker-context .item-editor-box,
         .locker-context .add-item-btn-circle {
-            flex: 1 1 0px;
-            aspect-ratio: unset; /* Override aspect ratio for flex fill */
+            width: 100%;
+            aspect-ratio: 1 / 1;
         }
 
         .add-item-btn-circle {
@@ -654,6 +691,7 @@
             transition: all 0.2s;
             position: relative;
             box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
+            -webkit-touch-callout: none;
         }
         .item-editor-box.editing {
             border: 4px solid #180F5E; /* Blue */
@@ -674,6 +712,38 @@
             padding: 0.25rem;
             text-align: center;
             word-break: break-word;
+        }
+        .item-editor-box.item-drop-before::before,
+        .item-editor-box.item-drop-after::after {
+            content: "";
+            position: absolute;
+            left: 6px;
+            right: 6px;
+            height: 3px;
+            background: #2563eb;
+            border-radius: 999px;
+            z-index: 2;
+        }
+        .item-editor-box.item-drop-before::before {
+            top: 4px;
+        }
+        .item-editor-box.item-drop-after::after {
+            bottom: 4px;
+        }
+        .locker-context .item-editor-box.item-drop-before::before,
+        .locker-context .item-editor-box.item-drop-after::after {
+            top: 6px;
+            bottom: 6px;
+            width: 3px;
+            height: auto;
+            left: auto;
+            right: auto;
+        }
+        .locker-context .item-editor-box.item-drop-before::before {
+            left: 4px;
+        }
+        .locker-context .item-editor-box.item-drop-after::after {
+            right: 4px;
         }
 
         .bg-blue-200 {
@@ -700,7 +770,10 @@
                 <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
             </button>
         </div>
-        <h1 class="text-white text-2xl font-bold flex-grow text-center">Appliance Setup</h1>
+        <div class="flex items-center gap-3 flex-grow justify-center">
+            <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-9 w-9 object-contain">
+            <h1 class="text-white text-2xl font-bold">Appliance Setup</h1>
+        </div>
         <div class="w-28 flex justify-end items-center">
             <button id="header-save-btn" class="hidden bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg shadow-md animate-pulse">Save</button>
         </div>
@@ -716,7 +789,7 @@
                     <div class="setup-locker-hero-top">
                         <div class="setup-locker-eyebrow">Appliance</div>
                         <h1 id="appliance-name-title" class="setup-locker-title">Loading appliance...</h1>
-                        <div id="appliance-name-subtitle" class="setup-locker-subtitle">Fetching setup details...</div>
+                        <div id="appliance-name-subtitle" class="setup-locker-subtitle" data-default="Choose a locker to edit shelves and items.">Choose a locker to edit shelves and items.</div>
                     </div>
                     <div class="setup-locker-actions">
                         <button id="create-locker-btn" class="setup-primary-btn">New locker</button>
@@ -732,7 +805,7 @@
                 <div class="setup-spinner"></div>
                 <div class="setup-locker-loading-text">Fetching appliance setup...</div>
             </div>
-            <div id="locker-list-container" class="setup-locker-list flex-grow overflow-y-auto">
+            <div id="locker-list-container" class="setup-locker-list flex-grow overflow-y-auto hidden">
                 <!-- Locker list generated by JS -->
             </div>
         </div>
@@ -819,16 +892,24 @@
                                 <label class="item-field-label" for="section-item-desc-input">Details</label>
                                 <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
                             </div>
-                            <div>
-                                <label class="item-field-label" for="section-item-type-select">Item type</label>
-                                <select id="section-item-type-select" class="item-select">
-                                    <option value="item">Standard Item</option>
-                                    <option value="container">Container</option>
-                                </select>
-                            </div>
-                            <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
+                        <div>
+                            <label class="item-field-label" for="section-item-type-select">Item type</label>
+                            <select id="section-item-type-select" class="item-select">
+                                <option value="item">Standard Item</option>
+                                <option value="container">Container</option>
+                            </select>
                         </div>
+                        <div id="move-locker-section" class="item-move">
+                            <label class="item-field-label" for="move-locker-select">Move to locker</label>
+                            <div class="item-move-row">
+                                <select id="move-locker-select" class="item-select"></select>
+                                <button id="move-locker-btn" class="editor-btn editor-btn-ghost" type="button">Move</button>
+                            </div>
+                            <div class="item-editor-subtitle">Moves to the first shelf, first position.</div>
+                        </div>
+                        <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
                     </div>
+                </div>
                     <div id="item-editor-actions" class="item-editor-actions">
                         <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
                         <div class="item-editor-action-group">
