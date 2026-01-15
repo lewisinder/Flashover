@@ -125,7 +125,8 @@ function updateSaveButtonVisibility() {
     }
 }
 
-const defaultLockerSubtitle = applianceNameSubtitle?.textContent || 'Choose a locker to edit shelves and items.';
+const defaultLockerSubtitle =
+    applianceNameSubtitle?.dataset?.default || 'Choose a locker to edit shelves and items.';
 
 function setLockerLoading(isLoading) {
     if (lockerLoadingState) lockerLoadingState.classList.toggle('hidden', !isLoading);
