@@ -469,6 +469,24 @@
             position: relative;
             overflow: hidden;
         }
+        .item-upload-status {
+            position: absolute;
+            left: 0.6rem;
+            right: 0.6rem;
+            bottom: 0.6rem;
+            background: rgba(15, 23, 42, 0.8);
+            color: #ffffff;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.25rem 0.5rem;
+            border-radius: 999px;
+        }
+        .item-upload-status.success {
+            background: rgba(34, 197, 94, 0.85);
+        }
+        .item-upload-status.error {
+            background: rgba(239, 68, 68, 0.85);
+        }
         .item-upload img {
             width: 100%;
             height: 100%;
@@ -881,6 +899,7 @@
                                 <span class="font-bold text-lg leading-tight">Item image</span>
                                 <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
                             </span>
+                            <span id="section-image-status" class="item-upload-status hidden"></span>
                             <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
                         </label>
                         <div class="item-fields">
@@ -932,6 +951,7 @@
                             <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
                             <span class="text-blue font-bold text-lg">Item image</span>
                             <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
+                            <span id="c-section-image-status" class="item-upload-status hidden"></span>
                             <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
                         </label>
                         <div class="item-fields">
