@@ -38,6 +38,7 @@ let dragJustEndedAt = 0;
 let dragOverCard = null;
 let dragOverPosition = null;
 const dragThreshold = 6;
+let pendingItemDelete = null;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -45,7 +46,9 @@ const selectLockerScreen = document.getElementById('select-locker-screen');
 const lockerEditorScreen = document.getElementById('locker-editor-screen');
 const containerEditorScreen = document.getElementById('container-editor-screen');
 const applianceNameTitle = document.getElementById('appliance-name-title');
+const applianceNameSubtitle = document.getElementById('appliance-name-subtitle');
 const lockerListContainer = document.getElementById('locker-list-container');
+const lockerLoadingState = document.getElementById('locker-loading-state');
 const createLockerBtn = document.getElementById('create-locker-btn');
 const lockerEditorName = document.getElementById('locker-editor-name');
 const lockerEditorShelves = document.getElementById('locker-editor-shelves');
@@ -77,8 +80,8 @@ const containerEditorTitle = document.getElementById('container-editor-title');
 const containerEditorItems = document.getElementById('container-editor-items');
 const editLockerNameIcon = document.getElementById('edit-locker-name-icon');
 
+const itemEditorOverlay = document.getElementById('item-editor-overlay');
 const itemEditorSection = document.getElementById('item-editor-section');
-const itemEditorEmpty = document.getElementById('item-editor-empty');
 const sectionImagePreview = document.getElementById('section-image-preview');
 const sectionFileUpload = document.getElementById('section-file-upload');
 const sectionItemNameInput = document.getElementById('section-item-name-input');
@@ -89,8 +92,8 @@ const sectionCancelEditBtn = document.getElementById('section-cancel-edit-btn');
 const sectionSaveItemBtn = document.getElementById('section-save-item-btn');
 const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
 
+const cItemEditorOverlay = document.getElementById('c-item-editor-overlay');
 const cItemEditorSection = document.getElementById('c-item-editor-section');
-const cItemEditorEmpty = document.getElementById('c-item-editor-empty');
 const cSectionImagePreview = document.getElementById('c-section-image-preview');
 const cSectionFileUpload = document.getElementById('c-section-file-upload');
 const cSectionItemNameInput = document.getElementById('c-section-item-name-input');
@@ -119,6 +122,19 @@ function updateSaveButtonVisibility() {
     }
 }
 
+const defaultLockerSubtitle = applianceNameSubtitle?.textContent || 'Choose a locker to edit shelves and items.';
+
+function setLockerLoading(isLoading) {
+    if (lockerLoadingState) lockerLoadingState.classList.toggle('hidden', !isLoading);
+    if (lockerListContainer) lockerListContainer.classList.toggle('hidden', isLoading);
+    if (applianceNameTitle && isLoading) {
+        applianceNameTitle.textContent = 'Loading appliance...';
+    }
+    if (applianceNameSubtitle) {
+        applianceNameSubtitle.textContent = isLoading ? 'Fetching setup details...' : defaultLockerSubtitle;
+    }
+}
+
 function hoistModal(el) {
     if (!el || el.parentElement === document.body) return;
     document.body.appendChild(el);
@@ -130,6 +146,8 @@ function hoistSetupModals() {
     hoistModal(deleteConfirmModal);
     hoistModal(progressModal);
     hoistModal(unsavedChangesModal);
+    hoistModal(itemEditorOverlay);
+    hoistModal(cItemEditorOverlay);
 }
 
 // --- Data Handling & Initialization ---
@@ -163,18 +181,15 @@ function start() {
 start();
 
 function addEventListeners() {
-    editLockerNameIcon.addEventListener('click', () => lockerEditorName.focus());
+    if (editLockerNameIcon) {
+        editLockerNameIcon.addEventListener('click', () => lockerEditorName.focus());
+    }
     headerSaveBtn.addEventListener('click', () => saveBrigadeData('manualSave'));
 
     // Main Item Editor Listeners
     sectionSaveItemBtn.addEventListener('click', saveItem);
     sectionCancelEditBtn.addEventListener('click', closeItemEditor);
-    sectionDeleteItemBtn.addEventListener('click', () => {
-        if(activeItemId) {
-            const item = findItem(activeShelfId, activeItemId, currentEditingContext);
-            confirmDelete('item', activeItemId, item.name);
-        }
-    });
+    sectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('locker'));
     sectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'locker'));
     sectionItemTypeSelect.addEventListener('change', (e) => {
        sectionEnterContainerBtn.classList.toggle('hidden', e.target.value !== 'container');
@@ -184,12 +199,7 @@ function addEventListeners() {
    // Container Sub-Item Editor Listeners
    cSectionSaveItemBtn.addEventListener('click', saveItem);
    cSectionCancelEditBtn.addEventListener('click', closeItemEditor);
-   cSectionDeleteItemBtn.addEventListener('click', () => {
-       if(activeItemId) {
-           const item = findItem(activeContainerId, activeItemId, 'container');
-           confirmDelete('item', activeItemId, item.name, activeContainerId);
-       }
-   });
+   cSectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('container'));
    cSectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'container'));
 
     // Navigation
@@ -199,13 +209,29 @@ function addEventListeners() {
     createLockerBtn?.addEventListener('click', () => openLockerNameModal());
     saveNewLockerBtn.addEventListener('click', saveNewLocker);
     cancelCreateLockerBtn.addEventListener('click', closeLockerNameModal);
-    lockerEditorName.addEventListener('change', updateLockerName);
+    if (lockerEditorName && !lockerEditorName.readOnly) {
+        lockerEditorName.addEventListener('change', updateLockerName);
+    }
+
+    itemEditorOverlay?.addEventListener('click', (e) => {
+        if (e.target === itemEditorOverlay) closeItemEditor();
+    });
+    cItemEditorOverlay?.addEventListener('click', (e) => {
+        if (e.target === cItemEditorOverlay) closeItemEditor();
+    });
 
     // Shelf Management
     addShelfBtn.addEventListener('click', addShelf);
 
     // Delete Confirmation
-    cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
+    cancelDeleteBtn.addEventListener('click', () => {
+        deleteConfirmModal.classList.add('hidden');
+        if (pendingItemDelete) {
+            const { context, shelfId, itemId } = pendingItemDelete;
+            pendingItemDelete = null;
+            openItemEditor(shelfId, itemId, context);
+        }
+    });
 
     lockerActionsModal?.addEventListener('click', (e) => {
         if (e.target === lockerActionsModal) closeLockerActions();
@@ -371,6 +397,7 @@ async function persistLockerOrder() {
 async function loadBrigadeData() {
     if (!currentUser || !activeBrigadeId) return;
     showLoading();
+    setLockerLoading(true);
     try {
         const token = await currentUser.getIdToken();
         const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -382,8 +409,12 @@ async function loadBrigadeData() {
         const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
         if (appliance) {
             applianceNameTitle.textContent = appliance.name;
+            if (applianceNameSubtitle) {
+                applianceNameSubtitle.textContent = defaultLockerSubtitle;
+            }
             setUnsavedChanges(false);
             renderLockerList();
+            setLockerLoading(false);
         } else {
             alert('Appliance not found in this brigade.');
             navigateToSetupHome();
@@ -392,6 +423,7 @@ async function loadBrigadeData() {
         console.error("Error loading data:", error);
         alert("Error loading data. Please try again.");
     } finally {
+        setLockerLoading(false);
         hideLoading();
     }
 }
@@ -496,7 +528,7 @@ function navigateBack() {
         activeLockerId = null;
     } else if (containerEditorScreen.classList.contains('active')) {
         closeItemEditor();
-        if (!cItemEditorSection.style.visibility || cItemEditorSection.style.visibility === 'hidden') {
+        if (cItemEditorOverlay?.classList.contains('hidden')) {
            containerEditorScreen.classList.remove('active');
            lockerEditorScreen.classList.add('active');
            activeContainerId = null;
@@ -529,6 +561,7 @@ function closeLockerNameModal() {
 function renderLockerList() {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     if (!appliance) return;
+    setLockerLoading(false);
     lockerListContainer.innerHTML = '';
     (appliance.lockers || []).forEach(locker => {
         const card = document.createElement('div');
@@ -754,19 +787,17 @@ function openItemEditor(shelfId, itemId, context) {
        sectionImagePreview.src = item.img || '';
        sectionImagePreview.classList.toggle('hidden', !item.img);
        sectionEnterContainerBtn.classList.toggle('hidden', item.type !== 'container');
-       itemEditorSection.style.display = 'flex';
+       itemEditorOverlay?.classList.remove('hidden');
        itemEditorSection.style.visibility = 'visible';
        itemEditorSection.style.opacity = 1;
-       if (itemEditorEmpty) itemEditorEmpty.style.display = 'none';
     } else { // context === 'container'
        cSectionItemNameInput.value = item.name;
        cSectionItemDescInput.value = item.desc;
        cSectionImagePreview.src = item.img || '';
        cSectionImagePreview.classList.toggle('hidden', !item.img);
-       cItemEditorSection.style.display = 'flex';
+       cItemEditorOverlay?.classList.remove('hidden');
        cItemEditorSection.style.visibility = 'visible';
        cItemEditorSection.style.opacity = 1;
-       if (cItemEditorEmpty) cItemEditorEmpty.style.display = 'none';
     }
 }
 
@@ -788,18 +819,17 @@ function closeItemEditor() {
     }
     activeItemId = null;
     isNewItem = false;
-    itemEditorSection.style.display = 'none';
+    itemEditorOverlay?.classList.add('hidden');
+    cItemEditorOverlay?.classList.add('hidden');
     itemEditorSection.style.visibility = 'hidden';
     itemEditorSection.style.opacity = 0;
-    cItemEditorSection.style.display = 'none';
     cItemEditorSection.style.visibility = 'hidden';
     cItemEditorSection.style.opacity = 0;
-    if (itemEditorEmpty) itemEditorEmpty.style.display = 'flex';
-    if (cItemEditorEmpty) cItemEditorEmpty.style.display = 'flex';
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
 }
 
-function saveItem() {
+function saveItem(options = {}) {
+    const shouldClose = options.closeEditor !== false;
     if (!activeItemId) return;
     
     const context = currentEditingContext;
@@ -831,6 +861,7 @@ function saveItem() {
         const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
         if (activeBox) activeBox.classList.add('editing');
     });
+    if (shouldClose) closeItemEditor();
 }
 
 function openContainerEditor() {
@@ -839,9 +870,11 @@ function openContainerEditor() {
         alert('Please give the container a name before adding items to it.');
         return;
     }
-    
-    saveItem(); 
-    activeContainerId = activeItemId;
+
+    const containerId = activeItemId;
+    saveItem({ closeEditor: false }); 
+    activeContainerId = containerId;
+    closeItemEditor();
 
     const container = findContainer(activeContainerId);
     if (!container) return;
@@ -954,6 +987,46 @@ function cleanupPendingUploads() {
     pendingUploads.clear();
 }
 
+function openItemDeleteConfirm(context) {
+    if (!activeItemId) return;
+    const item = findItem(activeShelfId, activeItemId, context);
+    if (!item) return;
+    pendingItemDelete = {
+        context,
+        itemId: activeItemId,
+        shelfId: activeShelfId,
+        parentId: context === 'container' ? activeContainerId : null,
+        name: item.name || 'item'
+    };
+    closeItemEditor();
+    confirmDelete('item', pendingItemDelete.itemId, pendingItemDelete.name, pendingItemDelete.parentId);
+}
+
+function deleteItemFromShelf(itemId, parentId = null) {
+    if (parentId) {
+        const container = findContainer(parentId);
+        if (!container) return;
+        if (!container.subItems) container.subItems = [];
+        const itemToDelete = container.subItems.find(i => i.id === itemId);
+        if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
+            URL.revokeObjectURL(itemToDelete.img);
+            pendingUploads.delete(itemToDelete.img);
+        }
+        container.subItems = container.subItems.filter(i => i.id !== itemId);
+        return;
+    }
+
+    const shelf = findShelf(activeShelfId, 'locker');
+    if (shelf && shelf.items) {
+        const itemToDelete = shelf.items.find(i => i.id === itemId);
+        if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
+            URL.revokeObjectURL(itemToDelete.img);
+            pendingUploads.delete(itemToDelete.img);
+        }
+        shelf.items = shelf.items.filter(i => i.id !== itemId);
+    }
+}
+
 function confirmDelete(type, id, name, parentId = null) {
     document.getElementById('delete-confirm-text').textContent = `This will permanently delete the ${type} "${name}" and all its contents. This action cannot be undone.`;
     deleteConfirmModal.classList.remove('hidden');
@@ -967,17 +1040,9 @@ function confirmDelete(type, id, name, parentId = null) {
             const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
             locker.shelves = locker.shelves.filter(s => s.id !== id);
         } else if (type === 'item') {
-            const context = parentId ? 'container' : 'locker';
-            const shelf = findShelf(parentId || activeShelfId, context);
-            if (shelf && shelf.items) {
-                const itemToDelete = shelf.items.find(i => i.id === id);
-                if (itemToDelete && itemToDelete.img && itemToDelete.img.startsWith('blob:')) {
-                    URL.revokeObjectURL(itemToDelete.img);
-                    pendingUploads.delete(itemToDelete.img);
-                }
-                shelf.items = shelf.items.filter(i => i.id !== id);
-            }
+            deleteItemFromShelf(id, parentId);
             closeItemEditor();
+            pendingItemDelete = null;
         }
         
         if (shouldSaveImmediately) {
