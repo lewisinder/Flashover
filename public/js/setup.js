@@ -39,6 +39,12 @@ let dragOverCard = null;
 let dragOverPosition = null;
 const dragThreshold = 6;
 let pendingItemDelete = null;
+let itemDragState = null;
+let itemDragJustEndedAt = 0;
+let itemDropTarget = null;
+let itemDropShelf = null;
+let itemDropPosition = null;
+const itemDragThreshold = 6;
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -713,9 +719,12 @@ function createShelfElement(shelf, context) {
     if (context === 'locker') shelfDiv.classList.add('locker-context');
     shelfDiv.innerHTML = `<button class="delete-shelf-btn" data-id="${shelf.id}">&times;</button><div class="shelf-items-grid"></div>`;
     const itemsGrid = shelfDiv.querySelector('.shelf-items-grid');
+    itemsGrid.dataset.shelfId = shelf.id;
+    itemsGrid.dataset.context = context;
     
-    itemsGrid.addEventListener('dragover', handleDragOver);
+    itemsGrid.addEventListener('dragover', (e) => handleDragOver(e, shelf.id, context));
     itemsGrid.addEventListener('drop', (e) => handleDrop(e, shelf.id, context));
+    itemsGrid.addEventListener('dragleave', handleDragLeave);
 
     (shelf.items || []).forEach(item => {
         itemsGrid.appendChild(createItemElement(item, shelf.id, context));
@@ -747,10 +756,29 @@ function createItemElement(item, shelfId, context) {
    itemBox.dataset.context = context;
    itemBox.draggable = true;
    itemBox.innerHTML = `<div class="item-name-overlay" draggable="false">${item.name || 'New Item'}</div>` + (item.img ? `<img src="${item.img}" alt="${item.name}" class="w-full h-full object-contain" draggable="false">` : '');
-   itemBox.addEventListener('click', () => openItemEditor(shelfId, item.id, context));
-   itemBox.addEventListener('dragstart', handleDragStart);
-   itemBox.addEventListener('dragend', handleDragEnd);
-   return itemBox;
+    itemBox.addEventListener('click', () => {
+        if (Date.now() - itemDragJustEndedAt < 250) return;
+        openItemEditor(shelfId, item.id, context);
+    });
+    itemBox.addEventListener('dragstart', handleDragStart);
+    itemBox.addEventListener('dragend', handleDragEnd);
+    itemBox.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse') return;
+        startItemPointerDrag(e, itemBox);
+    });
+    itemBox.addEventListener('pointermove', (e) => {
+        if (e.pointerType === 'mouse') return;
+        moveItemPointerDrag(e);
+    });
+    itemBox.addEventListener('pointerup', (e) => {
+        if (e.pointerType === 'mouse') return;
+        endItemPointerDrag(e);
+    });
+    itemBox.addEventListener('pointercancel', (e) => {
+        if (e.pointerType === 'mouse') return;
+        endItemPointerDrag(e);
+    });
+    return itemBox;
 }
 
 function openItemEditor(shelfId, itemId, context) {
@@ -953,6 +981,11 @@ function renderContainerItems() {
     if (!container) return;
     containerEditorItems.innerHTML = '';
     if (!container.subItems) container.subItems = [];
+    containerEditorItems.dataset.shelfId = activeContainerId;
+    containerEditorItems.dataset.context = 'container';
+    containerEditorItems.ondragover = (e) => handleDragOver(e, activeContainerId, 'container');
+    containerEditorItems.ondrop = (e) => handleDrop(e, activeContainerId, 'container');
+    containerEditorItems.ondragleave = (e) => handleDragLeave(e);
 
     container.subItems.forEach(item => {
         containerEditorItems.appendChild(createItemElement(item, activeContainerId, 'container'));
@@ -970,37 +1003,207 @@ function handleDragStart(e) {
    draggedItemInfo = { itemId: e.target.dataset.itemId, fromShelfId: e.target.dataset.shelfId, fromContext: e.target.dataset.context };
    e.target.classList.add('dragging');
    e.dataTransfer.effectAllowed = 'move';
+   e.dataTransfer.setData('text/plain', draggedItemInfo.itemId);
 }
 
 function handleDragEnd(e) {
    e.target.classList.remove('dragging');
    draggedItemInfo = null;
+   clearItemDropIndicators();
+   itemDragJustEndedAt = Date.now();
 }
 
-function handleDragOver(e) {
+function handleDragLeave(e) {
+   if (e.currentTarget.contains(e.relatedTarget)) return;
+   clearItemDropIndicators();
+}
+
+function handleDragOver(e, toShelfId, toContext) {
    e.preventDefault();
    e.dataTransfer.dropEffect = 'move';
+   const dropInfo = getItemDropInfoFromPoint(e.clientX, e.clientY, toShelfId, toContext);
+   setItemDropIndicator(dropInfo);
 }
 
 function handleDrop(e, toShelfId, toContext) {
    e.preventDefault();
    if (!draggedItemInfo) return;
-   const { itemId, fromShelfId, fromContext } = draggedItemInfo;
+   const dropInfo = getItemDropInfoFromPoint(e.clientX, e.clientY, toShelfId, toContext);
+   const moved = moveItemBetweenShelves({
+       itemId: draggedItemInfo.itemId,
+       fromShelfId: draggedItemInfo.fromShelfId,
+       fromContext: draggedItemInfo.fromContext,
+       toShelfId: dropInfo?.shelfId || toShelfId,
+       toContext: dropInfo?.context || toContext,
+       targetItemId: dropInfo?.targetItem?.dataset.itemId || null,
+       position: dropInfo?.position || null
+   });
+   draggedItemInfo = null;
+   clearItemDropIndicators();
+   if (moved) {
+       setUnsavedChanges(true);
+       refreshCurrentView();
+   }
+}
+
+function startItemPointerDrag(e, itemEl) {
+   if (!itemEl || (e.button !== undefined && e.button !== 0)) return;
+   itemDragState = {
+       itemEl,
+       itemId: itemEl.dataset.itemId,
+       fromShelfId: itemEl.dataset.shelfId,
+       fromContext: itemEl.dataset.context,
+       startX: e.clientX,
+       startY: e.clientY,
+       pointerId: e.pointerId,
+       active: false,
+       hasMoved: false
+   };
+}
+
+function moveItemPointerDrag(e) {
+   if (!itemDragState) return;
+   if (!itemDragState.active) {
+       const dx = Math.abs(e.clientX - itemDragState.startX);
+       const dy = Math.abs(e.clientY - itemDragState.startY);
+       if (dx < itemDragThreshold && dy < itemDragThreshold) return;
+       itemDragState.active = true;
+       itemDragState.itemEl.classList.add('dragging');
+       try {
+           itemDragState.itemEl.setPointerCapture?.(itemDragState.pointerId);
+       } catch (err) {}
+   }
+   const dropInfo = getItemDropInfoFromPoint(e.clientX, e.clientY);
+   if (dropInfo) {
+       setItemDropIndicator(dropInfo);
+   } else {
+       clearItemDropIndicators();
+   }
+   itemDragState.hasMoved = true;
+   e.preventDefault();
+}
+
+function endItemPointerDrag(e) {
+   if (!itemDragState) return;
+   const { itemEl, hasMoved, fromShelfId, fromContext } = itemDragState;
+   if (itemDragState.active) {
+       itemEl.classList.remove('dragging');
+       try {
+           itemEl.releasePointerCapture?.(itemDragState.pointerId);
+       } catch (err) {}
+   }
+   const targetShelfId = itemDropShelf?.dataset.shelfId || null;
+   const targetContext = itemDropShelf?.dataset.context || null;
+   const moved = hasMoved && targetShelfId
+       ? moveItemBetweenShelves({
+           itemId: itemDragState.itemId,
+           fromShelfId,
+           fromContext,
+           toShelfId: targetShelfId,
+           toContext: targetContext,
+           targetItemId: itemDropTarget?.dataset.itemId || null,
+           position: itemDropPosition || null
+       })
+       : false;
+   clearItemDropIndicators();
+   itemDragState = null;
+   if (hasMoved) itemDragJustEndedAt = Date.now();
+   if (moved) {
+       setUnsavedChanges(true);
+       refreshCurrentView();
+   }
+}
+
+function getItemDropInfoFromPoint(x, y, fallbackShelfId = null, fallbackContext = null) {
+   const draggedEl = itemDragState?.itemEl || null;
+   const hit = getElementFromPointIgnoringDrag(x, y, draggedEl);
+   let shelfEl = hit?.closest('.shelf-items-grid') || null;
+   if (!shelfEl && fallbackShelfId) {
+       shelfEl = document.querySelector(`.shelf-items-grid[data-shelf-id="${fallbackShelfId}"][data-context="${fallbackContext}"]`);
+   }
+   if (!shelfEl) return null;
+   const context = shelfEl.dataset.context || fallbackContext;
+   const shelfId = shelfEl.dataset.shelfId || fallbackShelfId;
+   let targetItem = hit?.closest('.item-editor-box') || null;
+   if (targetItem === draggedEl) targetItem = null;
+   if (targetItem && targetItem.closest('.shelf-items-grid') !== shelfEl) targetItem = null;
+   let position = null;
+   if (targetItem) {
+       const rect = targetItem.getBoundingClientRect();
+       const insertAfter = context === 'locker'
+           ? x > rect.left + rect.width / 2
+           : y > rect.top + rect.height / 2;
+       position = insertAfter ? 'after' : 'before';
+   }
+   return {
+       shelfEl,
+       shelfId,
+       context,
+       targetItem,
+       position
+   };
+}
+
+function getElementFromPointIgnoringDrag(x, y, ignoredEl) {
+   if (!ignoredEl) return document.elementFromPoint(x, y);
+   const previousValue = ignoredEl.style.pointerEvents;
+   ignoredEl.style.pointerEvents = 'none';
+   const hit = document.elementFromPoint(x, y);
+   ignoredEl.style.pointerEvents = previousValue;
+   return hit;
+}
+
+function setItemDropIndicator(dropInfo) {
+   if (!dropInfo || !dropInfo.shelfEl) {
+       clearItemDropIndicators();
+       return;
+   }
+   const sameTarget = itemDropTarget === dropInfo.targetItem;
+   const sameShelf = itemDropShelf === dropInfo.shelfEl;
+   const samePosition = itemDropPosition === dropInfo.position;
+   if (sameTarget && sameShelf && samePosition) return;
+   clearItemDropIndicators();
+   itemDropShelf = dropInfo.shelfEl;
+   itemDropTarget = dropInfo.targetItem;
+   itemDropPosition = dropInfo.position;
+   if (itemDropTarget) {
+       itemDropTarget.classList.add(itemDropPosition === 'after' ? 'item-drop-after' : 'item-drop-before');
+   } else {
+       itemDropShelf.classList.add('shelf-drop');
+   }
+}
+
+function clearItemDropIndicators() {
+   if (itemDropTarget) itemDropTarget.classList.remove('item-drop-before', 'item-drop-after');
+   if (itemDropShelf) itemDropShelf.classList.remove('shelf-drop');
+   itemDropTarget = null;
+   itemDropShelf = null;
+   itemDropPosition = null;
+}
+
+function moveItemBetweenShelves({ itemId, fromShelfId, fromContext, toShelfId, toContext, targetItemId, position }) {
+   if (!itemId || !fromShelfId || !toShelfId || !fromContext || !toContext) return false;
+   if (fromShelfId === toShelfId && fromContext === toContext && targetItemId === itemId) return false;
    const fromShelf = findShelf(fromShelfId, fromContext);
    const toShelf = findShelf(toShelfId, toContext);
-   if (!fromShelf || !toShelf) return;
+   if (!fromShelf || !toShelf) return false;
+   if (!fromShelf.items) fromShelf.items = [];
+   if (!toShelf.items) toShelf.items = [];
    const itemIndex = fromShelf.items.findIndex(i => i.id === itemId);
-   if (itemIndex === -1) return;
+   if (itemIndex === -1) return false;
    const [movedItem] = fromShelf.items.splice(itemIndex, 1);
-   const dropTarget = e.target.closest('.item-editor-box');
-   if (dropTarget && toShelf.items.length > 0) {
-       const targetIndex = toShelf.items.findIndex(i => i.id === dropTarget.dataset.itemId);
-       toShelf.items.splice(targetIndex, 0, movedItem);
-   } else {
-       toShelf.items.push(movedItem);
+   let insertIndex = toShelf.items.length;
+   if (targetItemId) {
+       const targetIndex = toShelf.items.findIndex(i => i.id === targetItemId);
+       if (targetIndex !== -1) {
+           insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+       }
    }
-   setUnsavedChanges(true);
-   refreshCurrentView();
+   if (fromShelf === toShelf && itemIndex < insertIndex) {
+       insertIndex = Math.max(0, insertIndex - 1);
+   }
+   toShelf.items.splice(insertIndex, 0, movedItem);
+   return true;
 }
 
 // --- Utility Functions ---
