@@ -1326,7 +1326,7 @@ function confirmDelete(type, id, name, parentId = null) {
         let shouldSaveImmediately = false;
         if (type === 'locker') {
             const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
-            appliance.lockers = appliance.lockers.filter(l => l.id !== id);
+            appliance.lockers = appliance.lockers.filter(l => String(l.id) !== String(id));
             shouldSaveImmediately = true;
         } else if (type === 'shelf') {
             const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
