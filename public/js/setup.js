@@ -258,8 +258,10 @@ function addEventListeners() {
     });
     lockerActionsDeleteBtn?.addEventListener('click', () => {
         if (!actionLockerId) return;
+        const lockerId = actionLockerId;
+        const lockerName = actionLockerName;
         closeLockerActions();
-        confirmDelete('locker', actionLockerId, actionLockerName);
+        confirmDelete('locker', lockerId, lockerName);
     });
     
     // Unsaved Changes Modal
