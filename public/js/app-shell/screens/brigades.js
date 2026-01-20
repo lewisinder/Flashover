@@ -194,6 +194,110 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   container.appendChild(stack);
   root.appendChild(container);
 
+  const existingSheet = document.getElementById("brigade-action-sheet");
+  if (existingSheet) existingSheet.remove();
+
+  const actionSheet = el("div", "fs-sheet-backdrop hidden");
+  actionSheet.id = "brigade-action-sheet";
+  const sheet = el("div", "fs-sheet");
+  const sheetTitle = el("div", "fs-sheet-title");
+  sheetTitle.textContent = "Brigade actions";
+  const sheetSubtitle = el("div", "fs-row-meta");
+  const sheetActions = el("div", "fs-sheet-actions");
+  const sheetManage = el("button", "fs-btn fs-btn-secondary");
+  sheetManage.type = "button";
+  sheetManage.textContent = "Manage";
+  const sheetLeave = el("button", "fs-btn fs-btn-secondary");
+  sheetLeave.type = "button";
+  sheetLeave.textContent = "Leave";
+  const sheetDelete = el("button", "fs-btn fs-btn-danger");
+  sheetDelete.type = "button";
+  sheetDelete.textContent = "Delete";
+  const sheetCancel = el("button", "fs-btn fs-btn-secondary");
+  sheetCancel.type = "button";
+  sheetCancel.textContent = "Cancel";
+
+  sheetActions.appendChild(sheetManage);
+  sheetActions.appendChild(sheetLeave);
+  sheetActions.appendChild(sheetDelete);
+  sheetActions.appendChild(sheetCancel);
+  sheet.appendChild(sheetTitle);
+  sheet.appendChild(sheetSubtitle);
+  sheet.appendChild(sheetActions);
+  actionSheet.appendChild(sheet);
+  document.body.appendChild(actionSheet);
+
+  let actionBrigade = null;
+
+  function openActionSheet(brigade) {
+    actionBrigade = brigade;
+    sheetSubtitle.textContent = brigade?.brigadeName || brigade?.id || "";
+    const isAdmin = brigade?.role === "Admin";
+    sheetDelete.style.display = isAdmin ? "" : "none";
+    actionSheet.classList.remove("hidden");
+  }
+
+  function closeActionSheet() {
+    actionSheet.classList.add("hidden");
+    actionBrigade = null;
+  }
+
+  actionSheet.addEventListener("click", (e) => {
+    if (e.target === actionSheet) closeActionSheet();
+  });
+
+  sheetCancel.addEventListener("click", closeActionSheet);
+  sheetManage.addEventListener("click", () => {
+    if (!actionBrigade) return;
+    closeActionSheet();
+    window.location.hash = `#/brigade/${encodeURIComponent(actionBrigade.id)}`;
+  });
+  sheetLeave.addEventListener("click", async () => {
+    if (!actionBrigade) return;
+    const name = actionBrigade.brigadeName || actionBrigade.id;
+    if (!confirm(`Are you sure you want to leave the brigade "${name}"?`)) return;
+    closeActionSheet();
+    setAlert(statusError, "");
+    setAlert(statusSuccess, "");
+    showLoading?.();
+    try {
+      const token = await user.getIdToken();
+      const result = await fetchJson(`/api/brigades/${actionBrigade.id}/leave`, { token, method: "POST" });
+      setAlert(statusSuccess, result.message || "Left brigade.");
+      invalidateUserBrigades(user.uid);
+      await refreshMyBrigades({ force: true });
+    } catch (err) {
+      console.error("Error leaving brigade:", err);
+      setAlert(statusError, err.message);
+    } finally {
+      hideLoading?.();
+    }
+  });
+  sheetDelete.addEventListener("click", async () => {
+    if (!actionBrigade) return;
+    const name = actionBrigade.brigadeName || actionBrigade.id;
+    if (!confirm(`Are you sure you want to delete the brigade "${name}"? This will remove all members and cannot be undone.`)) {
+      return;
+    }
+    if (!confirm(`Final warning: Deleting "${name}" is permanent. Are you sure?`)) return;
+    closeActionSheet();
+    setAlert(statusError, "");
+    setAlert(statusSuccess, "");
+    showLoading?.();
+    try {
+      const token = await user.getIdToken();
+      const result = await fetchJson(`/api/brigades/${actionBrigade.id}`, { token, method: "DELETE" });
+      setAlert(statusSuccess, result.message || "Deleted brigade.");
+      invalidateUserBrigades(user.uid);
+      await refreshMyBrigades({ force: true });
+    } catch (err) {
+      console.error("Error deleting brigade:", err);
+      setAlert(statusError, err.message);
+    } finally {
+      hideLoading?.();
+    }
+  });
+
   async function refreshMyBrigades({ force = false } = {}) {
     try {
       const brigades = await getUserBrigades({ db, uid: user.uid, force });
@@ -224,73 +328,14 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
         const rolePill = el("span", `fs-pill ${isAdmin ? "fs-pill-success" : ""}`);
         rolePill.textContent = brigade.role || "Member";
 
-        const manageBtn = el("button", "fs-btn fs-btn-secondary");
-        manageBtn.type = "button";
-        manageBtn.textContent = "Manage";
-        manageBtn.style.width = "auto";
-        manageBtn.style.padding = "8px 10px";
-        manageBtn.addEventListener("click", () => {
-          window.location.hash = `#/brigade/${encodeURIComponent(brigade.id)}`;
-        });
-
-        const leaveBtn = el("button", "fs-btn fs-btn-secondary");
-        leaveBtn.type = "button";
-        leaveBtn.textContent = "Leave";
-        leaveBtn.style.width = "auto";
-        leaveBtn.style.padding = "8px 10px";
-        leaveBtn.addEventListener("click", async () => {
-          if (!confirm(`Are you sure you want to leave the brigade "${brigade.brigadeName}"?`)) return;
-          setAlert(statusError, "");
-          setAlert(statusSuccess, "");
-	          showLoading?.();
-	          try {
-	            const token = await user.getIdToken();
-	            const result = await fetchJson(`/api/brigades/${brigade.id}/leave`, { token, method: "POST" });
-	            setAlert(statusSuccess, result.message || "Left brigade.");
-	            invalidateUserBrigades(user.uid);
-	            await refreshMyBrigades({ force: true });
-	          } catch (err) {
-	            console.error("Error leaving brigade:", err);
-	            setAlert(statusError, err.message);
-	          } finally {
-            hideLoading?.();
-          }
-        });
+        const menuBtn = el("button", "fs-icon-btn");
+        menuBtn.type = "button";
+        menuBtn.textContent = "⋯";
+        menuBtn.setAttribute("aria-label", "More actions");
+        menuBtn.addEventListener("click", () => openActionSheet(brigade));
 
         actions.appendChild(rolePill);
-        actions.appendChild(manageBtn);
-        actions.appendChild(leaveBtn);
-
-        if (isAdmin) {
-          const delBtn = el("button", "fs-btn fs-btn-danger");
-          delBtn.type = "button";
-          delBtn.textContent = "Delete";
-          delBtn.style.width = "auto";
-          delBtn.style.padding = "8px 10px";
-          delBtn.addEventListener("click", async () => {
-            const name = brigade.brigadeName || brigade.id;
-            if (!confirm(`Are you sure you want to delete the brigade "${name}"? This will remove all members and cannot be undone.`)) {
-              return;
-            }
-            if (!confirm(`Final warning: Deleting "${name}" is permanent. Are you sure?`)) return;
-            setAlert(statusError, "");
-            setAlert(statusSuccess, "");
-            showLoading?.();
-	            try {
-	              const token = await user.getIdToken();
-	              const result = await fetchJson(`/api/brigades/${brigade.id}`, { token, method: "DELETE" });
-	              setAlert(statusSuccess, result.message || "Deleted brigade.");
-	              invalidateUserBrigades(user.uid);
-	              await refreshMyBrigades({ force: true });
-	            } catch (err) {
-	              console.error("Error deleting brigade:", err);
-	              setAlert(statusError, err.message);
-	            } finally {
-              hideLoading?.();
-            }
-          });
-          actions.appendChild(delBtn);
-        }
+        actions.appendChild(menuBtn);
 
         row.appendChild(left);
         row.appendChild(actions);
