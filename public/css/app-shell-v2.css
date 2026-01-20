@@ -493,3 +493,90 @@ button.fs-row:focus {
   background-color: rgba(246, 247, 251, 0.8);
   backdrop-filter: blur(8px);
 }
+
+/* ------------------------------------------------------------------ */
+/* Terms gate */
+/* ------------------------------------------------------------------ */
+.fs-terms {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 36px;
+  min-height: 100%;
+}
+
+.fs-terms-card {
+  width: min(920px, 100%);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+}
+
+.fs-terms-kicker {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: var(--fs-muted);
+  margin-bottom: 8px;
+}
+
+.fs-terms-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+
+.fs-terms-meta {
+  font-size: 12px;
+  color: var(--fs-muted);
+  margin: 0;
+}
+
+.fs-terms-body {
+  border: 1px solid var(--fs-border);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--fs-surface);
+  height: clamp(220px, 46vh, 460px);
+}
+
+.fs-terms-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--fs-surface);
+}
+
+.fs-terms-ack {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 14px;
+  color: var(--fs-text);
+}
+
+.fs-terms-ack input {
+  margin-top: 3px;
+  accent-color: var(--fs-primary);
+}
+
+.fs-terms-error {
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.fs-terms-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fs-terms-link {
+  color: var(--fs-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fs-terms-link:hover {
+  text-decoration: underline;
+}

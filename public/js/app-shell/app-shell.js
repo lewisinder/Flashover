@@ -19,6 +19,10 @@ const tabbar = document.getElementById("app-tabbar");
 const loadingOverlay = document.getElementById("loading-overlay");
 const shellHeader = document.querySelector("body > header");
 
+const TERMS_VERSION = "v1.0";
+const TERMS_BLURB =
+  "I acknowledge I am a testing member and agree to the Terms of Use, including that I will not disclose, copy, share, or distribute any part of the Flashover app, its content, features, or materials to any third party.";
+
 let loadingCount = 0;
 let loadingTimer = null;
 
@@ -79,6 +83,165 @@ requireEl(backBtn, "app-back-btn");
 requireEl(logoutBtn, "app-logout-btn");
 
 const { auth, db } = initFirebase();
+
+async function fetchUserProfile(user) {
+  const token = await user.getIdToken();
+  const cacheBust = `?t=${Date.now()}`;
+  const res = await fetch(`/api/data/${user.uid}${cacheBust}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const message = body.message || `Failed to load profile (${res.status})`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+async function saveUserProfile(user, data) {
+  const token = await user.getIdToken();
+  const res = await fetch(`/api/data/${user.uid}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const message = body.message || `Failed to save profile (${res.status})`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+function hasAcceptedTerms(data) {
+  return data?.termsAcceptance?.version === TERMS_VERSION;
+}
+
+function renderTermsGate({ user, userData, loadError, onAccepted }) {
+  setShellChromeVisible(false);
+
+  appRoot.innerHTML = `
+    <section class="fs-terms">
+      <div class="fs-card fs-terms-card">
+        <div class="fs-card-inner space-y-5">
+          <div>
+            <p class="fs-terms-kicker">Terms of Use</p>
+            <h2 class="fs-terms-title">Review and accept</h2>
+            <p class="fs-terms-meta">Version ${TERMS_VERSION}</p>
+          </div>
+          <div class="fs-terms-body">
+            <iframe class="fs-terms-frame" title="Flashover Terms of Use" src="/terms-of-service.html"></iframe>
+          </div>
+          <label class="fs-terms-ack">
+            <input id="terms-ack-checkbox" type="checkbox" />
+            <span>${TERMS_BLURB}</span>
+          </label>
+          <div id="terms-error" class="fs-terms-error hidden"></div>
+          <div class="fs-terms-actions">
+            <button id="terms-signout-btn" class="fs-btn fs-btn-secondary" type="button">Sign out</button>
+            <button id="terms-accept-btn" class="fs-btn fs-btn-primary" type="button" disabled>
+              Agree and continue
+            </button>
+          </div>
+          <p class="fs-terms-meta">
+            Need a larger view? <a class="fs-terms-link" href="/terms-of-service.html" target="_blank" rel="noopener">Open full terms</a>
+          </p>
+        </div>
+      </div>
+    </section>
+  `;
+
+  const checkbox = appRoot.querySelector("#terms-ack-checkbox");
+  const acceptBtn = appRoot.querySelector("#terms-accept-btn");
+  const signoutBtn = appRoot.querySelector("#terms-signout-btn");
+  const errorEl = appRoot.querySelector("#terms-error");
+
+  let saving = false;
+
+  function setError(message) {
+    if (!errorEl) return;
+    if (message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+  }
+
+  function updateButtonState() {
+    if (!acceptBtn || !checkbox) return;
+    acceptBtn.disabled = saving || !checkbox.checked;
+  }
+
+  if (loadError) {
+    setError("Unable to load your profile. Please check your connection and try again.");
+  }
+
+  checkbox?.addEventListener("change", updateButtonState);
+  signoutBtn?.addEventListener("click", async () => {
+    try {
+      await auth.signOut();
+    } finally {
+      window.location.href = "/signin.html";
+    }
+  });
+  acceptBtn?.addEventListener("click", async () => {
+    if (!checkbox?.checked || saving) return;
+    saving = true;
+    acceptBtn.textContent = "Saving...";
+    updateButtonState();
+    setError("");
+
+    try {
+      const latestData = userData || (await fetchUserProfile(user)) || {};
+      const { serverTime, ...safeData } = latestData;
+      const updated = {
+        ...safeData,
+        termsAcceptance: {
+          version: TERMS_VERSION,
+          acceptedAt: new Date().toISOString(),
+          blurb: TERMS_BLURB,
+        },
+      };
+      await saveUserProfile(user, updated);
+      onAccepted();
+    } catch (err) {
+      setError(err?.message || "Unable to save your acceptance. Please try again.");
+    } finally {
+      saving = false;
+      acceptBtn.textContent = "Agree and continue";
+      updateButtonState();
+    }
+  });
+}
+
+async function ensureTermsAccepted(user) {
+  let userData = null;
+  let loadError = null;
+  try {
+    showLoading();
+    userData = await fetchUserProfile(user);
+  } catch (err) {
+    loadError = err;
+  } finally {
+    hideLoading();
+  }
+
+  if (hasAcceptedTerms(userData)) return true;
+
+  return new Promise((resolve) => {
+    renderTermsGate({
+      user,
+      userData,
+      loadError,
+      onAccepted: () => resolve(true),
+    });
+  });
+}
 
 function getActiveTabRoute(route) {
   if (route.startsWith("/brigade/") || route === "/brigades") return "#/brigades";
@@ -287,18 +450,25 @@ Promise.resolve(window.__authReady).finally(() => {
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1";
   let hasStarted = false;
+  let startInProgress = false;
 
   auth.onAuthStateChanged(async (user) => {
     if (user) {
-      if (!hasStarted) {
-        hasStarted = true;
-        await maybeSeedDemoData(user);
+      if (hasStarted || startInProgress) return;
+      startInProgress = true;
+      await maybeSeedDemoData(user);
+      const canStart = await ensureTermsAccepted(user);
+      if (canStart) {
         router.start();
+        hasStarted = true;
       }
+      startInProgress = false;
       return;
     }
 
     // On local emulators, auth state can briefly appear as null during init.
+    hasStarted = false;
+    startInProgress = false;
     setTimeout(() => {
       if (auth.currentUser) {
         if (!hasStarted) {
