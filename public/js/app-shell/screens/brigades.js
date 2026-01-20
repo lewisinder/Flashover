@@ -248,13 +248,15 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
 
   sheetCancel.addEventListener("click", closeActionSheet);
   sheetManage.addEventListener("click", () => {
-    if (!actionBrigade) return;
+    const brigade = actionBrigade;
+    if (!brigade) return;
     closeActionSheet();
-    window.location.hash = `#/brigade/${encodeURIComponent(actionBrigade.id)}`;
+    window.location.hash = `#/brigade/${encodeURIComponent(brigade.id)}`;
   });
   sheetLeave.addEventListener("click", async () => {
-    if (!actionBrigade) return;
-    const name = actionBrigade.brigadeName || actionBrigade.id;
+    const brigade = actionBrigade;
+    if (!brigade) return;
+    const name = brigade.brigadeName || brigade.id;
     if (!confirm(`Are you sure you want to leave the brigade "${name}"?`)) return;
     closeActionSheet();
     setAlert(statusError, "");
@@ -262,7 +264,7 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     showLoading?.();
     try {
       const token = await user.getIdToken();
-      const result = await fetchJson(`/api/brigades/${actionBrigade.id}/leave`, { token, method: "POST" });
+      const result = await fetchJson(`/api/brigades/${brigade.id}/leave`, { token, method: "POST" });
       setAlert(statusSuccess, result.message || "Left brigade.");
       invalidateUserBrigades(user.uid);
       await refreshMyBrigades({ force: true });
@@ -274,8 +276,9 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     }
   });
   sheetDelete.addEventListener("click", async () => {
-    if (!actionBrigade) return;
-    const name = actionBrigade.brigadeName || actionBrigade.id;
+    const brigade = actionBrigade;
+    if (!brigade) return;
+    const name = brigade.brigadeName || brigade.id;
     if (!confirm(`Are you sure you want to delete the brigade "${name}"? This will remove all members and cannot be undone.`)) {
       return;
     }
@@ -286,7 +289,7 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
     showLoading?.();
     try {
       const token = await user.getIdToken();
-      const result = await fetchJson(`/api/brigades/${actionBrigade.id}`, { token, method: "DELETE" });
+      const result = await fetchJson(`/api/brigades/${brigade.id}`, { token, method: "DELETE" });
       setAlert(statusSuccess, result.message || "Deleted brigade.");
       invalidateUserBrigades(user.uid);
       await refreshMyBrigades({ force: true });
