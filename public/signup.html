@@ -28,7 +28,7 @@
         <p id="message" class="text-red-action-2 text-center mt-4"></p>
         
         <div class="text-center mt-6">
-            <a href="/signin.html" class="font-medium text-blue hover:underline">Already have an account? Sign In</a>
+            <a id="signin-link" href="/signin.html" class="font-medium text-blue hover:underline">Already have an account? Sign In</a>
         </div>
 
         <div class="text-center mt-4 text-sm text-gray-500 space-x-4">
@@ -64,6 +64,14 @@
         window.__authReady = auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((err) => {
             console.error("Auth persistence failed (signup.html):", err);
         });
+
+        const returnToParam = new URLSearchParams(window.location.search).get('returnTo');
+        if (returnToParam && returnToParam.startsWith('/')) {
+            const signinLink = document.getElementById('signin-link');
+            if (signinLink) {
+                signinLink.href = `/signin.html?returnTo=${encodeURIComponent(returnToParam)}`;
+            }
+        }
     </script>
 
     <script src="/js/auth.js"></script>

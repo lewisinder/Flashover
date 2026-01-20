@@ -1,20 +1,3 @@
-// --- Provider Logins ---
-document.getElementById('login-with-microsoft-btn').addEventListener('click', () => {
-    const provider = new firebase.auth.OAuthProvider('microsoft.com');
-    Promise.resolve(window.__authReady)
-        .then(() => auth.signInWithPopup(provider))
-        .then(result => handleSuccessfulLogin(result.user))
-        .catch(handleAuthError);
-});
-
-document.getElementById('login-with-google-btn').addEventListener('click', () => {
-    const provider = new firebase.auth.GoogleAuthProvider();
-    Promise.resolve(window.__authReady)
-        .then(() => auth.signInWithPopup(provider))
-        .then(result => handleSuccessfulLogin(result.user))
-        .catch(handleAuthError);
-});
-
 // --- Email/Password Login ---
 document.getElementById('login-form').addEventListener('submit', (e) => {
     e.preventDefault();

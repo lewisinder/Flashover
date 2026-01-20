@@ -687,11 +687,9 @@ function initChecksPage(options = {}) {
         const activeBox = document.querySelector(`.item-box[data-id='${itemId}']`);
         if (activeBox) {
             activeBox.classList.add('is-active');
-            const rect = activeBox.getBoundingClientRect();
-            const isVisible = (rect.top >= 0) && (rect.bottom <= window.innerHeight);
-            if (!isVisible) {
-                activeBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => scrollItemToTop(activeBox));
+            });
         }
         
         saveStateToSession();
@@ -713,6 +711,15 @@ function initChecksPage(options = {}) {
             checkerUI.controls.classList.add('hidden');
             checkerUI.containerControls.classList.add('hidden');
         }
+    }
+
+    function scrollItemToTop(activeBox) {
+        const container = checkerUI.lockerLayout;
+        if (!container || !activeBox) return;
+        const containerRect = container.getBoundingClientRect();
+        const itemRect = activeBox.getBoundingClientRect();
+        const offsetTop = itemRect.top - containerRect.top + container.scrollTop;
+        container.scrollTo({ top: Math.max(0, offsetTop - 8), behavior: 'smooth' });
     }
 
     function startContainerCheck() {
