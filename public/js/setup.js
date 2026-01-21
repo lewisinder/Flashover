@@ -1399,7 +1399,17 @@ function confirmDelete(type, id, name, parentId = null) {
         let shouldSaveImmediately = false;
         if (type === 'locker') {
             const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
-            appliance.lockers = appliance.lockers.filter(l => l.id !== id);
+            if (appliance && Array.isArray(appliance.lockers)) {
+                const lockerIndex = appliance.lockers.findIndex((l) => String(l.id) === String(id));
+                if (lockerIndex !== -1) {
+                    appliance.lockers.splice(lockerIndex, 1);
+                } else {
+                    console.warn('Locker not found for deletion', { id });
+                }
+            }
+            if (activeLockerId && String(activeLockerId) === String(id)) {
+                activeLockerId = null;
+            }
             shouldSaveImmediately = true;
         } else if (type === 'shelf') {
             const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
@@ -1412,6 +1422,7 @@ function confirmDelete(type, id, name, parentId = null) {
         
         if (shouldSaveImmediately) {
             await saveBrigadeData(`delete${type}`);
+            renderLockerList();
         } else {
             setUnsavedChanges(true);
         }
