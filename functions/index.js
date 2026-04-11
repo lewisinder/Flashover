@@ -70,6 +70,100 @@ function isAdminRole(role) {
     return String(role || '').toLowerCase() === 'admin';
 }
 
+function normalizeSixDigitIdentifier(value) {
+    const identifier = String(value || '').trim();
+    return /^\d{6}$/.test(identifier) ? identifier : null;
+}
+
+function generateSixDigitIdentifier() {
+    return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+}
+
+function isAlreadyExistsError(error) {
+    const code = error && error.code;
+    const message = String((error && error.message) || '');
+    return code === 6 || code === 'already-exists' || message.includes('ALREADY_EXISTS');
+}
+
+async function reserveUniqueIdentifier(ownerType, ownerId) {
+    const registry = db.collection('identifierRegistry');
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        const identifier = generateSixDigitIdentifier();
+        try {
+            await registry.doc(identifier).create({
+                identifier,
+                ownerType,
+                ownerId,
+                createdAt: FieldValue.serverTimestamp(),
+            });
+            return identifier;
+        } catch (error) {
+            if (isAlreadyExistsError(error)) continue;
+            throw error;
+        }
+    }
+    throw new Error('Could not allocate a unique identifier. Please try again.');
+}
+
+async function reserveExistingIdentifier(identifier, ownerType, ownerId) {
+    try {
+        await db.collection('identifierRegistry').doc(identifier).create({
+            identifier,
+            ownerType,
+            ownerId,
+            createdAt: FieldValue.serverTimestamp(),
+        });
+    } catch (error) {
+        if (!isAlreadyExistsError(error)) throw error;
+    }
+}
+
+async function ensureDocumentIdentifier(ref, data, ownerType, ownerId) {
+    const existing = normalizeSixDigitIdentifier(data && data.identifier);
+    if (existing) {
+        await reserveExistingIdentifier(existing, ownerType, ownerId);
+        return existing;
+    }
+
+    const identifier = await reserveUniqueIdentifier(ownerType, ownerId);
+    await ref.set({ identifier }, { merge: true });
+    return identifier;
+}
+
+async function ensureUserIdentifier(userId) {
+    if (!userId) return null;
+    const ref = db.collection('users').doc(userId);
+    const doc = await ref.get();
+    return ensureDocumentIdentifier(ref, doc.exists ? doc.data() : {}, 'user', userId);
+}
+
+async function ensureBrigadeIdentifier(brigadeId, ref, data) {
+    if (!brigadeId) return null;
+    const brigadeRef = ref || db.collection('brigades').doc(brigadeId);
+    let brigadeData = data;
+    if (!brigadeData) {
+        const doc = await brigadeRef.get();
+        brigadeData = doc.exists ? doc.data() : {};
+    }
+    return ensureDocumentIdentifier(brigadeRef, brigadeData || {}, 'brigade', brigadeId);
+}
+
+async function ensureUserBrigadesHaveIdentifiers(userId) {
+    if (!userId) return;
+    const snapshot = await db.collection('users').doc(userId).collection('userBrigades').get();
+    await Promise.all(snapshot.docs.map(async (membershipDoc) => {
+        const data = membershipDoc.data() || {};
+        if (normalizeSixDigitIdentifier(data.brigadeIdentifier)) return;
+
+        const brigadeRef = db.collection('brigades').doc(membershipDoc.id);
+        const brigadeDoc = await brigadeRef.get();
+        if (!brigadeDoc.exists) return;
+
+        const brigadeIdentifier = await ensureBrigadeIdentifier(membershipDoc.id, brigadeRef, brigadeDoc.data());
+        await membershipDoc.ref.set({ brigadeIdentifier }, { merge: true });
+    }));
+}
+
 // ===================================================================
 // NEW EMAIL TRIGGER FUNCTION
 // ===================================================================
@@ -132,6 +226,8 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const memberRef = brigadeRef.collection('members').doc(uid);
         const userBrigadeRef = db.collection('users').doc(uid).collection('userBrigades').doc(brigadeId);
+        const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef);
+        const userIdentifier = await ensureUserIdentifier(uid);
 
         const demoApplianceData = {
             appliances: [
@@ -223,6 +319,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                     stationNumber: '000',
                     region: 'Te Hiku',
                     creatorId: uid,
+                    identifier: brigadeIdentifier,
                     createdAt: FieldValue.serverTimestamp(),
                     applianceData: demoApplianceData,
                 });
@@ -234,6 +331,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                         name: 'Demo Brigade',
                         stationNumber: '000',
                         region: 'Te Hiku',
+                        identifier: brigadeIdentifier,
                     },
                     { merge: true }
                 );
@@ -245,6 +343,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                     role: 'Admin',
                     joinedAt: FieldValue.serverTimestamp(),
                     name: displayName,
+                    userIdentifier,
                 },
                 { merge: true }
             );
@@ -253,6 +352,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                 userBrigadeRef,
                 {
                     brigadeName: 'Demo Brigade (000)',
+                    brigadeIdentifier,
                     role: 'Admin',
                 },
                 { merge: true }
@@ -427,10 +527,17 @@ userRouter.get('/:userId', async (req, res) => {
     try {
         const userDocRef = db.collection('users').doc(req.user.uid);
         const doc = await userDocRef.get();
+        const identifier = await ensureDocumentIdentifier(
+            userDocRef,
+            doc.exists ? doc.data() : {},
+            'user',
+            req.user.uid
+        );
+        await ensureUserBrigadesHaveIdentifiers(req.user.uid);
         if (doc.exists) {
-            return res.json(doc.data());
+            return res.json({ ...doc.data(), identifier });
         }
-        const defaultData = { appliances: [] };
+        const defaultData = { appliances: [], identifier };
         await db.collection('users').doc(req.user.uid).set(defaultData);
         return res.json({ ...defaultData, serverTime: new Date().toISOString() });
     } catch (err) {
@@ -441,7 +548,14 @@ userRouter.get('/:userId', async (req, res) => {
 userRouter.post('/:userId', async (req, res) => {
     try {
         const userDocRef = db.collection('users').doc(req.user.uid);
-        await userDocRef.set(req.body);
+        const doc = await userDocRef.get();
+        const identifier = await ensureDocumentIdentifier(
+            userDocRef,
+            doc.exists ? doc.data() : {},
+            'user',
+            req.user.uid
+        );
+        await userDocRef.set({ ...(req.body || {}), identifier });
         res.json({ message: 'Data saved successfully!' });
     } catch (err) {
         console.error('Error writing data to Firestore:', err);
@@ -459,15 +573,17 @@ brigadeRouter.get('/region/:regionName', async (req, res) => {
         const snapshot = await brigadesRef.where('region', '==', regionName).get();
         if (snapshot.empty) return res.json([]);
         // Only return safe public fields so non-members can't see brigade inventory data.
-        const brigades = snapshot.docs.map(doc => {
+        const brigades = await Promise.all(snapshot.docs.map(async (doc) => {
             const data = doc.data() || {};
+            const identifier = await ensureBrigadeIdentifier(doc.id, doc.ref, data);
             return {
                 id: doc.id,
                 name: data.name,
                 stationNumber: data.stationNumber,
                 region: data.region,
+                identifier,
             };
-        });
+        }));
         res.json(brigades);
     } catch (error) {
         console.error(`Error fetching brigades for region ${req.params.regionName}:`, error);
@@ -484,7 +600,14 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to view join requests.' });
         }
         const requestsSnapshot = await db.collection('brigades').doc(brigadeId).collection('joinRequests').where('status', '==', 'pending').get();
-        const requests = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const requests = await Promise.all(requestsSnapshot.docs.map(async (doc) => {
+            const data = doc.data() || {};
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier) || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier) && userIdentifier) {
+                await doc.ref.set({ userIdentifier }, { merge: true });
+            }
+            return { id: doc.id, ...data, userIdentifier };
+        }));
         res.json(requests);
     } catch (error) {
         console.error(`Error fetching join requests for brigade ${req.params.brigadeId}:`, error);
@@ -511,10 +634,12 @@ brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
         if (doc.exists) {
             return res.status(400).json({ message: 'You have already sent a join request to this brigade.' });
         }
+        const userIdentifier = await ensureUserIdentifier(userId);
         await joinRequestRef.set({
             status: 'pending',
             requestedAt: FieldValue.serverTimestamp(),
-            userName: userName || email
+            userName: userName || email,
+            userIdentifier,
         });
         res.status(201).json({ message: 'Your request to join has been sent.' });
     } catch (error) {
@@ -538,15 +663,18 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
             if (!requestDoc.exists) {
                 return res.status(404).json({ message: 'Join request not found.' });
             }
-            const { userName } = requestDoc.data();
+            const requestData = requestDoc.data() || {};
+            const { userName } = requestData;
             const brigadeRef = db.collection('brigades').doc(brigadeId);
             const newMemberRef = brigadeRef.collection('members').doc(userId);
             const userBrigadeRef = db.collection('users').doc(userId).collection('userBrigades').doc(brigadeId);
             const brigadeDoc = await brigadeRef.get();
             const brigadeData = brigadeDoc.data();
+            const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
+            const userIdentifier = normalizeSixDigitIdentifier(requestData.userIdentifier) || await ensureUserIdentifier(userId);
             await db.runTransaction(async (transaction) => {
-                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName });
-                transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
+                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName, userIdentifier });
+                transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
                 transaction.delete(requestRef);
             });
             res.status(200).json({ message: `User ${userName} has been added to the brigade.` });
@@ -583,9 +711,11 @@ brigadeRouter.post('/:brigadeId/members', async (req, res) => {
         const userBrigadeRef = userRef.collection('userBrigades').doc(brigadeId);
         const brigadeDoc = await brigadeRef.get();
         const brigadeData = brigadeDoc.data();
+        const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
+        const userIdentifier = await ensureUserIdentifier(newMemberId);
         await db.runTransaction(async (transaction) => {
-            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName });
-            transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
+            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName, userIdentifier });
+            transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
         });
         res.status(201).json({ message: `User ${newMemberName} added to brigade successfully.` });
     } catch (error) {
@@ -799,11 +929,14 @@ brigadeRouter.post('/', async (req, res) => {
         }
         const newBrigadeRef = db.collection('brigades').doc();
         const brigadeId = newBrigadeRef.id;
+        const brigadeIdentifier = await reserveUniqueIdentifier('brigade', brigadeId);
+        const userIdentifier = await ensureUserIdentifier(creatorId);
         const newBrigadeData = {
             name: name,
             stationNumber: stationNumber,
             region: region,
             creatorId: creatorId,
+            identifier: brigadeIdentifier,
             createdAt: FieldValue.serverTimestamp(),
             applianceData: { appliances: [] }
         };
@@ -811,10 +944,10 @@ brigadeRouter.post('/', async (req, res) => {
         const userBrigadeRef = db.collection('users').doc(creatorId).collection('userBrigades').doc(brigadeId);
         await db.runTransaction(async (transaction) => {
             transaction.set(newBrigadeRef, newBrigadeData);
-            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName });
-            transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, role: 'Admin' });
+            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName, userIdentifier });
+            transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, brigadeIdentifier, role: 'Admin' });
         });
-        res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId });
+        res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId, identifier: brigadeIdentifier });
     } catch (error) {
         console.error('Error creating brigade:', error);
         res.status(500).json({ message: 'Failed to create brigade.' });
@@ -921,10 +1054,18 @@ brigadeRouter.get('/:brigadeId', async (req, res) => {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
         const brigadeData = brigadeDoc.data();
+        const identifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
         const membersCollectionRef = brigadeRef.collection('members');
         const membersSnapshot = await membersCollectionRef.get();
-        const members = membersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json({ ...brigadeData, members: members });
+        const members = await Promise.all(membersSnapshot.docs.map(async (doc) => {
+            const data = doc.data() || {};
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier) || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier) && userIdentifier) {
+                await doc.ref.set({ userIdentifier }, { merge: true });
+            }
+            return { id: doc.id, ...data, userIdentifier };
+        }));
+        res.status(200).json({ ...brigadeData, identifier, members: members });
     } catch (error) {
         console.error(`Error fetching brigade data for ${req.params.brigadeId}:`, error);
         res.status(500).json({ message: 'Failed to fetch brigade data.' });

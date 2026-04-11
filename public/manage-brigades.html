@@ -284,6 +284,7 @@
                             <div>
                                 <h3 class="text-xl font-bold">${brigade.brigadeName}</h3>
                                 <p class="text-gray-600">Your Role: <span class="font-semibold">${brigade.role}</span></p>
+                                ${brigade.brigadeIdentifier ? `<p class="text-sm text-gray-500">Brigade ID: ${brigade.brigadeIdentifier}</p>` : ''}
                             </div>
                             <div class="flex items-center">
                                 <button class="bg-blue text-white font-semibold py-2 px-4 rounded-lg" onclick="manageBrigade('${doc.id}')">Manage</button>
@@ -415,6 +416,7 @@
                     brigadeElement.innerHTML = `
                         <div>
                             <h3 class="text-xl font-bold">${brigade.name} (${brigade.stationNumber})</h3>
+                            ${brigade.identifier ? `<p class="text-sm text-gray-500">Brigade ID: ${brigade.identifier}</p>` : ''}
                         </div>
                         <button id="join-btn-${brigade.id}" class="bg-green-action-1 text-white font-semibold py-2 px-4 rounded-lg" onclick="requestToJoin('${brigade.id}')">Request to Join</button>
                     `;
