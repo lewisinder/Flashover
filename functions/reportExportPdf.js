@@ -279,14 +279,33 @@ function drawCross(doc, x, y, size) {
         .restore();
 }
 
-function drawIssueMark(doc, x, y, size, ref) {
+function drawIssueMark(doc, centerX, centerY, size, ref) {
     doc.save()
+        .strokeColor('#111111')
         .fillColor('#111111')
+        .lineWidth(2.2)
+        .moveTo(centerX - size * 0.34, centerY)
+        .lineTo(centerX + size * 0.34, centerY)
+        .stroke()
         .font('Helvetica-Bold')
-        .fontSize(size + 5)
-        .text('!', x, y - 3, { width: size, align: 'center' })
         .fontSize(6)
-        .text(String(ref), x + size - 1, y - 1, { width: 10, align: 'left' })
+        .text(String(ref), centerX + size * 0.28, centerY - size * 0.54, { width: 10, align: 'left' })
+        .restore();
+}
+
+function drawVerticalHeaderText(doc, text, x, y, width, height, options = {}) {
+    doc.save()
+        .translate(x + width / 2, y + height)
+        .rotate(-90)
+        .fillColor(options.color || '#111111')
+        .font(options.font || 'Helvetica')
+        .fontSize(options.fontSize || 7)
+        .text(text, 0, -width / 2 + 3, {
+            width: height,
+            height: width - 6,
+            align: 'center',
+            ellipsis: true,
+        })
         .restore();
 }
 
@@ -327,26 +346,15 @@ function drawTableHeader(doc, page, metrics) {
             .moveTo(x, TABLE_TOP)
             .lineTo(x, TABLE_TOP + HEADER_HEIGHT)
             .stroke();
-        doc.save()
-            .translate(x + dateColWidth / 2, TABLE_TOP + HEADER_HEIGHT - 16)
-            .rotate(-90)
-            .fillColor('#111111')
-            .font('Helvetica-Bold')
-            .fontSize(7)
-            .text(formatDate(report.date, { shortYear: true }), 0, -dateColWidth / 2 + 3, {
-                width: HEADER_HEIGHT - 22,
-                align: 'center',
-            })
-            .restore();
-        doc.fillColor('#222222')
-            .font('Helvetica')
-            .fontSize(5.6)
-            .text(checkedBy, x + 3, TABLE_TOP + HEADER_HEIGHT - 13, {
-                width: dateColWidth - 6,
-                height: 9,
-                align: 'center',
-                ellipsis: true,
-            });
+        drawVerticalHeaderText(doc, formatDate(report.date, { shortYear: true }), x, TABLE_TOP + 4, dateColWidth, 30, {
+            font: 'Helvetica-Bold',
+            fontSize: 7,
+        });
+        drawVerticalHeaderText(doc, checkedBy, x, TABLE_TOP + 31, dateColWidth, 38, {
+            color: '#222222',
+            font: 'Helvetica',
+            fontSize: 5.6,
+        });
     });
 }
 
@@ -391,10 +399,12 @@ function drawRow(doc, y, row, page, metrics, refs, rowIndex) {
         const status = safeText(cell.status).toLowerCase();
         const markSize = 12;
         const markX = x + (dateColWidth - markSize) / 2;
-        const markY = y + 2.5;
+        const markY = y + (ROW_HEIGHT - markSize) / 2;
+        const markCenterX = x + dateColWidth / 2;
+        const markCenterY = y + ROW_HEIGHT / 2;
         const noteRef = refs.get(`${row.key}:${report.id}`);
         if (noteRef) {
-            drawIssueMark(doc, markX, markY, markSize, noteRef);
+            drawIssueMark(doc, markCenterX, markCenterY, markSize, noteRef);
         } else if (status === 'present') {
             drawTick(doc, markX, markY, markSize);
         } else if (status === 'missing') {
