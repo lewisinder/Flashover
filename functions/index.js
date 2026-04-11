@@ -48,6 +48,8 @@ const transporter = nodemailer.createTransport({
 });
 const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.nz";
 const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
+const USER_IDENTIFIER_PREFIX = 'U';
+const BRIGADE_IDENTIFIER_PREFIX = 'B';
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -76,13 +78,18 @@ function isAdminRole(role) {
     return String(role || '').toLowerCase() === 'admin';
 }
 
-function normalizeSixDigitIdentifier(value) {
-    const identifier = String(value || '').trim();
-    return /^\d{6}$/.test(identifier) ? identifier : null;
+function identifierPrefix(ownerType) {
+    return ownerType === 'brigade' ? BRIGADE_IDENTIFIER_PREFIX : USER_IDENTIFIER_PREFIX;
 }
 
-function generateSixDigitIdentifier() {
-    return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+function normalizeSixDigitIdentifier(value, ownerType) {
+    const identifier = String(value || '').trim().toUpperCase();
+    const prefix = identifierPrefix(ownerType);
+    return new RegExp(`^${prefix}\\d{6}$`).test(identifier) ? identifier : null;
+}
+
+function generateSixDigitIdentifier(ownerType) {
+    return `${identifierPrefix(ownerType)}${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`;
 }
 
 function isAlreadyExistsError(error) {
@@ -94,7 +101,7 @@ function isAlreadyExistsError(error) {
 async function reserveUniqueIdentifier(ownerType, ownerId) {
     const registry = db.collection('identifierRegistry');
     for (let attempt = 0; attempt < 40; attempt += 1) {
-        const identifier = generateSixDigitIdentifier();
+        const identifier = generateSixDigitIdentifier(ownerType);
         try {
             await registry.doc(identifier).create({
                 identifier,
@@ -132,7 +139,7 @@ async function reserveExistingIdentifier(identifier, ownerType, ownerId) {
 }
 
 async function ensureDocumentIdentifier(ref, data, ownerType, ownerId) {
-    const existing = normalizeSixDigitIdentifier(data && data.identifier);
+    const existing = normalizeSixDigitIdentifier(data && data.identifier, ownerType);
     if (existing) {
         const reserved = await reserveExistingIdentifier(existing, ownerType, ownerId);
         if (reserved) return reserved;
@@ -161,7 +168,7 @@ async function ensureBrigadeIdentifier(brigadeId, ref, data) {
     return ensureDocumentIdentifier(brigadeRef, brigadeData || {}, 'brigade', brigadeId);
 }
 
-async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier) {
+async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier, batch, writeState) {
     const data = membershipDoc.data() || {};
     const brigadeRef = db.collection('brigades').doc(membershipDoc.id);
     const brigadeDoc = await brigadeRef.get();
@@ -170,7 +177,7 @@ async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, user
     const brigadeData = brigadeDoc.data() || {};
     const brigadeIdentifier = await ensureBrigadeIdentifier(membershipDoc.id, brigadeRef, brigadeData);
     const updates = {};
-    if (normalizeSixDigitIdentifier(data.brigadeIdentifier) !== brigadeIdentifier) {
+    if (normalizeSixDigitIdentifier(data.brigadeIdentifier, 'brigade') !== brigadeIdentifier) {
         updates.brigadeIdentifier = brigadeIdentifier;
     }
     const expectedName = brigadeData.stationNumber
@@ -180,14 +187,20 @@ async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, user
         updates.brigadeName = expectedName;
     }
     if (Object.keys(updates).length > 0) {
-        await membershipDoc.ref.set(updates, { merge: true });
+        if (batch) {
+            batch.set(membershipDoc.ref, updates, { merge: true });
+            writeState.count += 1;
+        } else {
+            await membershipDoc.ref.set(updates, { merge: true });
+        }
     }
 
-    const memberRef = brigadeRef.collection('members').doc(userId);
-    const memberDoc = await memberRef.get();
-    if (memberDoc.exists && userIdentifier) {
-        const memberData = memberDoc.data() || {};
-        if (normalizeSixDigitIdentifier(memberData.userIdentifier) !== userIdentifier) {
+    if (userIdentifier) {
+        const memberRef = brigadeRef.collection('members').doc(userId);
+        if (batch) {
+            batch.set(memberRef, { userIdentifier }, { merge: true });
+            writeState.count += 1;
+        } else {
             await memberRef.set({ userIdentifier }, { merge: true });
         }
     }
@@ -204,9 +217,15 @@ async function getUserBrigadesWithIdentifiers(userId) {
     if (!userId) return [];
     const userIdentifier = await ensureUserIdentifier(userId);
     const snapshot = await db.collection('users').doc(userId).collection('userBrigades').get();
-    return Promise.all(snapshot.docs.map((membershipDoc) => (
-        ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier)
+    const batch = db.batch();
+    const writeState = { count: 0 };
+    const brigades = await Promise.all(snapshot.docs.map((membershipDoc) => (
+        ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier, batch, writeState)
     )));
+    if (writeState.count > 0) {
+        await batch.commit();
+    }
+    return brigades;
 }
 
 async function ensureUserBrigadesHaveIdentifiers(userId) {
@@ -692,8 +711,8 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
         const requestsSnapshot = await db.collection('brigades').doc(brigadeId).collection('joinRequests').where('status', '==', 'pending').get();
         const requests = await Promise.all(requestsSnapshot.docs.map(async (doc) => {
             const data = doc.data() || {};
-            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier) || await ensureUserIdentifier(doc.id);
-            if (!normalizeSixDigitIdentifier(data.userIdentifier) && userIdentifier) {
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier, 'user') || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
                 await doc.ref.set({ userIdentifier }, { merge: true });
             }
             return { id: doc.id, ...data, userIdentifier };
@@ -761,7 +780,7 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
             const brigadeDoc = await brigadeRef.get();
             const brigadeData = brigadeDoc.data();
             const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
-            const userIdentifier = normalizeSixDigitIdentifier(requestData.userIdentifier) || await ensureUserIdentifier(userId);
+            const userIdentifier = normalizeSixDigitIdentifier(requestData.userIdentifier, 'user') || await ensureUserIdentifier(userId);
             await db.runTransaction(async (transaction) => {
                 transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName, userIdentifier });
                 transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
@@ -1149,8 +1168,8 @@ brigadeRouter.get('/:brigadeId', async (req, res) => {
         const membersSnapshot = await membersCollectionRef.get();
         const members = await Promise.all(membersSnapshot.docs.map(async (doc) => {
             const data = doc.data() || {};
-            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier) || await ensureUserIdentifier(doc.id);
-            if (!normalizeSixDigitIdentifier(data.userIdentifier) && userIdentifier) {
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier, 'user') || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
                 await doc.ref.set({ userIdentifier }, { merge: true });
             }
             return { id: doc.id, ...data, userIdentifier };
