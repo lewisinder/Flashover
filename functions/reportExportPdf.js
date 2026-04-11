@@ -2,15 +2,15 @@ const PDFDocument = require('pdfkit');
 
 const MAX_REPORT_COLUMNS = 10;
 const PAGE_SIZE = 'A4';
-const PAGE_LAYOUT = 'landscape';
+const PAGE_LAYOUT = 'portrait';
 const MARGIN = 28;
-const TABLE_TOP = 104;
-const TABLE_BOTTOM = 430;
-const FOOTNOTE_TOP = 448;
+const TABLE_TOP = 96;
+const TABLE_BOTTOM = 650;
+const FOOTNOTE_TOP = 668;
 const ROW_HEIGHT = 17;
 const SECTION_HEIGHT = 18;
-const HEADER_HEIGHT = 72;
-const ITEM_COL_WIDTH = 250;
+const HEADER_HEIGHT = 56;
+const ITEM_COL_WIDTH = 180;
 
 function safeText(value, fallback = '') {
     const text = String(value == null ? fallback : value)
@@ -348,16 +348,16 @@ function drawTableHeader(doc, page, metrics) {
             .moveTo(x, TABLE_TOP)
             .lineTo(x, TABLE_TOP + HEADER_HEIGHT)
             .stroke();
-        const dateLaneWidth = dateColWidth * 0.45;
+        const dateLaneWidth = dateColWidth * 0.43;
         const userLaneWidth = dateColWidth - dateLaneWidth;
-        drawVerticalHeaderText(doc, formatDate(report.date, { shortYear: true }), x + 2, TABLE_TOP + 8, dateLaneWidth, 54, {
+        drawVerticalHeaderText(doc, formatDate(report.date, { shortYear: true }), x + 2, TABLE_TOP + 6, dateLaneWidth, HEADER_HEIGHT - 12, {
             font: 'Helvetica-Bold',
-            fontSize: 7,
+            fontSize: 6.4,
         });
-        drawVerticalHeaderText(doc, checkedBy, x + dateLaneWidth, TABLE_TOP + 8, userLaneWidth - 2, 54, {
+        drawVerticalHeaderText(doc, checkedBy, x + dateLaneWidth, TABLE_TOP + 6, userLaneWidth - 2, HEADER_HEIGHT - 12, {
             color: '#222222',
             font: 'Helvetica',
-            fontSize: 5.6,
+            fontSize: 5.3,
         });
     });
 }
