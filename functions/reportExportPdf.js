@@ -350,11 +350,11 @@ function drawTableHeader(doc, page, metrics) {
             .stroke();
         const dateLaneWidth = dateColWidth * 0.45;
         const userLaneWidth = dateColWidth - dateLaneWidth;
-        drawVerticalHeaderText(doc, formatDate(report.date, { shortYear: true }), x + 2, TABLE_TOP + 5, dateLaneWidth, 30, {
+        drawVerticalHeaderText(doc, formatDate(report.date, { shortYear: true }), x + 2, TABLE_TOP + 8, dateLaneWidth, 54, {
             font: 'Helvetica-Bold',
             fontSize: 7,
         });
-        drawVerticalHeaderText(doc, checkedBy, x + dateLaneWidth, TABLE_TOP + 29, userLaneWidth - 2, 40, {
+        drawVerticalHeaderText(doc, checkedBy, x + dateLaneWidth, TABLE_TOP + 8, userLaneWidth - 2, 54, {
             color: '#222222',
             font: 'Helvetica',
             fontSize: 5.6,
