@@ -60,6 +60,10 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   emailField.appendChild(emailLabel);
   emailField.appendChild(emailInput);
 
+  const identifierText = el("p", "text-sm");
+  identifierText.style.color = "var(--fs-muted)";
+  identifierText.textContent = "User ID: Loading...";
+
   const msg = el("p", "text-sm");
   msg.style.color = "var(--fs-muted)";
 
@@ -83,6 +87,7 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   profileInner.appendChild(profileTitle);
   profileInner.appendChild(nameField);
   profileInner.appendChild(emailField);
+  profileInner.appendChild(identifierText);
   profileInner.appendChild(actions);
   profileInner.appendChild(msg);
   profileCard.appendChild(profileInner);
@@ -255,10 +260,17 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     }
   });
 
+  async function loadProfile() {
+    const token = await user.getIdToken();
+    const data = await fetchJson(`/api/data/${encodeURIComponent(user.uid)}?t=${Date.now()}`, { token });
+    identifierText.textContent = data.identifier ? `User ID: ${data.identifier}` : "";
+  }
+
   // Load brigades list + allow leaving (async; don't block route transition).
   void (async () => {
     try {
-      const brigades = await getUserBrigades({ db, uid: user.uid });
+      await loadProfile();
+      const brigades = await getUserBrigades({ db, uid: user.uid, force: true });
       brigadeList.innerHTML = "";
 
       if (brigades.length === 0) {
@@ -269,9 +281,11 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
       brigades.forEach((b) => {
         const row = el("div", "fs-row");
         const left = el("div");
+        const brigadeIdentifier = b.brigadeIdentifier ? `Brigade ID: ${b.brigadeIdentifier}` : "";
         left.innerHTML = `
           <div class="fs-row-title">${b.brigadeName || b.id}</div>
           <div class="fs-row-meta">Role: ${b.role || "Member"}</div>
+          ${brigadeIdentifier ? `<div class="fs-row-meta fs-row-meta-subtle">${brigadeIdentifier}</div>` : ""}
         `;
         const right = el("div");
         const pill = el("span", `fs-pill ${String(b.role).toLowerCase() === "admin" ? "fs-pill-success" : ""}`);
@@ -298,6 +312,7 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
       });
     } catch (err) {
       console.error("Failed to load brigades (account):", err);
+      identifierText.textContent = "";
       brigadeList.innerHTML =
         '<div class="fs-row"><div><div class="fs-row-title">Could not load brigades</div><div class="fs-row-meta">Try again later.</div></div></div>';
     }

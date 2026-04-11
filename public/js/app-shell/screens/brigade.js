@@ -145,7 +145,10 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       const title = `${brigadeData.name} (${brigadeData.stationNumber})`;
       h2.textContent = title;
       setTitle?.(title);
-      sub.textContent = brigadeData.region ? `Region: ${brigadeData.region}` : "";
+      const brigadeMeta = [];
+      if (brigadeData.identifier) brigadeMeta.push(`Brigade ID: ${brigadeData.identifier}`);
+      if (brigadeData.region) brigadeMeta.push(`Region: ${brigadeData.region}`);
+      sub.textContent = brigadeMeta.join(" | ");
 
       const currentMembership = (brigadeData.members || []).find((m) => m.id === user.uid);
       const isAdmin = currentMembership && currentMembership.role === "Admin";
@@ -156,9 +159,12 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
 
         const left = el("div");
         const isSelf = member.id === user.uid;
+        const memberMeta = [];
+        if (member.userIdentifier) memberMeta.push(`User ID: ${member.userIdentifier}`);
+        if (member.email) memberMeta.push(member.email);
         left.innerHTML = `
           <div class="fs-row-title">${member.name || "N/A"}${isSelf ? " (you)" : ""}</div>
-          <div class="fs-row-meta">${member.email || ""}</div>
+          <div class="fs-row-meta">${memberMeta.join(" | ")}</div>
         `;
 
         const actions = el("div");
@@ -282,9 +288,12 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       requests.forEach((req) => {
         const row = el("div", "fs-row");
         const left = el("div");
+        const requestMeta = [];
+        if (req.userIdentifier) requestMeta.push(`User ID: ${req.userIdentifier}`);
+        requestMeta.push(`Requested: ${safeFormatTimestamp(req.requestedAt)}`);
         left.innerHTML = `
           <div class="fs-row-title">${req.userName || req.id}</div>
-          <div class="fs-row-meta">Requested: ${safeFormatTimestamp(req.requestedAt)}</div>
+          <div class="fs-row-meta">${requestMeta.join(" | ")}</div>
         `;
 
         const right = el("div");

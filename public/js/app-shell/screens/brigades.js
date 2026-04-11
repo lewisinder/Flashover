@@ -318,9 +318,11 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
         const row = el("div", "fs-row");
 
         const left = el("div");
+        const brigadeIdentifier = brigade.brigadeIdentifier ? `Brigade ID: ${brigade.brigadeIdentifier}` : "";
         left.innerHTML = `
           <div class="fs-row-title">${brigade.brigadeName || "Brigade"}</div>
           <div class="fs-row-meta">Role: ${brigade.role || "Member"}</div>
+          ${brigadeIdentifier ? `<div class="fs-row-meta fs-row-meta-subtle">${brigadeIdentifier}</div>` : ""}
         `;
 
         const actions = el("div");
@@ -397,9 +399,11 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
       brigades.forEach((brigade) => {
         const row = el("div", "fs-row");
         const left = el("div");
+        const brigadeIdentifier = brigade.identifier ? `Brigade ID: ${brigade.identifier}` : "";
         left.innerHTML = `
           <div class="fs-row-title">${brigade.name} (${brigade.stationNumber})</div>
-          <div class="fs-row-meta">Region: ${brigade.region || ""}</div>
+          <div class="fs-row-meta">${brigadeIdentifier || "Brigade ID unavailable"}</div>
+          <div class="fs-row-meta fs-row-meta-subtle">Region: ${brigade.region || ""}</div>
         `;
         const btn = el("button", "fs-btn fs-btn-primary");
         btn.type = "button";
@@ -460,5 +464,5 @@ export async function renderBrigades({ root, auth, db, showLoading, hideLoading 
   });
 
   // Initial hydrate without blocking route transition.
-  void refreshMyBrigades();
+  void refreshMyBrigades({ force: true });
 }

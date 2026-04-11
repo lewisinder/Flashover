@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const os = require('os');
 const express = require('express');
@@ -9,6 +10,10 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const sharp = require('sharp');
 const Busboy = require('busboy');
+const {
+    buildReportExportFilename,
+    buildReportExportPdf,
+} = require('./reportExportPdf');
 
 // --- Local Emulator Support (Admin SDK) ---
 // When running locally, point the Admin SDK at the emulators so it doesn't require prod credentials
@@ -42,6 +47,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.nz";
+const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
+const USER_IDENTIFIER_PREFIX = 'U';
+const BRIGADE_IDENTIFIER_PREFIX = 'B';
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -69,6 +77,182 @@ async function getBrigadeMember(brigadeId, userId) {
 function isAdminRole(role) {
     return String(role || '').toLowerCase() === 'admin';
 }
+
+function identifierPrefix(ownerType) {
+    return ownerType === 'brigade' ? BRIGADE_IDENTIFIER_PREFIX : USER_IDENTIFIER_PREFIX;
+}
+
+function normalizeSixDigitIdentifier(value, ownerType) {
+    const identifier = String(value || '').trim().toUpperCase();
+    const prefix = identifierPrefix(ownerType);
+    return new RegExp(`^${prefix}\\d{6}$`).test(identifier) ? identifier : null;
+}
+
+function generateSixDigitIdentifier(ownerType) {
+    return `${identifierPrefix(ownerType)}${String(Math.floor(Math.random() * 1000000)).padStart(6, '0')}`;
+}
+
+function isAlreadyExistsError(error) {
+    const code = error && error.code;
+    const message = String((error && error.message) || '');
+    return code === 6 || code === 'already-exists' || message.includes('ALREADY_EXISTS');
+}
+
+async function reserveUniqueIdentifier(ownerType, ownerId) {
+    const registry = db.collection('identifierRegistry');
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+        const identifier = generateSixDigitIdentifier(ownerType);
+        try {
+            await registry.doc(identifier).create({
+                identifier,
+                ownerType,
+                ownerId,
+                createdAt: FieldValue.serverTimestamp(),
+            });
+            return identifier;
+        } catch (error) {
+            if (isAlreadyExistsError(error)) continue;
+            throw error;
+        }
+    }
+    throw new Error('Could not allocate a unique identifier. Please try again.');
+}
+
+async function reserveExistingIdentifier(identifier, ownerType, ownerId) {
+    try {
+        await db.collection('identifierRegistry').doc(identifier).create({
+            identifier,
+            ownerType,
+            ownerId,
+            createdAt: FieldValue.serverTimestamp(),
+        });
+        return identifier;
+    } catch (error) {
+        if (!isAlreadyExistsError(error)) throw error;
+        const existing = await db.collection('identifierRegistry').doc(identifier).get();
+        const data = existing.exists ? existing.data() || {} : {};
+        if (data.ownerType === ownerType && data.ownerId === ownerId) {
+            return identifier;
+        }
+        return null;
+    }
+}
+
+async function ensureDocumentIdentifier(ref, data, ownerType, ownerId) {
+    const existing = normalizeSixDigitIdentifier(data && data.identifier, ownerType);
+    if (existing) {
+        const reserved = await reserveExistingIdentifier(existing, ownerType, ownerId);
+        if (reserved) return reserved;
+    }
+
+    const identifier = await reserveUniqueIdentifier(ownerType, ownerId);
+    await ref.set({ identifier }, { merge: true });
+    return identifier;
+}
+
+async function ensureUserIdentifier(userId) {
+    if (!userId) return null;
+    const ref = db.collection('users').doc(userId);
+    const doc = await ref.get();
+    return ensureDocumentIdentifier(ref, doc.exists ? doc.data() : {}, 'user', userId);
+}
+
+async function ensureBrigadeIdentifier(brigadeId, ref, data) {
+    if (!brigadeId) return null;
+    const brigadeRef = ref || db.collection('brigades').doc(brigadeId);
+    let brigadeData = data;
+    if (!brigadeData) {
+        const doc = await brigadeRef.get();
+        brigadeData = doc.exists ? doc.data() : {};
+    }
+    return ensureDocumentIdentifier(brigadeRef, brigadeData || {}, 'brigade', brigadeId);
+}
+
+async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier, batch, writeState) {
+    const data = membershipDoc.data() || {};
+    const brigadeRef = db.collection('brigades').doc(membershipDoc.id);
+    const brigadeDoc = await brigadeRef.get();
+    if (!brigadeDoc.exists) return { id: membershipDoc.id, ...data };
+
+    const brigadeData = brigadeDoc.data() || {};
+    const brigadeIdentifier = await ensureBrigadeIdentifier(membershipDoc.id, brigadeRef, brigadeData);
+    const updates = {};
+    if (normalizeSixDigitIdentifier(data.brigadeIdentifier, 'brigade') !== brigadeIdentifier) {
+        updates.brigadeIdentifier = brigadeIdentifier;
+    }
+    const expectedName = brigadeData.stationNumber
+        ? `${brigadeData.name || data.brigadeName || 'Brigade'} (${brigadeData.stationNumber})`
+        : (brigadeData.name || data.brigadeName || 'Brigade');
+    if (!data.brigadeName && brigadeData.name) {
+        updates.brigadeName = expectedName;
+    }
+    if (Object.keys(updates).length > 0) {
+        if (batch) {
+            batch.set(membershipDoc.ref, updates, { merge: true });
+            writeState.count += 1;
+        } else {
+            await membershipDoc.ref.set(updates, { merge: true });
+        }
+    }
+
+    if (userIdentifier) {
+        const memberRef = brigadeRef.collection('members').doc(userId);
+        if (batch) {
+            batch.set(memberRef, { userIdentifier }, { merge: true });
+            writeState.count += 1;
+        } else {
+            await memberRef.set({ userIdentifier }, { merge: true });
+        }
+    }
+
+    return {
+        id: membershipDoc.id,
+        ...data,
+        ...updates,
+        brigadeIdentifier,
+    };
+}
+
+async function getUserBrigadesWithIdentifiers(userId) {
+    if (!userId) return [];
+    const userIdentifier = await ensureUserIdentifier(userId);
+    const snapshot = await db.collection('users').doc(userId).collection('userBrigades').get();
+    const batch = db.batch();
+    const writeState = { count: 0 };
+    const brigades = await Promise.all(snapshot.docs.map((membershipDoc) => (
+        ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier, batch, writeState)
+    )));
+    if (writeState.count > 0) {
+        await batch.commit();
+    }
+    return brigades;
+}
+
+async function ensureUserBrigadesHaveIdentifiers(userId) {
+    await getUserBrigadesWithIdentifiers(userId);
+}
+
+exports.createUserIdentifier = functions.region("australia-southeast1").auth.user().onCreate(async (user) => {
+    if (!user || !user.uid) return null;
+    try {
+        await ensureUserIdentifier(user.uid);
+    } catch (error) {
+        console.error(`Error creating identifier for user ${user.uid}:`, error);
+    }
+    return null;
+});
+
+exports.createBrigadeIdentifier = functions.region("australia-southeast1").firestore
+    .document("brigades/{brigadeId}")
+    .onCreate(async (snap, context) => {
+        const brigadeId = context.params.brigadeId;
+        try {
+            await ensureBrigadeIdentifier(brigadeId, snap.ref, snap.data() || {});
+        } catch (error) {
+            console.error(`Error creating identifier for brigade ${brigadeId}:`, error);
+        }
+        return null;
+    });
 
 // ===================================================================
 // NEW EMAIL TRIGGER FUNCTION
@@ -132,6 +316,8 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const memberRef = brigadeRef.collection('members').doc(uid);
         const userBrigadeRef = db.collection('users').doc(uid).collection('userBrigades').doc(brigadeId);
+        const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef);
+        const userIdentifier = await ensureUserIdentifier(uid);
 
         const demoApplianceData = {
             appliances: [
@@ -223,6 +409,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                     stationNumber: '000',
                     region: 'Te Hiku',
                     creatorId: uid,
+                    identifier: brigadeIdentifier,
                     createdAt: FieldValue.serverTimestamp(),
                     applianceData: demoApplianceData,
                 });
@@ -234,6 +421,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                         name: 'Demo Brigade',
                         stationNumber: '000',
                         region: 'Te Hiku',
+                        identifier: brigadeIdentifier,
                     },
                     { merge: true }
                 );
@@ -245,6 +433,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                     role: 'Admin',
                     joinedAt: FieldValue.serverTimestamp(),
                     name: displayName,
+                    userIdentifier,
                 },
                 { merge: true }
             );
@@ -253,6 +442,7 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                 userBrigadeRef,
                 {
                     brigadeName: 'Demo Brigade (000)',
+                    brigadeIdentifier,
                     role: 'Admin',
                 },
                 { merge: true }
@@ -423,14 +613,37 @@ apiRouter.use((err, req, res, next) => {
 
 // --- User Data Routes ---
 const userRouter = express.Router();
+userRouter.get('/:userId/brigades', async (req, res) => {
+    try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only load your own brigades.' });
+        }
+        const brigades = await getUserBrigadesWithIdentifiers(req.user.uid);
+        return res.json(brigades);
+    } catch (err) {
+        console.error(`Error loading user brigades for ${req.user.uid}:`, err);
+        return res.status(500).json({ message: 'Error loading brigades.' });
+    }
+});
+
 userRouter.get('/:userId', async (req, res) => {
     try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only load your own profile.' });
+        }
         const userDocRef = db.collection('users').doc(req.user.uid);
         const doc = await userDocRef.get();
+        const identifier = await ensureDocumentIdentifier(
+            userDocRef,
+            doc.exists ? doc.data() : {},
+            'user',
+            req.user.uid
+        );
+        await ensureUserBrigadesHaveIdentifiers(req.user.uid);
         if (doc.exists) {
-            return res.json(doc.data());
+            return res.json({ ...doc.data(), identifier });
         }
-        const defaultData = { appliances: [] };
+        const defaultData = { appliances: [], identifier };
         await db.collection('users').doc(req.user.uid).set(defaultData);
         return res.json({ ...defaultData, serverTime: new Date().toISOString() });
     } catch (err) {
@@ -440,8 +653,18 @@ userRouter.get('/:userId', async (req, res) => {
 });
 userRouter.post('/:userId', async (req, res) => {
     try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only save your own profile.' });
+        }
         const userDocRef = db.collection('users').doc(req.user.uid);
-        await userDocRef.set(req.body);
+        const doc = await userDocRef.get();
+        const identifier = await ensureDocumentIdentifier(
+            userDocRef,
+            doc.exists ? doc.data() : {},
+            'user',
+            req.user.uid
+        );
+        await userDocRef.set({ ...(req.body || {}), identifier });
         res.json({ message: 'Data saved successfully!' });
     } catch (err) {
         console.error('Error writing data to Firestore:', err);
@@ -459,15 +682,17 @@ brigadeRouter.get('/region/:regionName', async (req, res) => {
         const snapshot = await brigadesRef.where('region', '==', regionName).get();
         if (snapshot.empty) return res.json([]);
         // Only return safe public fields so non-members can't see brigade inventory data.
-        const brigades = snapshot.docs.map(doc => {
+        const brigades = await Promise.all(snapshot.docs.map(async (doc) => {
             const data = doc.data() || {};
+            const identifier = await ensureBrigadeIdentifier(doc.id, doc.ref, data);
             return {
                 id: doc.id,
                 name: data.name,
                 stationNumber: data.stationNumber,
                 region: data.region,
+                identifier,
             };
-        });
+        }));
         res.json(brigades);
     } catch (error) {
         console.error(`Error fetching brigades for region ${req.params.regionName}:`, error);
@@ -484,7 +709,14 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to view join requests.' });
         }
         const requestsSnapshot = await db.collection('brigades').doc(brigadeId).collection('joinRequests').where('status', '==', 'pending').get();
-        const requests = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const requests = await Promise.all(requestsSnapshot.docs.map(async (doc) => {
+            const data = doc.data() || {};
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier, 'user') || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
+                await doc.ref.set({ userIdentifier }, { merge: true });
+            }
+            return { id: doc.id, ...data, userIdentifier };
+        }));
         res.json(requests);
     } catch (error) {
         console.error(`Error fetching join requests for brigade ${req.params.brigadeId}:`, error);
@@ -511,10 +743,12 @@ brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
         if (doc.exists) {
             return res.status(400).json({ message: 'You have already sent a join request to this brigade.' });
         }
+        const userIdentifier = await ensureUserIdentifier(userId);
         await joinRequestRef.set({
             status: 'pending',
             requestedAt: FieldValue.serverTimestamp(),
-            userName: userName || email
+            userName: userName || email,
+            userIdentifier,
         });
         res.status(201).json({ message: 'Your request to join has been sent.' });
     } catch (error) {
@@ -538,15 +772,18 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
             if (!requestDoc.exists) {
                 return res.status(404).json({ message: 'Join request not found.' });
             }
-            const { userName } = requestDoc.data();
+            const requestData = requestDoc.data() || {};
+            const { userName } = requestData;
             const brigadeRef = db.collection('brigades').doc(brigadeId);
             const newMemberRef = brigadeRef.collection('members').doc(userId);
             const userBrigadeRef = db.collection('users').doc(userId).collection('userBrigades').doc(brigadeId);
             const brigadeDoc = await brigadeRef.get();
             const brigadeData = brigadeDoc.data();
+            const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
+            const userIdentifier = normalizeSixDigitIdentifier(requestData.userIdentifier, 'user') || await ensureUserIdentifier(userId);
             await db.runTransaction(async (transaction) => {
-                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName });
-                transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
+                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName, userIdentifier });
+                transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
                 transaction.delete(requestRef);
             });
             res.status(200).json({ message: `User ${userName} has been added to the brigade.` });
@@ -583,9 +820,11 @@ brigadeRouter.post('/:brigadeId/members', async (req, res) => {
         const userBrigadeRef = userRef.collection('userBrigades').doc(brigadeId);
         const brigadeDoc = await brigadeRef.get();
         const brigadeData = brigadeDoc.data();
+        const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
+        const userIdentifier = await ensureUserIdentifier(newMemberId);
         await db.runTransaction(async (transaction) => {
-            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName });
-            transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, role: 'Member' });
+            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName, userIdentifier });
+            transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
         });
         res.status(201).json({ message: `User ${newMemberName} added to brigade successfully.` });
     } catch (error) {
@@ -799,11 +1038,14 @@ brigadeRouter.post('/', async (req, res) => {
         }
         const newBrigadeRef = db.collection('brigades').doc();
         const brigadeId = newBrigadeRef.id;
+        const brigadeIdentifier = await reserveUniqueIdentifier('brigade', brigadeId);
+        const userIdentifier = await ensureUserIdentifier(creatorId);
         const newBrigadeData = {
             name: name,
             stationNumber: stationNumber,
             region: region,
             creatorId: creatorId,
+            identifier: brigadeIdentifier,
             createdAt: FieldValue.serverTimestamp(),
             applianceData: { appliances: [] }
         };
@@ -811,10 +1053,10 @@ brigadeRouter.post('/', async (req, res) => {
         const userBrigadeRef = db.collection('users').doc(creatorId).collection('userBrigades').doc(brigadeId);
         await db.runTransaction(async (transaction) => {
             transaction.set(newBrigadeRef, newBrigadeData);
-            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName });
-            transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, role: 'Admin' });
+            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName, userIdentifier });
+            transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, brigadeIdentifier, role: 'Admin' });
         });
-        res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId });
+        res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId, identifier: brigadeIdentifier });
     } catch (error) {
         console.error('Error creating brigade:', error);
         res.status(500).json({ message: 'Failed to create brigade.' });
@@ -921,10 +1163,18 @@ brigadeRouter.get('/:brigadeId', async (req, res) => {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
         const brigadeData = brigadeDoc.data();
+        const identifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
         const membersCollectionRef = brigadeRef.collection('members');
         const membersSnapshot = await membersCollectionRef.get();
-        const members = membersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json({ ...brigadeData, members: members });
+        const members = await Promise.all(membersSnapshot.docs.map(async (doc) => {
+            const data = doc.data() || {};
+            const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier, 'user') || await ensureUserIdentifier(doc.id);
+            if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
+                await doc.ref.set({ userIdentifier }, { merge: true });
+            }
+            return { id: doc.id, ...data, userIdentifier };
+        }));
+        res.status(200).json({ ...brigadeData, identifier, members: members });
     } catch (error) {
         console.error(`Error fetching brigade data for ${req.params.brigadeId}:`, error);
         res.status(500).json({ message: 'Failed to fetch brigade data.' });
@@ -1055,8 +1305,267 @@ function sanitizeSignatureData(data) {
     return { version: 1, strokes: cleanedStrokes };
 }
 
+function parseExportDate(value, { endOfDay = false } = {}) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    let parsed;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        parsed = new Date(`${raw}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
+    } else {
+        parsed = new Date(raw);
+    }
+
+    if (Number.isNaN(parsed.getTime())) return null;
+    if (endOfDay && !/[T ]\d{2}:/.test(raw)) {
+        parsed.setUTCHours(23, 59, 59, 999);
+    }
+    return parsed;
+}
+
+function getExportDateRange(source) {
+    const from = parseExportDate(source && source.from);
+    const to = parseExportDate(source && source.to, { endOfDay: true });
+    if (!from || !to) {
+        const error = new Error('Choose a valid from and to date for the export.');
+        error.status = 400;
+        throw error;
+    }
+    if (from.getTime() > to.getTime()) {
+        const error = new Error('The export from date must be before the to date.');
+        error.status = 400;
+        throw error;
+    }
+    return {
+        from,
+        to,
+    };
+}
+
+function parseReportDateMs(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.getTime();
+}
+
+function getApplianceForExport(brigade, applianceId) {
+    const applianceData = brigade && brigade.data && brigade.data.applianceData;
+    const appliances = applianceData && Array.isArray(applianceData.appliances) ? applianceData.appliances : [];
+    return appliances.find((appliance) => appliance && appliance.id === applianceId) || null;
+}
+
+async function loadReportExportPayload({ brigade, brigadeId, applianceId, range }) {
+    const appliance = getApplianceForExport(brigade, applianceId);
+    if (!appliance) {
+        const error = new Error('Appliance not found.');
+        error.status = 404;
+        throw error;
+    }
+
+    const snapshot = await brigade.ref.collection('reports')
+        .where('date', '>=', range.from.toISOString())
+        .where('date', '<=', range.to.toISOString())
+        .orderBy('date', 'asc')
+        .get();
+    const fromMs = range.from.getTime();
+    const toMs = range.to.getTime();
+    const reports = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...(doc.data() || {}) }))
+        .filter((report) => {
+            const reportMs = parseReportDateMs(report.date);
+            return report.applianceId === applianceId && reportMs != null && reportMs >= fromMs && reportMs <= toMs;
+        })
+        .sort((a, b) => {
+            const aMs = parseReportDateMs(a.date) || 0;
+            const bMs = parseReportDateMs(b.date) || 0;
+            return aMs - bMs;
+        });
+
+    if (reports.length === 0) {
+        const error = new Error('No reports found for that appliance and date range.');
+        error.status = 404;
+        throw error;
+    }
+
+    return {
+        brigadeId,
+        brigadeName: brigade.data && brigade.data.name,
+        applianceId,
+        applianceName: appliance.name,
+        from: range.from,
+        to: range.to,
+        reports,
+    };
+}
+
+function sendExportError(res, error, logMessage, fallbackMessage = 'Failed to export reports.') {
+    const status = Number(error && error.status) || 500;
+    if (status >= 500) console.error(logMessage, error);
+    const message = status >= 500 ? fallbackMessage : (error && error.message ? error.message : fallbackMessage);
+    res.status(status).json({ message });
+}
+
+function reportExportDownloadPath(token) {
+    return `/api/report-export-downloads/${encodeURIComponent(token)}.pdf`;
+}
+
+function pdfContentDisposition(filename) {
+    const fallback = String(filename || 'report-export.pdf').replace(/["\\\r\n]/g, '_');
+    return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fallback)}`;
+}
+
+function setPdfDownloadHeaders(res, filename, contentLength) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', pdfContentDisposition(filename));
+    res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (contentLength != null) {
+        res.setHeader('Content-Length', String(contentLength));
+    }
+}
+
+function timestampToMillis(value) {
+    if (!value) return null;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
 // --- Report Routes ---
 const reportRouter = express.Router();
+reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String(req.query.applianceId || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.query);
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        setPdfDownloadHeaders(res, filename, pdfBuffer.length);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        sendExportError(res, error, `Error exporting reports for brigade ${req.params.brigadeId}:`);
+    }
+});
+
+reportRouter.post('/brigade/:brigadeId/export/download-link', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String((req.body && req.body.applianceId) || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.body || {});
+        await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAtDate = new Date(Date.now() + REPORT_EXPORT_DOWNLOAD_TTL_MS);
+        await db.collection('reportExportDownloads').doc(token).set({
+            uid: req.user.uid,
+            brigadeId,
+            applianceId,
+            from: range.from.toISOString(),
+            to: range.to.toISOString(),
+            exportedBy: req.user.name || req.user.email || 'Unknown',
+            createdAt: FieldValue.serverTimestamp(),
+            expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
+        });
+
+        res.status(201).json({
+            url: reportExportDownloadPath(token),
+            expiresAt: expiresAtDate.toISOString(),
+        });
+    } catch (error) {
+        sendExportError(
+            res,
+            error,
+            `Error creating report export download link for brigade ${req.params.brigadeId}:`,
+            'Failed to prepare report export download.'
+        );
+    }
+});
+
+reportRouter.post('/brigade/:brigadeId/export/email', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String((req.body && req.body.applianceId) || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+        if (!req.user.email) {
+            return res.status(400).json({ message: 'Your account does not have an email address to send to.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.body || {});
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        await transporter.sendMail({
+            to: req.user.email,
+            from: DEFAULT_FROM_EMAIL,
+            subject: `Report export for ${payload.applianceName}`,
+            text: `Attached is your Flashover report export for ${payload.applianceName}.`,
+            html: `<p>Attached is your Flashover report export for <strong>${payload.applianceName}</strong>.</p>`,
+            attachments: [
+                {
+                    filename,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf',
+                },
+            ],
+        });
+
+        res.status(200).json({ message: `Report export emailed to ${req.user.email}.` });
+    } catch (error) {
+        sendExportError(
+            res,
+            error,
+            `Error emailing report export for brigade ${req.params.brigadeId}:`,
+            'Failed to email report export.'
+        );
+    }
+});
+
 reportRouter.get('/brigade/:brigadeId', async (req, res) => {
     try {
         const { brigadeId } = req.params;
@@ -1384,5 +1893,59 @@ reportRouter.post('/', async (req, res) => {
 apiRouter.use('/reports', reportRouter);
 
 // --- Final App Setup ---
+app.get('/api/report-export-downloads/:token.pdf', async (req, res) => {
+    const token = String(req.params.token || '').trim();
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+        return res.status(404).json({ message: 'Report export download link not found.' });
+    }
+
+    try {
+        const tokenRef = db.collection('reportExportDownloads').doc(token);
+        const tokenDoc = await tokenRef.get();
+        if (!tokenDoc.exists) {
+            return res.status(404).json({ message: 'Report export download link not found.' });
+        }
+
+        const tokenData = tokenDoc.data() || {};
+        const expiresAtMs = timestampToMillis(tokenData.expiresAt);
+        if (!expiresAtMs || expiresAtMs <= Date.now()) {
+            return res.status(404).json({ message: 'Report export download link has expired.' });
+        }
+
+        const brigadeId = String(tokenData.brigadeId || '').trim();
+        const applianceId = String(tokenData.applianceId || '').trim();
+        const range = {
+            from: parseExportDate(tokenData.from),
+            to: parseExportDate(tokenData.to),
+        };
+        if (!brigadeId || !applianceId || !range.from || !range.to) {
+            return res.status(404).json({ message: 'Report export download link is invalid.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Report export download link not found.' });
+        }
+
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = tokenData.exportedBy || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        setPdfDownloadHeaders(res, filename, pdfBuffer.length);
+        await tokenRef.set({ lastDownloadedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return res.status(200).send(pdfBuffer);
+    } catch (error) {
+        const status = Number(error && error.status) || 500;
+        if (status >= 500) {
+            console.error(`Error serving report export download token ${token}:`, error);
+        }
+        const message = status >= 500
+            ? 'Failed to download report export.'
+            : (error && error.message ? error.message : 'Report export download link is no longer available.');
+        return res.status(status).json({ message });
+    }
+});
+
 app.use('/api', apiRouter);
 exports.api = functions.https.onRequest(app);

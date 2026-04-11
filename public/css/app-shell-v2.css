@@ -253,6 +253,26 @@ body {
   transform: none;
 }
 
+.fs-btn[aria-busy="true"] {
+  pointer-events: none;
+}
+
+.fs-btn-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: fs-spin 0.75s linear infinite;
+}
+
+@keyframes fs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .fs-list {
   display: flex;
   flex-direction: column;

@@ -89,6 +89,12 @@ async function loadBrigadeData() {
         
         // Update UI with brigade data
         brigadeNameHeader.textContent = `${brigadeData.name} (${brigadeData.stationNumber})`;
+        if (brigadeData.identifier) {
+            const identifierEl = document.createElement('p');
+            identifierEl.className = 'text-sm font-normal';
+            identifierEl.textContent = `Brigade ID: ${brigadeData.identifier}`;
+            brigadeNameHeader.appendChild(identifierEl);
+        }
         
         // Check user's role and show admin tools if applicable
         const currentUserMembership = brigadeData.members.find(m => m.id === currentUser.uid);
@@ -129,6 +135,7 @@ async function loadBrigadeData() {
             memberElement.innerHTML = `
                 <div>
                     <p class="text-lg font-semibold">${member.name || 'N/A'}</p>
+                    ${member.userIdentifier ? `<p class="text-sm text-gray-500">User ID: ${member.userIdentifier}</p>` : ''}
                     ${!isCurrentUserAdmin ? `<p class="text-gray-600">Role: ${member.role}</p>`: ''}
                 </div>
                 ${adminControls}
@@ -170,6 +177,7 @@ async function loadJoinRequests() {
             reqElement.innerHTML = `
                 <div>
                     <p class="font-semibold">${req.userName}</p>
+                    ${req.userIdentifier ? `<p class="text-sm text-gray-500">User ID: ${req.userIdentifier}</p>` : ''}
                     <p class="text-sm text-gray-500">Requested on: ${new Date(req.requestedAt._seconds * 1000).toLocaleString()}</p>
                 </div>
                 <div>
