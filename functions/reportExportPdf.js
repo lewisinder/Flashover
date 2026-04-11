@@ -279,17 +279,19 @@ function drawCross(doc, x, y, size) {
         .restore();
 }
 
-function drawIssueMark(doc, centerX, centerY, size, ref) {
+function drawIssueMark(doc, cellX, cellY, cellWidth, cellHeight, size, ref) {
+    const centerX = cellX + cellWidth / 2;
+    const centerY = cellY + cellHeight / 2;
     doc.save()
         .strokeColor('#111111')
         .fillColor('#111111')
         .lineWidth(2.2)
-        .moveTo(centerX - size * 0.34, centerY)
-        .lineTo(centerX + size * 0.34, centerY)
+        .moveTo(centerX - size * 0.5, centerY)
+        .lineTo(centerX + size * 0.5, centerY)
         .stroke()
         .font('Helvetica-Bold')
         .fontSize(6)
-        .text(String(ref), centerX + size * 0.28, centerY - size * 0.54, { width: 10, align: 'left' })
+        .text(String(ref), cellX + cellWidth - 12, cellY + 2, { width: 9, align: 'right' })
         .restore();
 }
 
@@ -400,11 +402,9 @@ function drawRow(doc, y, row, page, metrics, refs, rowIndex) {
         const markSize = 12;
         const markX = x + (dateColWidth - markSize) / 2;
         const markY = y + (ROW_HEIGHT - markSize) / 2;
-        const markCenterX = x + dateColWidth / 2;
-        const markCenterY = y + ROW_HEIGHT / 2;
         const noteRef = refs.get(`${row.key}:${report.id}`);
         if (noteRef) {
-            drawIssueMark(doc, markCenterX, markCenterY, markSize, noteRef);
+            drawIssueMark(doc, x, y, dateColWidth, ROW_HEIGHT, markSize, noteRef);
         } else if (status === 'present') {
             drawTick(doc, markX, markY, markSize);
         } else if (status === 'missing') {
