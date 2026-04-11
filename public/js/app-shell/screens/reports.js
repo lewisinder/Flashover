@@ -23,6 +23,52 @@ async function fetchJson(url, { token, method, body } = {}) {
   return data;
 }
 
+async function fetchBlob(url, { token } = {}) {
+  const res = await fetch(url, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || `Request failed (${res.status})`);
+  }
+
+  return {
+    blob: await res.blob(),
+    filename: getDownloadFilename(res.headers.get("Content-Disposition")),
+  };
+}
+
+function getDownloadFilename(disposition) {
+  const match = String(disposition || "").match(/filename="([^"]+)"/i);
+  return match ? match[1] : "report-export.pdf";
+}
+
+function toDateInputValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultDateRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 30);
+  return {
+    from: toDateInputValue(from),
+    to: toDateInputValue(to),
+  };
+}
+
+function dateInputToIso(value, { endOfDay = false } = {}) {
+  if (!value) return "";
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 export async function renderReports({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
@@ -55,6 +101,75 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
   topInner.appendChild(errorEl);
   topCard.appendChild(topInner);
 
+  const exportCard = el("div", "fs-card");
+  const exportInner = el("div", "fs-card-inner fs-stack");
+  exportInner.innerHTML = `
+    <div>
+      <div class="fs-card-title">Export reports</div>
+      <div class="fs-card-subtitle">Choose an appliance and date range.</div>
+    </div>
+  `;
+
+  const exportGrid = el("div", "fs-grid");
+
+  const applianceField = el("div", "fs-field");
+  const applianceLabel = el("label", "fs-label");
+  applianceLabel.setAttribute("for", "report-export-appliance");
+  applianceLabel.textContent = "Appliance";
+  const applianceSelect = el("select", "fs-select");
+  applianceSelect.id = "report-export-appliance";
+  applianceSelect.innerHTML = '<option value="">Select a brigade first</option>';
+  applianceField.appendChild(applianceLabel);
+  applianceField.appendChild(applianceSelect);
+
+  const dates = defaultDateRange();
+  const fromField = el("div", "fs-field");
+  const fromLabel = el("label", "fs-label");
+  fromLabel.setAttribute("for", "report-export-from");
+  fromLabel.textContent = "From";
+  const fromInput = el("input", "fs-input");
+  fromInput.id = "report-export-from";
+  fromInput.type = "date";
+  fromInput.value = dates.from;
+  fromField.appendChild(fromLabel);
+  fromField.appendChild(fromInput);
+
+  const toField = el("div", "fs-field");
+  const toLabel = el("label", "fs-label");
+  toLabel.setAttribute("for", "report-export-to");
+  toLabel.textContent = "To";
+  const toInput = el("input", "fs-input");
+  toInput.id = "report-export-to";
+  toInput.type = "date";
+  toInput.value = dates.to;
+  toField.appendChild(toLabel);
+  toField.appendChild(toInput);
+
+  exportGrid.appendChild(applianceField);
+  exportGrid.appendChild(fromField);
+  exportGrid.appendChild(toField);
+
+  const exportActions = el("div", "fs-actions");
+  const downloadBtn = el("button", "fs-btn fs-btn-primary");
+  downloadBtn.type = "button";
+  downloadBtn.textContent = "Download PDF";
+  const emailBtn = el("button", "fs-btn fs-btn-secondary");
+  emailBtn.type = "button";
+  emailBtn.textContent = "Email PDF";
+  exportActions.appendChild(downloadBtn);
+  exportActions.appendChild(emailBtn);
+
+  const exportSuccessEl = el("div", "fs-alert fs-alert-success");
+  exportSuccessEl.style.display = "none";
+  const exportErrorEl = el("div", "fs-alert fs-alert-error");
+  exportErrorEl.style.display = "none";
+
+  exportInner.appendChild(exportGrid);
+  exportInner.appendChild(exportActions);
+  exportInner.appendChild(exportSuccessEl);
+  exportInner.appendChild(exportErrorEl);
+  exportCard.appendChild(exportInner);
+
   const listCard = el("div", "fs-card");
   const listInner = el("div", "fs-card-inner fs-stack");
   listInner.innerHTML = `
@@ -71,6 +186,7 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
   listCard.appendChild(listInner);
 
   stack.appendChild(topCard);
+  stack.appendChild(exportCard);
   stack.appendChild(listCard);
   container.appendChild(stack);
   root.appendChild(container);
@@ -82,6 +198,121 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     el.textContent = message || "";
     el.style.display = message ? "block" : "none";
   }
+
+  function setExportBusy(isBusy) {
+    downloadBtn.disabled = isBusy;
+    emailBtn.disabled = isBusy;
+    applianceSelect.disabled = isBusy;
+    fromInput.disabled = isBusy;
+    toInput.disabled = isBusy;
+  }
+
+  function getExportSelection() {
+    const applianceId = applianceSelect.value;
+    const from = dateInputToIso(fromInput.value);
+    const to = dateInputToIso(toInput.value, { endOfDay: true });
+    if (!applianceId) throw new Error("Choose an appliance to export.");
+    if (!from || !to) throw new Error("Choose a valid date range.");
+    if (new Date(from).getTime() > new Date(to).getTime()) {
+      throw new Error("The from date must be before the to date.");
+    }
+    return { applianceId, from, to };
+  }
+
+  async function loadAppliancesForBrigade(brigadeId) {
+    setAlert(exportErrorEl, "");
+    setAlert(exportSuccessEl, "");
+    applianceSelect.innerHTML = '<option value="">Loading appliances...</option>';
+    downloadBtn.disabled = true;
+    emailBtn.disabled = true;
+
+    try {
+      const token = await user.getIdToken();
+      const data = await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, { token });
+      const appliances = data && Array.isArray(data.appliances) ? data.appliances : [];
+      applianceSelect.innerHTML = "";
+
+      if (appliances.length === 0) {
+        applianceSelect.innerHTML = '<option value="">No appliances found</option>';
+        setAlert(exportErrorEl, "Add an appliance before exporting reports.");
+        return;
+      }
+
+      appliances.forEach((appliance) => {
+        const opt = document.createElement("option");
+        opt.value = appliance.id;
+        opt.textContent = appliance.name || appliance.id;
+        applianceSelect.appendChild(opt);
+      });
+
+      downloadBtn.disabled = false;
+      emailBtn.disabled = false;
+    } catch (err) {
+      console.error("Failed to load appliances for export:", err);
+      applianceSelect.innerHTML = '<option value="">Could not load appliances</option>';
+      setAlert(exportErrorEl, err.message || "Could not load appliances.");
+    }
+  }
+
+  async function downloadExport() {
+    setAlert(exportErrorEl, "");
+    setAlert(exportSuccessEl, "");
+    try {
+      const brigadeId = select.value;
+      if (!brigadeId) throw new Error("Choose a brigade to export.");
+      const selection = getExportSelection();
+      const token = await user.getIdToken();
+      const params = new URLSearchParams(selection);
+      setExportBusy(true);
+      const { blob, filename } = await fetchBlob(
+        `/api/reports/brigade/${encodeURIComponent(brigadeId)}/export.pdf?${params.toString()}`,
+        { token }
+      );
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 30000);
+      setAlert(exportSuccessEl, "PDF export ready.");
+    } catch (err) {
+      console.error("Failed to download report export:", err);
+      setAlert(exportErrorEl, err.message || "Could not download the PDF.");
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function emailExport() {
+    setAlert(exportErrorEl, "");
+    setAlert(exportSuccessEl, "");
+    try {
+      const brigadeId = select.value;
+      if (!brigadeId) throw new Error("Choose a brigade to export.");
+      const selection = getExportSelection();
+      const token = await user.getIdToken();
+      setExportBusy(true);
+      const data = await fetchJson(
+        `/api/reports/brigade/${encodeURIComponent(brigadeId)}/export/email`,
+        {
+          token,
+          method: "POST",
+          body: selection,
+        }
+      );
+      setAlert(exportSuccessEl, data.message || "PDF export emailed.");
+    } catch (err) {
+      console.error("Failed to email report export:", err);
+      setAlert(exportErrorEl, err.message || "Could not email the PDF.");
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  downloadBtn.addEventListener("click", downloadExport);
+  emailBtn.addEventListener("click", emailExport);
 
   async function loadReportsForBrigade(brigadeId) {
     setAlert(errorEl, "");
@@ -169,12 +400,14 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
       localStorage.setItem("activeBrigadeId", active);
       select.value = active;
 
+      await loadAppliancesForBrigade(active);
       await loadReportsForBrigade(active);
 
       select.addEventListener("change", async (e) => {
         const brigadeId = e.target.value;
         if (!brigadeId) return;
         localStorage.setItem("activeBrigadeId", brigadeId);
+        await loadAppliancesForBrigade(brigadeId);
         await loadReportsForBrigade(brigadeId);
       });
     } catch (err) {

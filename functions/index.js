@@ -9,6 +9,10 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const sharp = require('sharp');
 const Busboy = require('busboy');
+const {
+    buildReportExportFilename,
+    buildReportExportPdf,
+} = require('./reportExportPdf');
 
 // --- Local Emulator Support (Admin SDK) ---
 // When running locally, point the Admin SDK at the emulators so it doesn't require prod credentials
@@ -1196,8 +1200,195 @@ function sanitizeSignatureData(data) {
     return { version: 1, strokes: cleanedStrokes };
 }
 
+function parseExportDate(value, { endOfDay = false } = {}) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    let parsed;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        parsed = new Date(`${raw}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}Z`);
+    } else {
+        parsed = new Date(raw);
+    }
+
+    if (Number.isNaN(parsed.getTime())) return null;
+    if (endOfDay && !/[T ]\d{2}:/.test(raw)) {
+        parsed.setUTCHours(23, 59, 59, 999);
+    }
+    return parsed;
+}
+
+function getExportDateRange(source) {
+    const from = parseExportDate(source && source.from);
+    const to = parseExportDate(source && source.to, { endOfDay: true });
+    if (!from || !to) {
+        const error = new Error('Choose a valid from and to date for the export.');
+        error.status = 400;
+        throw error;
+    }
+    if (from.getTime() > to.getTime()) {
+        const error = new Error('The export from date must be before the to date.');
+        error.status = 400;
+        throw error;
+    }
+    return {
+        from,
+        to,
+    };
+}
+
+function parseReportDateMs(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.getTime();
+}
+
+function getApplianceForExport(brigade, applianceId) {
+    const applianceData = brigade && brigade.data && brigade.data.applianceData;
+    const appliances = applianceData && Array.isArray(applianceData.appliances) ? applianceData.appliances : [];
+    return appliances.find((appliance) => appliance && appliance.id === applianceId) || null;
+}
+
+async function loadReportExportPayload({ brigade, brigadeId, applianceId, range }) {
+    const appliance = getApplianceForExport(brigade, applianceId);
+    if (!appliance) {
+        const error = new Error('Appliance not found.');
+        error.status = 404;
+        throw error;
+    }
+
+    const snapshot = await brigade.ref.collection('reports')
+        .where('date', '>=', range.from.toISOString())
+        .where('date', '<=', range.to.toISOString())
+        .orderBy('date', 'asc')
+        .get();
+    const fromMs = range.from.getTime();
+    const toMs = range.to.getTime();
+    const reports = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...(doc.data() || {}) }))
+        .filter((report) => {
+            const reportMs = parseReportDateMs(report.date);
+            return report.applianceId === applianceId && reportMs != null && reportMs >= fromMs && reportMs <= toMs;
+        })
+        .sort((a, b) => {
+            const aMs = parseReportDateMs(a.date) || 0;
+            const bMs = parseReportDateMs(b.date) || 0;
+            return aMs - bMs;
+        });
+
+    if (reports.length === 0) {
+        const error = new Error('No reports found for that appliance and date range.');
+        error.status = 404;
+        throw error;
+    }
+
+    return {
+        brigadeId,
+        brigadeName: brigade.data && brigade.data.name,
+        applianceId,
+        applianceName: appliance.name,
+        from: range.from,
+        to: range.to,
+        reports,
+    };
+}
+
+function sendExportError(res, error, logMessage, fallbackMessage = 'Failed to export reports.') {
+    const status = Number(error && error.status) || 500;
+    if (status >= 500) console.error(logMessage, error);
+    const message = status >= 500 ? fallbackMessage : (error && error.message ? error.message : fallbackMessage);
+    res.status(status).json({ message });
+}
+
 // --- Report Routes ---
 const reportRouter = express.Router();
+reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String(req.query.applianceId || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.query);
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', String(pdfBuffer.length));
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        sendExportError(res, error, `Error exporting reports for brigade ${req.params.brigadeId}:`);
+    }
+});
+
+reportRouter.post('/brigade/:brigadeId/export/email', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String((req.body && req.body.applianceId) || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+        if (!req.user.email) {
+            return res.status(400).json({ message: 'Your account does not have an email address to send to.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.body || {});
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        await transporter.sendMail({
+            to: req.user.email,
+            from: DEFAULT_FROM_EMAIL,
+            subject: `Report export for ${payload.applianceName}`,
+            text: `Attached is your Flashover report export for ${payload.applianceName}.`,
+            html: `<p>Attached is your Flashover report export for <strong>${payload.applianceName}</strong>.</p>`,
+            attachments: [
+                {
+                    filename,
+                    content: pdfBuffer,
+                    contentType: 'application/pdf',
+                },
+            ],
+        });
+
+        res.status(200).json({ message: `Report export emailed to ${req.user.email}.` });
+    } catch (error) {
+        sendExportError(
+            res,
+            error,
+            `Error emailing report export for brigade ${req.params.brigadeId}:`,
+            'Failed to email report export.'
+        );
+    }
+});
+
 reportRouter.get('/brigade/:brigadeId', async (req, res) => {
     try {
         const { brigadeId } = req.params;

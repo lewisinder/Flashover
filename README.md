@@ -1,77 +1,98 @@
 # Flashover Application
 
-Flashover is a web application for fire brigades to manage:
+Flashover is a Firebase web application for fire brigades to manage:
 
-- Brigades (members, roles, join requests)
-- Appliances (trucks) and their inventory structure (lockers → shelves → items, including container items with sub-items)
-- Inventory checks and reporting
-- Email notifications when new reports are submitted
+- Brigades, members, roles, and join requests
+- Appliances and inventory structure: lockers, shelves, items, container items, and sub-items
+- Appliance checks and report sign-off
+- Report history and email notifications when new reports are submitted
 
 The project is built on Firebase:
 
-- Firebase Hosting serves the frontend (`public/`)
-- Cloud Functions run the backend API and background jobs (`functions/`)
-- Firestore stores application data
-- Cloud Storage stores uploaded images
-- Firebase Auth handles login (email/password + providers like Google/Microsoft)
+- Firebase Hosting serves the frontend from `public/`
+- Cloud Functions run the backend API and email worker from `functions/`
+- Firestore stores users, brigades, appliance setup, reports, and queued email documents
+- Cloud Storage stores uploaded inventory/report images
+- Firebase Auth handles account sign-in; the current UI uses email/password auth
+
+## Deployment
+
+The default Firebase project is `flashoverapplication`.
+
+Production deploys are handled by GitHub Actions:
+
+- Pushing to `master` runs `.github/workflows/firebase-hosting-merge.yml`
+- The workflow installs function dependencies, authenticates with the Firebase service account secret, writes the Firestore email extension env file, and runs:
+
+```bash
+firebase deploy --project flashoverapplication --non-interactive
+```
+
+The production app is served at:
+
+- `https://flashoverapplication.web.app/`
+
+Pull requests create Firebase Hosting preview channels:
+
+- PRs run `.github/workflows/firebase-hosting-pull-request.yml`
+- The workflow uses `FirebaseExtended/action-hosting-deploy@v0`
+- Preview deploys only run for PR branches from this repository, not forks
 
 ## Current Architecture
 
+Firebase Hosting serves static HTML, CSS, JavaScript, and assets from `public/`. Hosting rewrites:
+
+- `/` to `/app.html`
+- `/api/**` to the `api` Cloud Function
+
 The backend is composed of two Cloud Functions in `functions/index.js`.
 
-### 1. The Main API (`api`)
+### 1. Main API (`api`)
 
-This is an [Express.js](https://expressjs.com/) application that serves as the primary REST API for the frontend. It handles all core application logic, including:
+`api` is an Express app exposed as a Firebase HTTPS function. It handles core application logic:
 
--   User authentication and authorization.
--   Brigade management (creating, joining, managing members).
--   Appliance data management.
--   Creating and retrieving reports.
--   Image uploads for reports.
+- User profile creation/loading
+- Brigade creation, joining, leaving, deletion, role management, and member management
+- Appliance setup data
+- Appliance check start/completion status
+- Report creation and retrieval
+- Image upload/delete through Cloud Storage
 
-All API routes are prefixed with `/api` and require a valid Firebase authentication token:
+All API routes are prefixed with `/api` and require a valid Firebase Auth ID token:
 
-- The frontend gets an ID token from Firebase Auth.
-- Requests include `Authorization: Bearer <token>`.
-- The backend verifies the token and uses the verified UID for access control.
+- The frontend gets an ID token from Firebase Auth
+- Requests include `Authorization: Bearer <token>`
+- The backend verifies the token with Firebase Admin and uses the verified UID for access control
 
-### 2. The Email Sender (`processEmail`)
+### 2. Email Worker (`processEmail`)
 
-This is a background function triggered by Firestore events. It sends email using SMTP (via `nodemailer`). This decouples the API from email delivery: the API “queues” an email by writing a document, and `processEmail` delivers it asynchronously.
+`processEmail` is a Firestore-triggered function in region `australia-southeast1`. It watches the `mail/{documentId}` collection and sends queued emails using SMTP via `nodemailer`.
 
-#### How the Email System Works
+The API queues an email by writing a document like this:
 
-The `processEmail` function is designed to be simple and scalable. Here is the workflow:
+```json
+{
+  "to": "recipient@example.com",
+  "message": {
+    "subject": "New Report Submitted",
+    "html": "<p>Email content</p>"
+  }
+}
+```
 
-1.  **Triggering an Email:** To send an email, any part of the application (for example, the main `api` function) must write a new document to the `mail` collection in Firestore.
+After sending, `processEmail` updates the original document with `status: "sent"` or `status: "error"`.
 
-2.  **Required Data Structure:** The document written to the `mail` collection **must** have the following structure:
-
-    ```json
-    {
-      "to": "recipient@example.com",
-      "message": {
-        "subject": "This is the subject!",
-        "html": "<p>This is the HTML content of the email.</p>"
-      }
-    }
-    ```
-
-3.  **Function Execution:** As soon as a new document is created in the `mail` collection, the `processEmail` function is automatically triggered.
-
-4.  **Sending and Status Update:** The function reads the document, sends the email via SMTP, and then updates the original document with a `status` field (`sent` on success or `error` on failure) for easy tracking and debugging.
-
-### SMTP Configuration (Gmail example)
+### SMTP Configuration
 
 `processEmail` reads SMTP settings from Firebase Functions runtime config under `smtp.*`:
 
-- `smtp.host` (e.g. `smtp.gmail.com`)
-- `smtp.port` (e.g. `465` for SSL)
-- `smtp.user` (the sending mailbox email address)
-- `smtp.pass` (an app password / SMTP password)
-- `smtp.from` (display name + email, e.g. `Flashover <hello@theblueprintcollective.co.nz>`)
+- `smtp.host`
+- `smtp.port`
+- `smtp.user`
+- `smtp.pass`
+- `smtp.from`
 
-Set config with the Firebase CLI:
+Example:
 
 ```bash
 firebase functions:config:set \
@@ -82,80 +103,121 @@ firebase functions:config:set \
   smtp.from="Flashover <hello@theblueprintcollective.co.nz>"
 ```
 
-Deploy:
+For Gmail, use an App Password. Regular Gmail passwords will fail.
 
-```bash
-firebase deploy --only functions:processEmail
-```
+## Data Model
 
-Note: For Gmail you must use an App Password (requires 2‑Step Verification). Regular Gmail passwords will fail with “BadCredentials”.
-
-## Data Model (Firestore)
-
-This is the current shape used by the app (high level):
+High-level Firestore shape:
 
 - `users/{uid}`
-  - user profile data (legacy personal appliance data may exist for older accounts)
-  - `users/{uid}/userBrigades/{brigadeId}`: brigades the user belongs to (brigadeName, role)
+  - User profile data
+  - `users/{uid}/userBrigades/{brigadeId}`: brigade memberships visible to the signed-in user
 - `brigades/{brigadeId}`
   - `{ name, stationNumber, region, createdAt, creatorId, applianceData }`
   - `brigades/{brigadeId}/members/{uid}`: `{ role, joinedAt, name }`
   - `brigades/{brigadeId}/joinRequests/{uid}`: `{ status, requestedAt, userName }`
-  - `brigades/{brigadeId}/reports/{reportId}`: report documents (includes checklist results)
+  - `brigades/{brigadeId}/reports/{reportId}`: report summary and checklist data
+  - `brigades/{brigadeId}/reports/{reportId}/meta/signoff`: stored signature/sign-off metadata
 - `mail/{documentId}`
-  - queued emails for `processEmail` to send
+  - Server-created queued emails for `processEmail`
 
-Uploaded images are stored in Cloud Storage under `uploads/` and referenced from report/item data.
+Uploaded images are stored in Cloud Storage under:
+
+- `uploads/{brigadeId}/{fileName}`
+
+## Security Rules
+
+Firestore and Storage rules are tracked in this repo:
+
+- `firestore.rules`
+- `storage.rules`
+
+Client access is intentionally narrow:
+
+- Users can read their own `users/{uid}` document and `userBrigades` membership refs
+- Brigade data, reports, join requests, member changes, email queue writes, and appliance setup writes go through the authenticated backend API
+- Storage reads/writes are denied to clients; uploads and deletes go through Cloud Functions
 
 ## Frontend
 
-The frontend is static HTML/JS served from `public/` (no build step). It uses:
+The frontend is static HTML/JS with no build step. It uses:
 
 - Tailwind via CDN
-- Firebase JS SDK (Auth + Firestore)
-- Fetch calls to `/api/...` for protected operations
+- Firebase JS SDK compat packages
+- Fetch calls to `/api/...` for protected backend operations
 
-Key pages:
+The main UI is the app shell:
 
-- `public/signin.html`, `public/signup.html`: authentication
-- `public/menu.html`: choose active brigade
-- `public/manage-brigades.html`, `public/brigade-management.html`: join/create/manage brigades and members
-- `public/select-appliance.html`, `public/setup.html`: set up appliances and inventory structure
-- `public/select-appliance-for-check.html`, `public/checks.html`: run checks and submit reports
-- `public/reports.html`: view past reports
+- `public/app.html`
+- `public/js/app-shell/app-shell.js`
+- `public/js/app-shell/router.js`
+- `public/js/app-shell/screens/*`
+
+App shell routes include:
+
+- `#/menu`
+- `#/checks`
+- `#/reports`
+- `#/brigades`
+- `#/brigade/:id`
+- `#/account`
+- `#/setup`
+- `#/setup/:applianceId`
+- `#/check/:brigadeId/:applianceId`
+- `#/report/:brigadeId/:reportId`
+
+Some legacy pages still exist and are embedded by the app shell for full workflows:
+
+- `public/checks.html` with `public/js/checks.js`
+- `public/setup.html` with `public/js/setup.js`
+
+Legacy standalone pages also remain for sign-in/sign-up and older navigation flows, including:
+
+- `public/signin.html`
+- `public/signup.html`
+- `public/menu.html`
+- `public/manage-brigades.html`
+- `public/brigade-management.html`
+- `public/select-appliance.html`
+- `public/appliance-checks.html`
 
 ## Local Development
 
 Prerequisites:
 
-- Node.js (Functions target Node 20 per `functions/package.json` / `firebase.json`)
-- Firebase CLI (`npm i -g firebase-tools`)
+- Node.js 20
+- Firebase CLI
 
-Run emulators:
+Install function dependencies:
+
+```bash
+cd functions
+npm ci
+```
+
+Run the Firebase emulator suite from the repo root:
 
 ```bash
 firebase emulators:start
 ```
 
-Many pages contain optional “connect to emulator” logic when running on `localhost`.
+Configured emulator ports:
 
-### Testing the New App Shell Locally
+- Auth: `9099`
+- Functions: `5001`
+- Firestore: `8080`
+- Hosting: `5002`
+- Storage: `9199`
+- Emulator UI: `4000`
 
-The app shell is available at `public/app.html` and uses hash-based routes so it can run without changing Hosting rewrites.
+Open the local app shell at:
 
-1. Start emulators (recommended so Auth/Firestore work locally):
+- `http://localhost:5002/app.html#/menu`
 
-```bash
-firebase emulators:start
-```
-
-2. Open the Hosting emulator URL (usually `http://localhost:5000`) and go to:
-
-- `http://localhost:5000/app.html#/menu`
-
-If you are not signed in, it redirects you to `signin.html`. Sign in, then return to `app.html`.
+When running on `localhost` or `127.0.0.1`, the frontend connects to the Auth and Firestore emulators. The Functions Admin SDK also points at the Auth and Firestore emulators when the Functions emulator is running.
 
 ## Notes
 
-- This repo’s primary runtime is Firebase Hosting + Functions. The top-level `package.json` is not used for production hosting; backend code lives in `functions/`.
-- Security rules (`firestore.rules` / `storage.rules`) are not currently tracked in this repo. You should add and enforce rules so only authorized brigade members can access brigade data and so clients cannot write to `mail` directly in production.
+- Production runtime is Firebase Hosting plus Cloud Functions.
+- The top-level `package.json` is not used for production hosting; backend runtime dependencies live in `functions/package.json`.
+- Keep changes compatible with the app shell and the embedded legacy check/setup flows. `checks.js` and `setup.js` are still loaded inside the shell for those workflows.
