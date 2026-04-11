@@ -51,17 +51,22 @@ async function loadUserBrigades() {
     brigadeSelector.innerHTML = '<option value="">Loading brigades...</option>';
 
     try {
-        const userBrigadesRef = db.collection('users').doc(currentUser.uid).collection('userBrigades');
-        const snapshot = await userBrigadesRef.get();
+        const token = await currentUser.getIdToken();
+        const response = await fetch(`/api/data/${encodeURIComponent(currentUser.uid)}/brigades?t=${Date.now()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const brigades = await response.json().catch(() => []);
+        if (!response.ok) {
+            throw new Error(brigades.message || 'Failed to load brigades.');
+        }
 
-        if (snapshot.empty) {
+        if (!Array.isArray(brigades) || brigades.length === 0) {
             brigadeSelector.innerHTML = '<option value="">No brigades found</option>';
         } else {
             brigadeSelector.innerHTML = ''; // Clear loading message
-            snapshot.forEach(doc => {
-                const brigade = doc.data();
+            brigades.forEach(brigade => {
                 const option = document.createElement('option');
-                option.value = doc.id;
+                option.value = brigade.id;
                 option.textContent = brigade.brigadeName;
                 brigadeSelector.appendChild(option);
             });

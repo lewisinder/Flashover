@@ -119,16 +119,23 @@ async function reserveExistingIdentifier(identifier, ownerType, ownerId) {
             ownerId,
             createdAt: FieldValue.serverTimestamp(),
         });
+        return identifier;
     } catch (error) {
         if (!isAlreadyExistsError(error)) throw error;
+        const existing = await db.collection('identifierRegistry').doc(identifier).get();
+        const data = existing.exists ? existing.data() || {} : {};
+        if (data.ownerType === ownerType && data.ownerId === ownerId) {
+            return identifier;
+        }
+        return null;
     }
 }
 
 async function ensureDocumentIdentifier(ref, data, ownerType, ownerId) {
     const existing = normalizeSixDigitIdentifier(data && data.identifier);
     if (existing) {
-        await reserveExistingIdentifier(existing, ownerType, ownerId);
-        return existing;
+        const reserved = await reserveExistingIdentifier(existing, ownerType, ownerId);
+        if (reserved) return reserved;
     }
 
     const identifier = await reserveUniqueIdentifier(ownerType, ownerId);
@@ -154,21 +161,79 @@ async function ensureBrigadeIdentifier(brigadeId, ref, data) {
     return ensureDocumentIdentifier(brigadeRef, brigadeData || {}, 'brigade', brigadeId);
 }
 
-async function ensureUserBrigadesHaveIdentifiers(userId) {
-    if (!userId) return;
-    const snapshot = await db.collection('users').doc(userId).collection('userBrigades').get();
-    await Promise.all(snapshot.docs.map(async (membershipDoc) => {
-        const data = membershipDoc.data() || {};
-        if (normalizeSixDigitIdentifier(data.brigadeIdentifier)) return;
+async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier) {
+    const data = membershipDoc.data() || {};
+    const brigadeRef = db.collection('brigades').doc(membershipDoc.id);
+    const brigadeDoc = await brigadeRef.get();
+    if (!brigadeDoc.exists) return { id: membershipDoc.id, ...data };
 
-        const brigadeRef = db.collection('brigades').doc(membershipDoc.id);
-        const brigadeDoc = await brigadeRef.get();
-        if (!brigadeDoc.exists) return;
+    const brigadeData = brigadeDoc.data() || {};
+    const brigadeIdentifier = await ensureBrigadeIdentifier(membershipDoc.id, brigadeRef, brigadeData);
+    const updates = {};
+    if (normalizeSixDigitIdentifier(data.brigadeIdentifier) !== brigadeIdentifier) {
+        updates.brigadeIdentifier = brigadeIdentifier;
+    }
+    const expectedName = brigadeData.stationNumber
+        ? `${brigadeData.name || data.brigadeName || 'Brigade'} (${brigadeData.stationNumber})`
+        : (brigadeData.name || data.brigadeName || 'Brigade');
+    if (!data.brigadeName && brigadeData.name) {
+        updates.brigadeName = expectedName;
+    }
+    if (Object.keys(updates).length > 0) {
+        await membershipDoc.ref.set(updates, { merge: true });
+    }
 
-        const brigadeIdentifier = await ensureBrigadeIdentifier(membershipDoc.id, brigadeRef, brigadeDoc.data());
-        await membershipDoc.ref.set({ brigadeIdentifier }, { merge: true });
-    }));
+    const memberRef = brigadeRef.collection('members').doc(userId);
+    const memberDoc = await memberRef.get();
+    if (memberDoc.exists && userIdentifier) {
+        const memberData = memberDoc.data() || {};
+        if (normalizeSixDigitIdentifier(memberData.userIdentifier) !== userIdentifier) {
+            await memberRef.set({ userIdentifier }, { merge: true });
+        }
+    }
+
+    return {
+        id: membershipDoc.id,
+        ...data,
+        ...updates,
+        brigadeIdentifier,
+    };
 }
+
+async function getUserBrigadesWithIdentifiers(userId) {
+    if (!userId) return [];
+    const userIdentifier = await ensureUserIdentifier(userId);
+    const snapshot = await db.collection('users').doc(userId).collection('userBrigades').get();
+    return Promise.all(snapshot.docs.map((membershipDoc) => (
+        ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, userIdentifier)
+    )));
+}
+
+async function ensureUserBrigadesHaveIdentifiers(userId) {
+    await getUserBrigadesWithIdentifiers(userId);
+}
+
+exports.createUserIdentifier = functions.region("australia-southeast1").auth.user().onCreate(async (user) => {
+    if (!user || !user.uid) return null;
+    try {
+        await ensureUserIdentifier(user.uid);
+    } catch (error) {
+        console.error(`Error creating identifier for user ${user.uid}:`, error);
+    }
+    return null;
+});
+
+exports.createBrigadeIdentifier = functions.region("australia-southeast1").firestore
+    .document("brigades/{brigadeId}")
+    .onCreate(async (snap, context) => {
+        const brigadeId = context.params.brigadeId;
+        try {
+            await ensureBrigadeIdentifier(brigadeId, snap.ref, snap.data() || {});
+        } catch (error) {
+            console.error(`Error creating identifier for brigade ${brigadeId}:`, error);
+        }
+        return null;
+    });
 
 // ===================================================================
 // NEW EMAIL TRIGGER FUNCTION
@@ -529,8 +594,24 @@ apiRouter.use((err, req, res, next) => {
 
 // --- User Data Routes ---
 const userRouter = express.Router();
+userRouter.get('/:userId/brigades', async (req, res) => {
+    try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only load your own brigades.' });
+        }
+        const brigades = await getUserBrigadesWithIdentifiers(req.user.uid);
+        return res.json(brigades);
+    } catch (err) {
+        console.error(`Error loading user brigades for ${req.user.uid}:`, err);
+        return res.status(500).json({ message: 'Error loading brigades.' });
+    }
+});
+
 userRouter.get('/:userId', async (req, res) => {
     try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only load your own profile.' });
+        }
         const userDocRef = db.collection('users').doc(req.user.uid);
         const doc = await userDocRef.get();
         const identifier = await ensureDocumentIdentifier(
@@ -553,6 +634,9 @@ userRouter.get('/:userId', async (req, res) => {
 });
 userRouter.post('/:userId', async (req, res) => {
     try {
+        if (req.params.userId !== req.user.uid) {
+            return res.status(403).json({ message: 'Forbidden: You can only save your own profile.' });
+        }
         const userDocRef = db.collection('users').doc(req.user.uid);
         const doc = await userDocRef.get();
         const identifier = await ensureDocumentIdentifier(

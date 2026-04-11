@@ -260,22 +260,27 @@
             showLoading();
 
             try {
-                const userBrigadesRef = db.collection('users').doc(currentUser.uid).collection('userBrigades');
-                const snapshot = await userBrigadesRef.get();
+                const token = await currentUser.getIdToken();
+                const response = await fetch(`/api/data/${encodeURIComponent(currentUser.uid)}/brigades?t=${Date.now()}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const brigades = await response.json().catch(() => []);
+                if (!response.ok) {
+                    throw new Error(brigades.message || 'Failed to load brigades.');
+                }
 
-                if (snapshot.empty) {
+                if (!Array.isArray(brigades) || brigades.length === 0) {
                     brigadesListDiv.innerHTML = '<p>You are not a member of any brigades yet.</p>';
                 } else {
                     brigadesListDiv.innerHTML = ''; // Clear loading message
-                    snapshot.forEach(doc => {
-                        const brigade = doc.data();
+                    brigades.forEach(brigade => {
                         const isAdmin = brigade.role === 'Admin';
                         const brigadeElement = document.createElement('div');
                         brigadeElement.className = 'bg-gray-100 p-4 rounded-lg flex justify-between items-center';
                         
                         let adminDeleteButton = '';
                         if (isAdmin) {
-                            adminDeleteButton = `<button class="ml-2 bg-red-action-2 p-2 rounded-full" onclick="deleteBrigade('${doc.id}', '${brigade.brigadeName}')">
+                            adminDeleteButton = `<button class="ml-2 bg-red-action-2 p-2 rounded-full" onclick="deleteBrigade('${brigade.id}', '${brigade.brigadeName}')">
                                                     <img src="/design_assets/No Icon.png" alt="Delete Brigade" class="h-6 w-6">
                                                 </button>`;
                         }
@@ -287,8 +292,8 @@
                                 ${brigade.brigadeIdentifier ? `<p class="text-sm text-gray-500">Brigade ID: ${brigade.brigadeIdentifier}</p>` : ''}
                             </div>
                             <div class="flex items-center">
-                                <button class="bg-blue text-white font-semibold py-2 px-4 rounded-lg" onclick="manageBrigade('${doc.id}')">Manage</button>
-                                <button class="ml-2 bg-red-action-1 text-white font-semibold py-2 px-4 rounded-lg" onclick="leaveBrigade('${doc.id}', '${brigade.brigadeName}')">Leave</button>
+                                <button class="bg-blue text-white font-semibold py-2 px-4 rounded-lg" onclick="manageBrigade('${brigade.id}')">Manage</button>
+                                <button class="ml-2 bg-red-action-1 text-white font-semibold py-2 px-4 rounded-lg" onclick="leaveBrigade('${brigade.id}', '${brigade.brigadeName}')">Leave</button>
                                 ${adminDeleteButton}
                             </div>
                         `;
