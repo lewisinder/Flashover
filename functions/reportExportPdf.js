@@ -7,10 +7,9 @@ const MARGIN = 28;
 const TABLE_TOP = 104;
 const TABLE_BOTTOM = 430;
 const FOOTNOTE_TOP = 448;
-const USER_LOG_TOP = 538;
 const ROW_HEIGHT = 17;
 const SECTION_HEIGHT = 18;
-const HEADER_HEIGHT = 60;
+const HEADER_HEIGHT = 72;
 const ITEM_COL_WIDTH = 250;
 
 function safeText(value, fallback = '') {
@@ -280,26 +279,33 @@ function drawCross(doc, x, y, size) {
         .restore();
 }
 
-function drawIssueRef(doc, x, y, ref) {
+function drawIssueMark(doc, x, y, size, ref) {
     doc.save()
         .fillColor('#111111')
         .font('Helvetica-Bold')
-        .fontSize(7)
-        .text(`!${ref}`, x, y, { width: 18, align: 'right' })
+        .fontSize(size + 5)
+        .text('!', x, y - 3, { width: size, align: 'center' })
+        .fontSize(6)
+        .text(String(ref), x + size - 1, y - 1, { width: 10, align: 'left' })
         .restore();
 }
 
 function drawPageHeader(doc, payload, page, pageIndex, totalPages) {
     const pageWidth = doc.page.width;
-    const reportDates = page.reportChunk.map((report) => formatDate(report.date)).filter(Boolean);
-    const dateLine = reportDates.length > 0 ? reportDates.join(', ') : 'No report dates';
+    const totalReports = Array.isArray(payload.reports) ? payload.reports.length : page.reportChunk.length;
+    const groupStart = page.chunkIndex * MAX_REPORT_COLUMNS + 1;
+    const groupEnd = Math.min(groupStart + page.reportChunk.length - 1, totalReports);
+    const groupLabel = totalReports > 0
+        ? `Reports ${groupStart}-${groupEnd} of ${totalReports}`
+        : 'Reports';
 
     doc.fillColor('#111111').font('Helvetica-Bold').fontSize(15)
         .text('Appliance Check Export', MARGIN, 24, { width: pageWidth - MARGIN * 2 });
     doc.fillColor('#222222').font('Helvetica').fontSize(9)
         .text(`Appliance: ${safeText(payload.applianceName, 'Appliance')}`, MARGIN, 46)
-        .text(`Range: ${formatDate(payload.from)} to ${formatDate(payload.to)}`, MARGIN, 59)
-        .text(`Report dates: ${dateLine}`, MARGIN, 72, { width: pageWidth - MARGIN * 2 - 140 });
+        .text(`Range: ${formatDate(payload.from)} to ${formatDate(payload.to)}`, MARGIN, 59);
+    doc.fillColor('#111111').font('Helvetica-Bold').fontSize(10)
+        .text(groupLabel, MARGIN, 80, { width: pageWidth - MARGIN * 2 - 180 });
     doc.fillColor('#444444').fontSize(8)
         .text(`Generated: ${formatDateTime(new Date())}`, pageWidth - MARGIN - 170, 48, { width: 170, align: 'right' })
         .text(`Page ${pageIndex + 1} of ${totalPages}`, pageWidth - MARGIN - 170, 62, { width: 170, align: 'right' });
@@ -312,27 +318,35 @@ function drawTableHeader(doc, page, metrics) {
         .fill('#eeeeee')
         .restore();
 
-    doc.strokeColor('#777777').lineWidth(0.8).rect(tableLeft, TABLE_TOP, tableWidth, HEADER_HEIGHT).stroke();
-    doc.fillColor('#111111').font('Helvetica-Bold').fontSize(9)
-        .text('Item', tableLeft + 6, TABLE_TOP + 24, { width: ITEM_COL_WIDTH - 12 });
+    doc.strokeColor('#111111').lineWidth(1.1).rect(tableLeft, TABLE_TOP, tableWidth, HEADER_HEIGHT).stroke();
 
     page.reportChunk.forEach((report, index) => {
         const x = tableLeft + ITEM_COL_WIDTH + index * dateColWidth;
-        doc.strokeColor('#777777').lineWidth(0.5)
+        const checkedBy = reportUserName(report);
+        doc.strokeColor('#666666').lineWidth(0.6)
             .moveTo(x, TABLE_TOP)
             .lineTo(x, TABLE_TOP + HEADER_HEIGHT)
             .stroke();
         doc.save()
-            .translate(x + dateColWidth / 2, TABLE_TOP + HEADER_HEIGHT - 5)
+            .translate(x + dateColWidth / 2, TABLE_TOP + HEADER_HEIGHT - 16)
             .rotate(-90)
             .fillColor('#111111')
             .font('Helvetica-Bold')
             .fontSize(7)
             .text(formatDate(report.date, { shortYear: true }), 0, -dateColWidth / 2 + 3, {
-                width: HEADER_HEIGHT - 10,
+                width: HEADER_HEIGHT - 22,
                 align: 'center',
             })
             .restore();
+        doc.fillColor('#222222')
+            .font('Helvetica')
+            .fontSize(5.6)
+            .text(checkedBy, x + 3, TABLE_TOP + HEADER_HEIGHT - 13, {
+                width: dateColWidth - 6,
+                height: 9,
+                align: 'center',
+                ellipsis: true,
+            });
     });
 }
 
@@ -340,7 +354,7 @@ function drawSection(doc, y, text, metrics) {
     const { tableLeft, tableWidth } = metrics;
     doc.save()
         .rect(tableLeft, y, tableWidth, SECTION_HEIGHT)
-        .fill('#666666')
+        .fill('#747474')
         .restore();
     doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9)
         .text(text, tableLeft + 6, y + 5, { width: tableWidth - 12 });
@@ -375,18 +389,16 @@ function drawRow(doc, y, row, page, metrics, refs, rowIndex) {
         if (!cell) return;
 
         const status = safeText(cell.status).toLowerCase();
-        const markSize = 10;
+        const markSize = 12;
         const markX = x + (dateColWidth - markSize) / 2;
-        const markY = y + 3.4;
-        if (status === 'present') {
+        const markY = y + 2.5;
+        const noteRef = refs.get(`${row.key}:${report.id}`);
+        if (noteRef) {
+            drawIssueMark(doc, markX, markY, markSize, noteRef);
+        } else if (status === 'present') {
             drawTick(doc, markX, markY, markSize);
         } else if (status === 'missing') {
             drawCross(doc, markX, markY, markSize);
-        }
-
-        const noteRef = refs.get(`${row.key}:${report.id}`);
-        if (noteRef) {
-            drawIssueRef(doc, x + dateColWidth - 21, y + 5, noteRef);
         }
     });
 }
@@ -403,7 +415,7 @@ function drawFootnotes(doc, notes, metrics) {
     }
 
     let y = FOOTNOTE_TOP + 14;
-    const bottom = USER_LOG_TOP - 10;
+    const bottom = doc.page.height - MARGIN;
     notes.forEach((note, index) => {
         if (y > bottom - 12) {
             if (index < notes.length) {
@@ -425,33 +437,6 @@ function drawFootnotes(doc, notes, metrics) {
 
 function reportUserName(report) {
     return safeText(report && (report.signedName || report.username || report.creatorName), 'Unknown');
-}
-
-function drawUserLog(doc, payload, page, metrics) {
-    const { tableLeft, tableWidth } = metrics;
-    const checkedBy = page.reportChunk
-        .map((report) => `${formatDate(report.date, { shortYear: true })}: ${reportUserName(report)}`)
-        .join(' | ');
-    const exportedBy = safeText(payload.exportedBy, 'Unknown');
-
-    doc.strokeColor('#999999')
-        .lineWidth(0.4)
-        .moveTo(tableLeft, USER_LOG_TOP - 7)
-        .lineTo(tableLeft + tableWidth, USER_LOG_TOP - 7)
-        .stroke();
-    doc.fillColor('#111111').font('Helvetica-Bold').fontSize(8)
-        .text('User log', tableLeft, USER_LOG_TOP, { width: tableWidth });
-    doc.fillColor('#222222').font('Helvetica').fontSize(7.4)
-        .text(`Checked by: ${checkedBy || 'No users recorded'}`, tableLeft, USER_LOG_TOP + 12, {
-            width: tableWidth,
-            height: 11,
-            ellipsis: true,
-        })
-        .text(`Exported by: ${exportedBy}`, tableLeft, USER_LOG_TOP + 24, {
-            width: tableWidth,
-            height: 11,
-            ellipsis: true,
-        });
 }
 
 function drawEmptyPage(doc, metrics) {
@@ -497,7 +482,6 @@ function drawExport(doc, payload) {
         });
 
         drawFootnotes(doc, notes, metrics);
-        drawUserLog(doc, payload, page, metrics);
     });
 }
 

@@ -23,29 +23,6 @@ async function fetchJson(url, { token, method, body } = {}) {
   return data;
 }
 
-async function fetchBlob(url, { token } = {}) {
-  const res = await fetch(url, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || `Request failed (${res.status})`);
-  }
-
-  return {
-    blob: await res.blob(),
-    filename: getDownloadFilename(res.headers.get("Content-Disposition")),
-  };
-}
-
-function getDownloadFilename(disposition) {
-  const match = String(disposition || "").match(/filename="([^"]+)"/i);
-  return match ? match[1] : "report-export.pdf";
-}
-
 function toDateInputValue(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -152,10 +129,12 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
   const exportActions = el("div", "fs-actions");
   const downloadBtn = el("button", "fs-btn fs-btn-primary");
   downloadBtn.type = "button";
-  downloadBtn.textContent = "Download PDF";
+  const downloadBtnLabel = "Download PDF";
+  downloadBtn.textContent = downloadBtnLabel;
   const emailBtn = el("button", "fs-btn fs-btn-secondary");
   emailBtn.type = "button";
-  emailBtn.textContent = "Email PDF";
+  const emailBtnLabel = "Email PDF";
+  emailBtn.textContent = emailBtnLabel;
   exportActions.appendChild(downloadBtn);
   exportActions.appendChild(emailBtn);
 
@@ -199,12 +178,24 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     el.style.display = message ? "block" : "none";
   }
 
-  function setExportBusy(isBusy) {
+  function setButtonLoading(button, label, isLoading) {
+    if (isLoading) {
+      button.setAttribute("aria-busy", "true");
+      button.innerHTML = `<span class="fs-btn-spinner" aria-hidden="true"></span><span>${label}</span>`;
+      return;
+    }
+    button.removeAttribute("aria-busy");
+    button.textContent = label;
+  }
+
+  function setExportBusy(isBusy, activeAction = "") {
     downloadBtn.disabled = isBusy;
     emailBtn.disabled = isBusy;
     applianceSelect.disabled = isBusy;
     fromInput.disabled = isBusy;
     toInput.disabled = isBusy;
+    setButtonLoading(downloadBtn, activeAction === "download" ? "Preparing PDF..." : downloadBtnLabel, isBusy && activeAction === "download");
+    setButtonLoading(emailBtn, activeAction === "email" ? "Emailing PDF..." : emailBtnLabel, isBusy && activeAction === "email");
   }
 
   function getExportSelection() {
@@ -261,22 +252,20 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
       const brigadeId = select.value;
       if (!brigadeId) throw new Error("Choose a brigade to export.");
       const selection = getExportSelection();
+      setExportBusy(true, "download");
       const token = await user.getIdToken();
-      const params = new URLSearchParams(selection);
-      setExportBusy(true);
-      const { blob, filename } = await fetchBlob(
-        `/api/reports/brigade/${encodeURIComponent(brigadeId)}/export.pdf?${params.toString()}`,
-        { token }
+      const data = await fetchJson(
+        `/api/reports/brigade/${encodeURIComponent(brigadeId)}/export/download-link`,
+        {
+          token,
+          method: "POST",
+          body: selection,
+        }
       );
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(href), 30000);
-      setAlert(exportSuccessEl, "PDF export ready.");
+      if (!data || !data.url) throw new Error("Could not prepare the PDF download.");
+      const href = data.url.startsWith("/") ? data.url : new URL(data.url, window.location.origin).toString();
+      window.location.assign(href);
+      setAlert(exportSuccessEl, "PDF export starting.");
     } catch (err) {
       console.error("Failed to download report export:", err);
       setAlert(exportErrorEl, err.message || "Could not download the PDF.");
@@ -293,7 +282,7 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
       if (!brigadeId) throw new Error("Choose a brigade to export.");
       const selection = getExportSelection();
       const token = await user.getIdToken();
-      setExportBusy(true);
+      setExportBusy(true, "email");
       const data = await fetchJson(
         `/api/reports/brigade/${encodeURIComponent(brigadeId)}/export/email`,
         {

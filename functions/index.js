@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const os = require('os');
 const express = require('express');
@@ -46,6 +47,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.nz";
+const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -1301,6 +1303,32 @@ function sendExportError(res, error, logMessage, fallbackMessage = 'Failed to ex
     res.status(status).json({ message });
 }
 
+function reportExportDownloadPath(token) {
+    return `/api/report-export-downloads/${encodeURIComponent(token)}.pdf`;
+}
+
+function pdfContentDisposition(filename) {
+    const fallback = String(filename || 'report-export.pdf').replace(/["\\\r\n]/g, '_');
+    return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fallback)}`;
+}
+
+function setPdfDownloadHeaders(res, filename, contentLength) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', pdfContentDisposition(filename));
+    res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (contentLength != null) {
+        res.setHeader('Content-Length', String(contentLength));
+    }
+}
+
+function timestampToMillis(value) {
+    if (!value) return null;
+    if (typeof value.toMillis === 'function') return value.toMillis();
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
 // --- Report Routes ---
 const reportRouter = express.Router();
 reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
@@ -1327,12 +1355,58 @@ reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
         const pdfBuffer = await buildReportExportPdf(payload);
         const filename = buildReportExportFilename(payload);
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', String(pdfBuffer.length));
+        setPdfDownloadHeaders(res, filename, pdfBuffer.length);
         res.status(200).send(pdfBuffer);
     } catch (error) {
         sendExportError(res, error, `Error exporting reports for brigade ${req.params.brigadeId}:`);
+    }
+});
+
+reportRouter.post('/brigade/:brigadeId/export/download-link', async (req, res) => {
+    try {
+        const { brigadeId } = req.params;
+        const applianceId = String((req.body && req.body.applianceId) || '').trim();
+        if (!applianceId) {
+            return res.status(400).json({ message: 'Choose an appliance to export.' });
+        }
+
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const range = getExportDateRange(req.body || {});
+        await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAtDate = new Date(Date.now() + REPORT_EXPORT_DOWNLOAD_TTL_MS);
+        await db.collection('reportExportDownloads').doc(token).set({
+            uid: req.user.uid,
+            brigadeId,
+            applianceId,
+            from: range.from.toISOString(),
+            to: range.to.toISOString(),
+            exportedBy: req.user.name || req.user.email || 'Unknown',
+            createdAt: FieldValue.serverTimestamp(),
+            expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
+        });
+
+        res.status(201).json({
+            url: reportExportDownloadPath(token),
+            expiresAt: expiresAtDate.toISOString(),
+        });
+    } catch (error) {
+        sendExportError(
+            res,
+            error,
+            `Error creating report export download link for brigade ${req.params.brigadeId}:`,
+            'Failed to prepare report export download.'
+        );
     }
 });
 
@@ -1716,5 +1790,59 @@ reportRouter.post('/', async (req, res) => {
 apiRouter.use('/reports', reportRouter);
 
 // --- Final App Setup ---
+app.get('/api/report-export-downloads/:token.pdf', async (req, res) => {
+    const token = String(req.params.token || '').trim();
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+        return res.status(404).json({ message: 'Report export download link not found.' });
+    }
+
+    try {
+        const tokenRef = db.collection('reportExportDownloads').doc(token);
+        const tokenDoc = await tokenRef.get();
+        if (!tokenDoc.exists) {
+            return res.status(404).json({ message: 'Report export download link not found.' });
+        }
+
+        const tokenData = tokenDoc.data() || {};
+        const expiresAtMs = timestampToMillis(tokenData.expiresAt);
+        if (!expiresAtMs || expiresAtMs <= Date.now()) {
+            return res.status(404).json({ message: 'Report export download link has expired.' });
+        }
+
+        const brigadeId = String(tokenData.brigadeId || '').trim();
+        const applianceId = String(tokenData.applianceId || '').trim();
+        const range = {
+            from: parseExportDate(tokenData.from),
+            to: parseExportDate(tokenData.to),
+        };
+        if (!brigadeId || !applianceId || !range.from || !range.to) {
+            return res.status(404).json({ message: 'Report export download link is invalid.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Report export download link not found.' });
+        }
+
+        const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
+        payload.exportedBy = tokenData.exportedBy || 'Unknown';
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        setPdfDownloadHeaders(res, filename, pdfBuffer.length);
+        await tokenRef.set({ lastDownloadedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return res.status(200).send(pdfBuffer);
+    } catch (error) {
+        const status = Number(error && error.status) || 500;
+        if (status >= 500) {
+            console.error(`Error serving report export download token ${token}:`, error);
+        }
+        const message = status >= 500
+            ? 'Failed to download report export.'
+            : (error && error.message ? error.message : 'Report export download link is no longer available.');
+        return res.status(status).json({ message });
+    }
+});
+
 app.use('/api', apiRouter);
 exports.api = functions.https.onRequest(app);
