@@ -98,19 +98,22 @@ async function fetchUserProfile(user) {
   return res.json();
 }
 
-async function saveUserProfile(user, data) {
+async function acceptTerms(user) {
   const token = await user.getIdToken();
-  const res = await fetch(`/api/data/${user.uid}`, {
+  const res = await fetch("/api/users/me/terms", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      version: TERMS_VERSION,
+      blurb: TERMS_BLURB,
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const message = body.message || `Failed to save profile (${res.status})`;
+    const message = body.message || `Failed to save terms (${res.status})`;
     throw new Error(message);
   }
   return res.json();
@@ -197,17 +200,7 @@ function renderTermsGate({ user, userData, loadError, onAccepted }) {
     setError("");
 
     try {
-      const latestData = userData || (await fetchUserProfile(user)) || {};
-      const { serverTime, ...safeData } = latestData;
-      const updated = {
-        ...safeData,
-        termsAcceptance: {
-          version: TERMS_VERSION,
-          acceptedAt: new Date().toISOString(),
-          blurb: TERMS_BLURB,
-        },
-      };
-      await saveUserProfile(user, updated);
+      await acceptTerms(user);
       onAccepted();
     } catch (err) {
       setError(err?.message || "Unable to save your acceptance. Please try again.");

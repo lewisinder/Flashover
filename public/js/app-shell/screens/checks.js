@@ -18,7 +18,11 @@ async function fetchJson(url, { token, method, body } = {}) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.message || `Request failed (${res.status})`);
+    const err = new Error(data.message || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.code = data.code;
+    err.data = data;
+    throw err;
   }
   return data;
 }
@@ -27,6 +31,19 @@ function clearCheckSession() {
   sessionStorage.removeItem("checkInProgress");
   sessionStorage.removeItem("checkResults");
   sessionStorage.removeItem("currentCheckState");
+}
+
+function appendRowText(parent, titleText, metaText) {
+  const title = el("div", "fs-row-title");
+  title.textContent = titleText || "";
+  const meta = el("div", "fs-row-meta");
+  meta.textContent = metaText || "";
+  parent.appendChild(title);
+  parent.appendChild(meta);
+}
+
+function lockOwnerText(lock) {
+  return lock?.user || lock?.name || lock?.email || "another member";
 }
 
 export async function renderChecks({ root, auth, db, showLoading, hideLoading }) {
@@ -191,13 +208,13 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
         left.style.gap = "12px";
 
         const bubble = el("div", "fs-icon-bubble");
-        bubble.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="" />`;
+        const truckIcon = document.createElement("img");
+        truckIcon.src = "/design_assets/Truck Icon.png";
+        truckIcon.alt = "";
+        bubble.appendChild(truckIcon);
 
         const text = el("div");
-        text.innerHTML = `
-          <div class="fs-row-title">${appliance.name}</div>
-          <div class="fs-row-meta">Tap to start</div>
-        `;
+        appendRowText(text, appliance.name || "Unnamed appliance", "Tap to start");
 
         left.appendChild(bubble);
         left.appendChild(text);
@@ -229,16 +246,16 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               window.location.hash = `#/check/${encodeURIComponent(brigadeId)}/${encodeURIComponent(appliance.id)}`;
             };
 
-            const startCheck = async () => {
+            const startCheck = async ({ force = false } = {}) => {
               await fetchJson(
                 `/api/brigades/${encodeURIComponent(brigadeId)}/appliances/${encodeURIComponent(appliance.id)}/start-check`,
-                { token, method: "POST" }
+                { token, method: "POST", body: force ? { force: true } : undefined }
               );
             };
 
-            if (status?.inProgress) {
+            const showLockModal = (lock) => {
               hideLoading?.();
-              modalText.textContent = `A check for this appliance was already started by ${status.user}. Would you like to resume or start a new check?`;
+              modalText.textContent = `A check for this appliance was already started by ${lockOwnerText(lock)}. Would you like to resume or start a new check?`;
               modalOverlay.classList.remove("hidden");
 
               resumeBtn.onclick = () => {
@@ -250,14 +267,37 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               startNewBtn.onclick = async () => {
                 modalOverlay.classList.add("hidden");
                 showLoading?.();
-                await startCheck();
-                clearCheckSession();
-                openCheckForm();
+                try {
+                  await startCheck({ force: true });
+                  clearCheckSession();
+                  openCheckForm();
+                } catch (err) {
+                  if (err.status === 409 || err.code === "CHECK_LOCKED") {
+                    showLockModal(err.data?.lock || err.data?.checkStatus || err.data);
+                    return;
+                  }
+                  console.error("Error starting new check:", err);
+                  setAlert(errorEl, err.message);
+                } finally {
+                  hideLoading?.();
+                }
               };
+            };
+
+            if (status?.inProgress) {
+              showLockModal(status);
               return;
             }
 
-            await startCheck();
+            try {
+              await startCheck();
+            } catch (err) {
+              if (err.status === 409 || err.code === "CHECK_LOCKED") {
+                showLockModal(err.data?.lock || err.data?.checkStatus || err.data);
+                return;
+              }
+              throw err;
+            }
             openCheckForm();
           } catch (err) {
             console.error("Error starting check:", err);

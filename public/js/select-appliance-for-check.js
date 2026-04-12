@@ -66,7 +66,15 @@ function renderApplianceList() {
         truckData.appliances.forEach(appliance => {
             const div = document.createElement('div');
             div.className = 'appliance-list-item';
-            div.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="Truck" class="h-12 w-12 mr-4"><h2 class="text-xl font-bold">${appliance.name}</h2>`;
+            const icon = document.createElement('img');
+            icon.src = '/design_assets/Truck Icon.png';
+            icon.alt = 'Truck';
+            icon.className = 'h-12 w-12 mr-4';
+            const title = document.createElement('h2');
+            title.className = 'text-xl font-bold';
+            title.textContent = appliance.name || 'Appliance';
+            div.appendChild(icon);
+            div.appendChild(title);
             div.addEventListener('click', () => handleApplianceSelection(appliance));
             applianceList.appendChild(div);
         });
@@ -101,10 +109,18 @@ async function handleApplianceSelection(appliance) {
             startNewBtn.onclick = async () => {
                 showLoading();
                 // Force start a new check, overwriting the old one
-                await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
+                const startResponse = await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ force: true })
                 });
+                if (!startResponse.ok) {
+                    const body = await startResponse.json().catch(() => ({}));
+                    throw new Error(body.message || `HTTP ${startResponse.status}`);
+                }
                 // Clear local session storage to ensure a fresh start
                 sessionStorage.removeItem('checkInProgress');
                 sessionStorage.removeItem('checkResults');
@@ -116,10 +132,14 @@ async function handleApplianceSelection(appliance) {
 
         } else {
             // No check in progress, so start a new one
-            await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
+            const startResponse = await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+            if (!startResponse.ok) {
+                const body = await startResponse.json().catch(() => ({}));
+                throw new Error(body.message || `HTTP ${startResponse.status}`);
+            }
             localStorage.setItem('selectedApplianceId', appliance.id);
             localStorage.setItem('selectedBrigadeId', activeBrigadeId);
             window.location.href = 'checks.html';
