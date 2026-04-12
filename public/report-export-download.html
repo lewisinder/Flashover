@@ -91,6 +91,23 @@
       color: #991b1b;
     }
 
+    .status {
+      margin-top: 14px;
+      margin-bottom: 0;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .status.error {
+      color: #991b1b;
+    }
+
+    a[aria-disabled="true"],
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
     [hidden] {
       display: none !important;
     }
@@ -99,25 +116,32 @@
 <body>
   <main>
     <h1>Report PDF ready</h1>
-    <p id="intro">Open the PDF in this tab. If it opens in your browser, use Share or Save to Files.</p>
+    <p id="intro">Download the PDF from here. On phones, Share or Save PDF usually gives the best save-to-device options.</p>
     <p id="error" class="error" hidden>This export link is invalid or expired. Return to Flashover and create a new PDF export.</p>
 
     <div class="actions">
-      <a id="open-pdf" class="primary" href="#" rel="noopener">Open PDF</a>
+      <button id="download-pdf" class="primary" type="button">Download PDF</button>
+      <button id="share-pdf" class="secondary" type="button" hidden>Share or Save PDF</button>
+      <a id="open-pdf" class="secondary" href="#" target="_blank" rel="noopener">Open PDF in new tab</a>
       <a class="secondary" href="/app.html#/reports">Back to Flashover</a>
       <a class="secondary" href="/app.html#/reports">Email PDF instead</a>
     </div>
 
-    <p class="hint">Mobile browsers may show the PDF before saving it. The original Flashover tab remains open.</p>
+    <p id="status" class="status" aria-live="polite"></p>
+    <p class="hint">If your browser still previews the PDF, return to this page and use Share or Save PDF.</p>
   </main>
 
   <script>
     (function () {
       const params = new URLSearchParams(window.location.search);
       const rawUrl = params.get("url") || "";
+      const downloadButton = document.getElementById("download-pdf");
+      const shareButton = document.getElementById("share-pdf");
       const openLink = document.getElementById("open-pdf");
       const error = document.getElementById("error");
       const intro = document.getElementById("intro");
+      const status = document.getElementById("status");
+      let cachedPdf = null;
 
       let pdfPath = "";
       try {
@@ -133,6 +157,8 @@
       }
 
       if (!pdfPath) {
+        downloadButton.disabled = true;
+        shareButton.hidden = true;
         openLink.setAttribute("aria-disabled", "true");
         openLink.removeAttribute("href");
         openLink.className = "secondary";
@@ -142,6 +168,112 @@
       }
 
       openLink.href = pdfPath;
+      openLink.download = "flashover-report-export.pdf";
+      if (navigator.share && navigator.canShare && window.File) {
+        try {
+          const testFile = new File([""], "flashover-report-export.pdf", { type: "application/pdf" });
+          shareButton.hidden = !navigator.canShare({ files: [testFile] });
+        } catch (err) {
+          shareButton.hidden = true;
+        }
+      }
+
+      function setStatus(message, isError) {
+        status.textContent = message || "";
+        status.classList.toggle("error", !!isError);
+      }
+
+      function setBusy(button, label, isBusy) {
+        button.disabled = isBusy;
+        button.textContent = isBusy ? "Preparing..." : label;
+      }
+
+      function filenameFromDisposition(disposition) {
+        if (!disposition) return "";
+        const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match) {
+          try {
+            return decodeURIComponent(utf8Match[1].trim());
+          } catch (err) {
+            return "";
+          }
+        }
+        const fallbackMatch = disposition.match(/filename="([^"]+)"/i);
+        return fallbackMatch ? fallbackMatch[1].trim() : "";
+      }
+
+      async function errorFromResponse(response) {
+        const data = await response.clone().json().catch(() => null);
+        if (data && data.message) return data.message;
+        const text = await response.text().catch(() => "");
+        return text || `PDF export failed (${response.status}).`;
+      }
+
+      async function fetchPdf() {
+        if (cachedPdf) return cachedPdf;
+        const response = await fetch(pdfPath, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(await errorFromResponse(response));
+        }
+
+        const blob = await response.blob();
+        const filename = filenameFromDisposition(response.headers.get("Content-Disposition")) || "flashover-report-export.pdf";
+        cachedPdf = {
+          blob,
+          filename,
+          file: window.File ? new File([blob], filename, { type: "application/pdf" }) : null,
+        };
+        return cachedPdf;
+      }
+
+      downloadButton.addEventListener("click", async () => {
+        setStatus("");
+        setBusy(downloadButton, "Download PDF", true);
+        try {
+          const pdf = await fetchPdf();
+          const objectUrl = URL.createObjectURL(pdf.blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = pdf.filename;
+          link.rel = "noopener";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+          setStatus("Download started. If your phone previews the PDF instead, use Share or Save PDF.");
+        } catch (err) {
+          setStatus(err.message || "Could not download the PDF.", true);
+        } finally {
+          setBusy(downloadButton, "Download PDF", false);
+        }
+      });
+
+      shareButton.addEventListener("click", async () => {
+        setStatus("");
+        setBusy(shareButton, "Share or Save PDF", true);
+        try {
+          const pdf = await fetchPdf();
+          if (!pdf.file || !navigator.canShare || !navigator.canShare({ files: [pdf.file] })) {
+            throw new Error("This browser cannot share PDF files. Try Download PDF or Email PDF instead.");
+          }
+          await navigator.share({
+            files: [pdf.file],
+            title: "Flashover report PDF",
+          });
+          setStatus("Share options opened.");
+        } catch (err) {
+          if (err && err.name === "AbortError") {
+            setStatus("");
+          } else {
+            setStatus(err.message || "Could not share the PDF.", true);
+          }
+        } finally {
+          setBusy(shareButton, "Share or Save PDF", false);
+        }
+      });
     })();
   </script>
 </body>
