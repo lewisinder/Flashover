@@ -122,7 +122,6 @@
     <div class="actions">
       <button id="download-pdf" class="primary" type="button">Download PDF</button>
       <button id="share-pdf" class="secondary" type="button" hidden>Share or Save PDF</button>
-      <a id="open-pdf" class="secondary" href="#" target="_blank" rel="noopener">Open PDF in new tab</a>
       <a class="secondary" href="/app.html#/reports">Back to Flashover</a>
       <a class="secondary" href="/app.html#/reports">Email PDF instead</a>
     </div>
@@ -137,7 +136,6 @@
       const rawUrl = params.get("url") || "";
       const downloadButton = document.getElementById("download-pdf");
       const shareButton = document.getElementById("share-pdf");
-      const openLink = document.getElementById("open-pdf");
       const error = document.getElementById("error");
       const intro = document.getElementById("intro");
       const status = document.getElementById("status");
@@ -159,16 +157,11 @@
       if (!pdfPath) {
         downloadButton.disabled = true;
         shareButton.hidden = true;
-        openLink.setAttribute("aria-disabled", "true");
-        openLink.removeAttribute("href");
-        openLink.className = "secondary";
         intro.hidden = true;
         error.hidden = false;
         return;
       }
 
-      openLink.href = pdfPath;
-      openLink.download = "flashover-report-export.pdf";
       if (navigator.share && navigator.canShare && window.File) {
         try {
           const testFile = new File([""], "flashover-report-export.pdf", { type: "application/pdf" });
