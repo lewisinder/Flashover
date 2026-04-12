@@ -46,6 +46,12 @@ function dateInputToIso(value, { endOfDay = false } = {}) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+function buildReportExportHandoffUrl(pdfUrl) {
+  const url = new URL("/report-export-download.html", window.location.origin);
+  url.searchParams.set("url", pdfUrl.startsWith("/") ? pdfUrl : new URL(pdfUrl, window.location.origin).pathname);
+  return url.toString();
+}
+
 export async function renderReports({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
@@ -178,6 +184,18 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
     el.style.display = message ? "block" : "none";
   }
 
+  function setExportLink(message, url) {
+    exportSuccessEl.textContent = "";
+    exportSuccessEl.style.display = "block";
+    exportSuccessEl.append(document.createTextNode(`${message} `));
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Open PDF export";
+    exportSuccessEl.appendChild(link);
+  }
+
   function setButtonLoading(button, label, isLoading) {
     if (isLoading) {
       button.setAttribute("aria-busy", "true");
@@ -248,6 +266,11 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
   async function downloadExport() {
     setAlert(exportErrorEl, "");
     setAlert(exportSuccessEl, "");
+    const handoffWindow = window.open("about:blank", "_blank");
+    if (handoffWindow) {
+      handoffWindow.document.title = "Preparing PDF export...";
+      handoffWindow.document.body.innerHTML = "<p style=\"font-family: sans-serif; padding: 24px;\">Preparing your PDF export...</p>";
+    }
     try {
       const brigadeId = select.value;
       if (!brigadeId) throw new Error("Choose a brigade to export.");
@@ -263,10 +286,16 @@ export async function renderReports({ root, auth, db, showLoading, hideLoading }
         }
       );
       if (!data || !data.url) throw new Error("Could not prepare the PDF download.");
-      const href = data.url.startsWith("/") ? data.url : new URL(data.url, window.location.origin).toString();
-      window.location.assign(href);
-      setAlert(exportSuccessEl, "PDF export starting.");
+      const pdfUrl = data.url.startsWith("/") ? data.url : new URL(data.url, window.location.origin).pathname;
+      const handoffUrl = buildReportExportHandoffUrl(pdfUrl);
+      if (handoffWindow && !handoffWindow.closed) {
+        handoffWindow.location.href = handoffUrl;
+        setAlert(exportSuccessEl, "PDF export opened in a new tab.");
+      } else {
+        setExportLink("PDF export ready.", handoffUrl);
+      }
     } catch (err) {
+      if (handoffWindow && !handoffWindow.closed) handoffWindow.close();
       console.error("Failed to download report export:", err);
       setAlert(exportErrorEl, err.message || "Could not download the PDF.");
     } finally {
