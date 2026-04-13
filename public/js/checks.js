@@ -16,6 +16,7 @@ function initChecksPage(options = {}) {
     const auth = firebase.auth();
     let currentUser = null;
     let unsubscribeAuth = null;
+    const privateImageUrlCache = new Map();
 
     const isShell = options && options.isShell === true;
     const navigateToChecksHome =
@@ -44,6 +45,60 @@ function initChecksPage(options = {}) {
             return;
         }
         window.location.href = '/menu.html';
+    }
+
+    function isPrivateImageRef(value) {
+        return typeof value === 'string' && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+    }
+
+    function isDirectImageRef(value) {
+        return typeof value === 'string' && (
+            value.startsWith('blob:') ||
+            value.startsWith('/design_assets/') ||
+            value.startsWith('https://storage.googleapis.com/') ||
+            value.startsWith('https://firebasestorage.googleapis.com/')
+        );
+    }
+
+    async function resolveImageDisplayUrl(imageRef) {
+        if (!imageRef) return '';
+        if (isDirectImageRef(imageRef)) return imageRef;
+        if (!isPrivateImageRef(imageRef) || !currentUser) return '';
+        if (privateImageUrlCache.has(imageRef)) return privateImageUrlCache.get(imageRef);
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        if (!brigadeId) return '';
+        const fileName = imageRef.split('/').pop();
+        const token = await currentUser.getIdToken();
+        const response = await fetch(`/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`Image load failed (${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        privateImageUrlCache.set(imageRef, url);
+        return url;
+    }
+
+    function setImageElementSource(imgEl, imageRef, fallback = '/design_assets/Flashover Logo.png') {
+        if (!imgEl) return;
+        const ref = imageRef || '';
+        imgEl.dataset.imageRef = ref;
+        if (!ref) {
+            imgEl.src = fallback;
+            return;
+        }
+        if (isDirectImageRef(ref)) {
+            imgEl.src = ref;
+            return;
+        }
+        imgEl.src = fallback;
+        void resolveImageDisplayUrl(ref)
+            .then((url) => {
+                if (url && imgEl.dataset.imageRef === ref) imgEl.src = url;
+            })
+            .catch((error) => {
+                console.error('Could not load private image:', error);
+            });
     }
 
     // ===================================================================
@@ -634,23 +689,30 @@ function initChecksPage(options = {}) {
         shelves.forEach((shelf, index) => {
             const shelfWrapper = document.createElement('div');
             const items = shelf.items || [];
-
-            shelfWrapper.innerHTML = `
-                <div class="shelf-container">
-                    <div class="shelf-items-grid">
-                        ${items.map(item => {
-                            const result = checkResults.find(r => r.itemId === item.id);
-                            const statusClass = result ? `status-${result.status}` : '';
-                            return `
-                                <div class="item-box ${statusClass}" data-id="${item.id}">
-                                    <div class="item-name-overlay">${item.name}</div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-                <h3 class="text-white text-center font-bold text-sm mt-1">Shelf ${index + 1}</h3>
-            `;
+            const shelfContainer = document.createElement('div');
+            shelfContainer.className = 'shelf-container';
+            const itemsGrid = document.createElement('div');
+            itemsGrid.className = 'shelf-items-grid';
+            items.forEach((item) => {
+                const result = checkResults.find(r => r.itemId === item.id);
+                const itemBox = document.createElement('div');
+                itemBox.className = 'item-box';
+                if (result && ['present', 'missing', 'note', 'defect', 'partial', 'untouched'].includes(result.status)) {
+                    itemBox.classList.add(`status-${result.status}`);
+                }
+                itemBox.dataset.id = item.id;
+                const overlay = document.createElement('div');
+                overlay.className = 'item-name-overlay';
+                overlay.textContent = item.name || 'Item';
+                itemBox.appendChild(overlay);
+                itemsGrid.appendChild(itemBox);
+            });
+            shelfContainer.appendChild(itemsGrid);
+            const label = document.createElement('h3');
+            label.className = 'text-white text-center font-bold text-sm mt-1';
+            label.textContent = `Shelf ${index + 1}`;
+            shelfWrapper.appendChild(shelfContainer);
+            shelfWrapper.appendChild(label);
             checkerUI.lockerLayout.appendChild(shelfWrapper);
         });
         
@@ -697,7 +759,7 @@ function initChecksPage(options = {}) {
 
     function updateItemDetails(item) {
         if (item) {
-            checkerUI.itemImage.src = item.img || '/design_assets/Flashover Logo.png';
+            setImageElementSource(checkerUI.itemImage, item.img, '/design_assets/Flashover Logo.png');
             checkerUI.itemName.textContent = item.name;
             checkerUI.itemDesc.textContent = item.desc;
             
@@ -705,6 +767,7 @@ function initChecksPage(options = {}) {
             checkerUI.controls.classList.toggle('hidden', isContainer);
             checkerUI.containerControls.classList.toggle('hidden', !isContainer);
         } else {
+            checkerUI.itemImage.dataset.imageRef = '';
             checkerUI.itemImage.src = '/design_assets/Flashover Logo.png';
             checkerUI.itemName.textContent = 'Select an Item';
             checkerUI.itemDesc.textContent = 'All items in this locker have been checked.';
@@ -742,22 +805,32 @@ function initChecksPage(options = {}) {
         checkerUI.headerTitle.textContent = `Container: ${container.name}`;
         const subItems = container.subItems || [];
 
-        checkerUI.lockerLayout.innerHTML = `
-            <div class="shelf-container">
-                <h3 class="text-blue text-center font-bold text-sm">Container Contents</h3>
-                <div class="container-items-grid">
-                    ${subItems.map(item => {
-                        const result = checkResults.find(r => r.itemId === item.id);
-                        const statusClass = result ? `status-${result.status}` : '';
-                        return `
-                            <div class="item-box ${statusClass}" data-id="${item.id}" data-parent-id="${container.id}">
-                                <div class="item-name-overlay">${item.name}</div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            </div>
-        `;
+        checkerUI.lockerLayout.innerHTML = '';
+        const shelfContainer = document.createElement('div');
+        shelfContainer.className = 'shelf-container';
+        const title = document.createElement('h3');
+        title.className = 'text-blue text-center font-bold text-sm';
+        title.textContent = 'Container Contents';
+        const grid = document.createElement('div');
+        grid.className = 'container-items-grid';
+        subItems.forEach((item) => {
+            const result = checkResults.find(r => r.itemId === item.id);
+            const itemBox = document.createElement('div');
+            itemBox.className = 'item-box';
+            if (result && ['present', 'missing', 'note', 'defect', 'partial', 'untouched'].includes(result.status)) {
+                itemBox.classList.add(`status-${result.status}`);
+            }
+            itemBox.dataset.id = item.id;
+            itemBox.dataset.parentId = container.id;
+            const overlay = document.createElement('div');
+            overlay.className = 'item-name-overlay';
+            overlay.textContent = item.name || 'Item';
+            itemBox.appendChild(overlay);
+            grid.appendChild(itemBox);
+        });
+        shelfContainer.appendChild(title);
+        shelfContainer.appendChild(grid);
+        checkerUI.lockerLayout.appendChild(shelfContainer);
 
         let itemToSelect = null;
         if (currentCheckState.selectedItemId && currentCheckState.parentItemId === container.id) {
@@ -967,7 +1040,14 @@ function initChecksPage(options = {}) {
             lockerBtn.dataset.lockerId = locker.id;
             const icons = { complete: '✔', partial: '…', untouched: '○' };
             const colors = { complete: 'text-green-500', partial: 'text-yellow-500', untouched: 'text-gray-400' };
-            lockerBtn.innerHTML = `<span>${locker.name}</span> <span class="${colors[getLockerCheckStatus(locker.id)]} text-2xl font-bold">${icons[getLockerCheckStatus(locker.id)]}</span>`;
+            const status = getLockerCheckStatus(locker.id);
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = locker.name || 'Locker';
+            const iconSpan = document.createElement('span');
+            iconSpan.className = `${colors[status]} text-2xl font-bold`;
+            iconSpan.textContent = icons[status];
+            lockerBtn.appendChild(nameSpan);
+            lockerBtn.appendChild(iconSpan);
             lockerBtn.addEventListener('click', () => {
                 nextLockerToStartId = locker.id;
                 document.querySelectorAll('#next-locker-list-container button').forEach(btn => btn.classList.replace('border-blue-500', 'border-transparent'));
@@ -1013,64 +1093,99 @@ function initChecksPage(options = {}) {
             untouched: { icon: '○', color: 'text-gray-400' }
         };
 
-        let finalHtml = '';
         for (const lockerId in resultsByLocker) {
             const locker = resultsByLocker[lockerId];
-            
-            finalHtml += `
-                <div class="bg-blue rounded-lg p-4 mb-4">
-                    <h3 class="text-white text-xl font-bold uppercase text-center mb-3">${locker.name}</h3>
-                    <div class="space-y-2">
-            `;
+            const lockerSection = document.createElement('div');
+            lockerSection.className = 'bg-blue rounded-lg p-4 mb-4';
+            const lockerTitle = document.createElement('h3');
+            lockerTitle.className = 'text-white text-xl font-bold uppercase text-center mb-3';
+            lockerTitle.textContent = locker.name || 'Locker';
+            const itemList = document.createElement('div');
+            itemList.className = 'space-y-2';
+            lockerSection.appendChild(lockerTitle);
+            lockerSection.appendChild(itemList);
 
             locker.items.sort((a,b) => a.itemName.localeCompare(b.itemName)).forEach(item => {
                 const style = statusStyles[item.status] || statusStyles.untouched;
-                
-                finalHtml += `
-                    <div style="background-color: #EDEAE5;" class="rounded p-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center">
-                                <span class="${style.color} mr-3 text-2xl">${style.icon}</span>
-                                <span class="font-semibold">${item.itemName}</span>
-                            </div>
-                            <button data-locker-id="${item.lockerId}" data-item-id="${item.itemId}" class="recheck-btn bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-3 rounded-full">Re-check</button>
-                        </div>
-                `;
+                const itemRow = document.createElement('div');
+                itemRow.style.backgroundColor = '#EDEAE5';
+                itemRow.className = 'rounded p-3';
+                const topRow = document.createElement('div');
+                topRow.className = 'flex items-center justify-between';
+                const left = document.createElement('div');
+                left.className = 'flex items-center';
+                const dot = document.createElement('span');
+                dot.className = `${style.color} mr-3 text-2xl`;
+                dot.textContent = style.icon;
+                const name = document.createElement('span');
+                name.className = 'font-semibold';
+                name.textContent = item.itemName || 'Item';
+                const recheck = document.createElement('button');
+                recheck.dataset.lockerId = item.lockerId;
+                recheck.dataset.itemId = item.itemId;
+                recheck.className = 'recheck-btn bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-3 rounded-full';
+                recheck.textContent = 'Re-check';
+                left.appendChild(dot);
+                left.appendChild(name);
+                topRow.appendChild(left);
+                topRow.appendChild(recheck);
+                itemRow.appendChild(topRow);
 
                 if (item.status === 'partial' || (findItemById(item.itemId)?.type === 'container')) {
                     const subItems = allCheckedItems.filter(r => r.parentItemId === item.itemId);
                     if (subItems.length > 0) {
-                        finalHtml += `<div class="ml-6 mt-2 space-y-1">`;
+                        const subList = document.createElement('div');
+                        subList.className = 'ml-6 mt-2 space-y-1';
                         subItems.sort((a,b) => a.itemName.localeCompare(b.itemName)).forEach(subItem => {
                             const subStyle = statusStyles[subItem.status] || statusStyles.untouched;
-                            finalHtml += `
-                                <div class="bg-white rounded p-2 shadow-md flex items-center justify-between">
-                                    <div class="flex items-center">
-                                        <span class="${subStyle.color} mr-3 text-xl">${subStyle.icon}</span>
-                                        <span>${subItem.itemName}</span>
-                                    </div>
-                                    <button data-locker-id="${subItem.lockerId}" data-item-id="${subItem.itemId}" data-parent-item-id="${subItem.parentItemId}" class="recheck-btn bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-3 rounded-full">Re-check</button>
-                                </div>
-                            `;
+                            const subRow = document.createElement('div');
+                            subRow.className = 'bg-white rounded p-2 shadow-md flex items-center justify-between';
+                            const subLeft = document.createElement('div');
+                            subLeft.className = 'flex items-center';
+                            const subDot = document.createElement('span');
+                            subDot.className = `${subStyle.color} mr-3 text-xl`;
+                            subDot.textContent = subStyle.icon;
+                            const subName = document.createElement('span');
+                            subName.textContent = subItem.itemName || 'Item';
+                            const subRecheck = document.createElement('button');
+                            subRecheck.dataset.lockerId = subItem.lockerId;
+                            subRecheck.dataset.itemId = subItem.itemId;
+                            subRecheck.dataset.parentItemId = subItem.parentItemId;
+                            subRecheck.className = 'recheck-btn bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-3 rounded-full';
+                            subRecheck.textContent = 'Re-check';
+                            subLeft.appendChild(subDot);
+                            subLeft.appendChild(subName);
+                            subRow.appendChild(subLeft);
+                            subRow.appendChild(subRecheck);
+                            subList.appendChild(subRow);
                              if (subItem.note) {
-                                finalHtml += `<div class="pl-8 text-sm text-gray-600"><em>Note: ${subItem.note}</em></div>`;
+                                const note = document.createElement('div');
+                                note.className = 'pl-8 text-sm text-gray-600';
+                                const noteText = document.createElement('em');
+                                noteText.textContent = `Note: ${subItem.note}`;
+                                note.appendChild(noteText);
+                                subList.appendChild(note);
                             }
                         });
-                        finalHtml += `</div>`;
+                        itemRow.appendChild(subList);
                     }
                 }
                 
                 if (item.note) {
-                    finalHtml += `<div class="ml-9 mt-1 text-sm text-gray-600"><em>Note: ${item.note}</em></div>`;
+                    const note = document.createElement('div');
+                    note.className = 'ml-9 mt-1 text-sm text-gray-600';
+                    const noteText = document.createElement('em');
+                    noteText.textContent = `Note: ${item.note}`;
+                    note.appendChild(noteText);
+                    itemRow.appendChild(note);
                 }
 
-                finalHtml += `</div>`;
+                itemList.appendChild(itemRow);
             });
 
-            finalHtml += `</div></div>`;
+            container.appendChild(lockerSection);
         }
 
-        container.innerHTML = finalHtml;
         showScreen('summary');
     }
 

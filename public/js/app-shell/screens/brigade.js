@@ -4,6 +4,15 @@ function el(tag, className) {
   return node;
 }
 
+function appendRowText(parent, titleText, metaText) {
+  const title = el("div", "fs-row-title");
+  title.textContent = titleText || "";
+  const meta = el("div", "fs-row-meta");
+  meta.textContent = metaText || "";
+  parent.appendChild(title);
+  parent.appendChild(meta);
+}
+
 async function fetchJson(url, { token, method, body } = {}) {
   const res = await fetch(url, {
     method: method || "GET",
@@ -162,10 +171,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         const memberMeta = [];
         if (member.userIdentifier) memberMeta.push(`User ID: ${member.userIdentifier}`);
         if (member.email) memberMeta.push(member.email);
-        left.innerHTML = `
-          <div class="fs-row-title">${member.name || "N/A"}${isSelf ? " (you)" : ""}</div>
-          <div class="fs-row-meta">${memberMeta.join(" | ")}</div>
-        `;
+        appendRowText(left, `${member.name || "N/A"}${isSelf ? " (you)" : ""}`, memberMeta.join(" | "));
 
         const actions = el("div");
         actions.style.display = "flex";
@@ -291,10 +297,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         const requestMeta = [];
         if (req.userIdentifier) requestMeta.push(`User ID: ${req.userIdentifier}`);
         requestMeta.push(`Requested: ${safeFormatTimestamp(req.requestedAt)}`);
-        left.innerHTML = `
-          <div class="fs-row-title">${req.userName || req.id}</div>
-          <div class="fs-row-meta">${requestMeta.join(" | ")}</div>
-        `;
+        appendRowText(left, req.userName || req.id, requestMeta.join(" | "));
 
         const right = el("div");
         right.style.display = "flex";

@@ -50,6 +50,8 @@ const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.n
 const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
 const USER_IDENTIFIER_PREFIX = 'U';
 const BRIGADE_IDENTIFIER_PREFIX = 'B';
+const CHECK_LOCK_TTL_MS = 12 * 60 * 60 * 1000;
+const IMAGE_UPLOAD_PREFIX = 'uploads';
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -76,6 +78,366 @@ async function getBrigadeMember(brigadeId, userId) {
 
 function isAdminRole(role) {
     return String(role || '').toLowerCase() === 'admin';
+}
+
+function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cleanControlChars(value, { allowNewlines = false } = {}) {
+    const raw = typeof value === 'string' ? value : '';
+    const pattern = allowNewlines ? /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g : /[\u0000-\u001F\u007F]/g;
+    return raw.replace(pattern, '').replace(/[<>]/g, '').trim();
+}
+
+function cleanRequiredText(value, label, maxLength) {
+    const cleaned = cleanControlChars(value);
+    if (!cleaned) {
+        const error = new Error(`${label} is required.`);
+        error.status = 400;
+        throw error;
+    }
+    if (cleaned.length > maxLength) {
+        const error = new Error(`${label} must be ${maxLength} characters or fewer.`);
+        error.status = 400;
+        throw error;
+    }
+    return cleaned;
+}
+
+function cleanOptionalText(value, label, maxLength, options = {}) {
+    if (value == null) return '';
+    const cleaned = cleanControlChars(value, options);
+    if (cleaned.length > maxLength) {
+        const error = new Error(`${label} must be ${maxLength} characters or fewer.`);
+        error.status = 400;
+        throw error;
+    }
+    return cleaned;
+}
+
+function cleanId(value, label) {
+    const cleaned = cleanControlChars(value);
+    if (!cleaned || cleaned.length > 80 || !/^[A-Za-z0-9_-]+$/.test(cleaned)) {
+        const error = new Error(`${label} must be a safe identifier.`);
+        error.status = 400;
+        throw error;
+    }
+    return cleaned;
+}
+
+function allowedStorageBuckets() {
+    return new Set([
+        bucket.name,
+        'flashoverapplication.appspot.com',
+        'flashoverapplication.firebasestorage.app',
+    ].filter(Boolean));
+}
+
+function projectStorageObjectPathFromUrl(rawUrl) {
+    const url = new URL(rawUrl);
+    const isLocalStorageEmulator =
+        isFunctionsEmulator &&
+        url.protocol === 'http:' &&
+        (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+    if (url.protocol !== 'https:' && !isLocalStorageEmulator) return '';
+
+    const allowedBuckets = allowedStorageBuckets();
+
+    if (url.hostname === 'storage.googleapis.com') {
+        const parts = decodeURIComponent(url.pathname).replace(/^\/+/, '').split('/');
+        const bucketName = parts.shift();
+        const objectPath = parts.join('/');
+        return allowedBuckets.has(bucketName) ? objectPath : '';
+    }
+
+    if (url.hostname === 'firebasestorage.googleapis.com' || isLocalStorageEmulator) {
+        const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/);
+        if (!match) return '';
+        const bucketName = decodeURIComponent(match[1]);
+        const objectPath = decodeURIComponent(match[2]).replace(/^\/+/, '');
+        return allowedBuckets.has(bucketName) ? objectPath : '';
+    }
+
+    if (allowedBuckets.has(url.hostname)) {
+        return decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    }
+
+    return '';
+}
+
+function normalizeUploadStoragePath(brigadeId, value) {
+    const raw = cleanControlChars(value);
+    if (!raw) return '';
+    const expectedPrefix = `${IMAGE_UPLOAD_PREFIX}/${brigadeId}/`;
+    if (raw.startsWith(expectedPrefix) && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(raw)) {
+        return raw;
+    }
+
+    try {
+        const objectPath = projectStorageObjectPathFromUrl(raw);
+        if (!objectPath) return null;
+        const uploadsIndex = objectPath.indexOf(expectedPrefix);
+        if (uploadsIndex === -1) return null;
+        const storagePath = objectPath.slice(uploadsIndex);
+        if (/^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(storagePath)) {
+            return storagePath;
+        }
+    } catch (e) {
+        return null;
+    }
+    return null;
+}
+
+function isImageUploadPath(value) {
+    return /^uploads\/(?:[^/]+\/)?image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
+
+function isLegacyProjectStorageUrl(value) {
+    const raw = cleanControlChars(value);
+    if (!raw) return false;
+    try {
+        const objectPath = projectStorageObjectPathFromUrl(raw);
+        return isImageUploadPath(objectPath);
+    } catch (e) {
+        return false;
+    }
+    return false;
+}
+
+function normalizeImageRef(brigadeId, value, existingValue = '') {
+    if (!value) return '';
+    const raw = cleanControlChars(value);
+    if (!raw) return '';
+    if (/^\/design_assets\/[^<>"'\\]+$/.test(raw)) return raw;
+
+    const storagePath = normalizeUploadStoragePath(brigadeId, raw);
+    if (storagePath) return storagePath;
+
+    const existingRaw = cleanControlChars(existingValue);
+    if (existingRaw && raw === existingRaw && isLegacyProjectStorageUrl(raw)) {
+        return raw;
+    }
+    if (existingRaw && raw === existingRaw) {
+        console.warn('Clearing existing unsupported item image reference during setup save.');
+        return '';
+    }
+
+    console.warn('Clearing unsupported item image reference during setup save.');
+    return '';
+}
+
+function normalizeCheckStatus(value) {
+    if (!isPlainObject(value) || value.inProgress !== true) return null;
+    const uid = cleanOptionalText(value.uid, 'Check lock user id', 128);
+    if (!uid) return null;
+    const user = cleanOptionalText(value.user, 'Check lock user', 160) || 'Unknown';
+    const timestamp = cleanOptionalText(value.timestamp, 'Check lock timestamp', 80) || new Date().toISOString();
+    const timestampMs = Date.parse(timestamp);
+    const baseMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
+    const expiresAt = cleanOptionalText(value.expiresAt, 'Check lock expiry', 80) || new Date(baseMs + CHECK_LOCK_TTL_MS).toISOString();
+    const lock = { inProgress: true, user, uid, timestamp, expiresAt };
+    if (isPlainObject(value.previousLock)) {
+        lock.previousLock = {
+            uid: cleanOptionalText(value.previousLock.uid, 'Previous lock user id', 128),
+            user: cleanOptionalText(value.previousLock.user, 'Previous lock user', 160),
+            timestamp: cleanOptionalText(value.previousLock.timestamp, 'Previous lock timestamp', 80),
+            expiresAt: cleanOptionalText(value.previousLock.expiresAt, 'Previous lock expiry', 80),
+            overriddenAt: cleanOptionalText(value.previousLock.overriddenAt, 'Previous lock overridden time', 80),
+            overriddenBy: cleanOptionalText(value.previousLock.overriddenBy, 'Previous lock override user id', 128),
+        };
+    }
+    return lock;
+}
+
+function isCheckLockActive(lock, nowMs = Date.now()) {
+    if (!lock || lock.inProgress !== true || !lock.uid) return false;
+    const expiresAtMs = Date.parse(lock.expiresAt || '');
+    if (Number.isFinite(expiresAtMs)) return expiresAtMs > nowMs;
+    const timestampMs = Date.parse(lock.timestamp || '');
+    if (!Number.isFinite(timestampMs)) return false;
+    return timestampMs + CHECK_LOCK_TTL_MS > nowMs;
+}
+
+function makeCheckLock(user, previousLock = null) {
+    const now = new Date();
+    const lock = {
+        inProgress: true,
+        user: user.name || user.email || 'Unknown',
+        uid: user.uid,
+        timestamp: now.toISOString(),
+        expiresAt: new Date(now.getTime() + CHECK_LOCK_TTL_MS).toISOString(),
+    };
+    if (previousLock) {
+        lock.previousLock = {
+            uid: previousLock.uid || '',
+            user: previousLock.user || 'Unknown',
+            timestamp: previousLock.timestamp || '',
+            expiresAt: previousLock.expiresAt || '',
+            overriddenAt: now.toISOString(),
+            overriddenBy: user.uid,
+        };
+    }
+    return lock;
+}
+
+function checkLockResponse(lock, requesterUid) {
+    if (!lock || !isCheckLockActive(lock)) return { inProgress: false };
+    return {
+        inProgress: true,
+        user: lock.user,
+        uid: lock.uid,
+        timestamp: lock.timestamp,
+        expiresAt: lock.expiresAt,
+        isMine: lock.uid === requesterUid,
+        previousLock: lock.previousLock,
+    };
+}
+
+function findApplianceIndex(applianceData, applianceId) {
+    const appliances = applianceData && Array.isArray(applianceData.appliances) ? applianceData.appliances : [];
+    return appliances.findIndex(a => a && a.id === applianceId);
+}
+
+function validateApplianceData(brigadeId, incomingData, existingData = {}) {
+    if (!isPlainObject(incomingData) || !Array.isArray(incomingData.appliances)) {
+        const error = new Error('Appliance data must contain an appliances array.');
+        error.status = 400;
+        throw error;
+    }
+
+    const allowedTopLevel = new Set(['appliances']);
+    Object.keys(incomingData).forEach((key) => {
+        if (!allowedTopLevel.has(key)) {
+            const error = new Error(`Unexpected appliance data field: ${key}`);
+            error.status = 400;
+            throw error;
+        }
+    });
+
+    const existingById = new Map(
+        (Array.isArray(existingData.appliances) ? existingData.appliances : []).map((appliance) => [appliance && appliance.id, appliance])
+    );
+    const existingImageByItemId = new Map();
+    (Array.isArray(existingData.appliances) ? existingData.appliances : []).forEach((appliance) => {
+        (Array.isArray(appliance && appliance.lockers) ? appliance.lockers : []).forEach((locker) => {
+            (Array.isArray(locker && locker.shelves) ? locker.shelves : []).forEach((shelf) => {
+                (Array.isArray(shelf && shelf.items) ? shelf.items : []).forEach((item) => {
+                    if (item && item.id && item.img) existingImageByItemId.set(String(item.id), item.img);
+                    (Array.isArray(item && item.subItems) ? item.subItems : []).forEach((subItem) => {
+                        if (subItem && subItem.id && subItem.img) existingImageByItemId.set(String(subItem.id), subItem.img);
+                    });
+                });
+            });
+        });
+    });
+    const total = { items: 0 };
+
+    function cleanItem(rawItem, pathLabel, isSubItem = false) {
+        if (!isPlainObject(rawItem)) {
+            const error = new Error(`${pathLabel} must be an object.`);
+            error.status = 400;
+            throw error;
+        }
+        total.items += 1;
+        if (total.items > 2000) {
+            const error = new Error('Appliance setup contains too many items.');
+            error.status = 400;
+            throw error;
+        }
+        const type = cleanOptionalText(rawItem.type, `${pathLabel} type`, 40) || 'item';
+        if (type !== 'item' && type !== 'container') {
+            const error = new Error(`${pathLabel} has an invalid type.`);
+            error.status = 400;
+            throw error;
+        }
+        const itemId = cleanId(rawItem.id, `${pathLabel} id`);
+        const item = {
+            id: itemId,
+            name: cleanRequiredText(rawItem.name, `${pathLabel} name`, 100),
+            desc: cleanOptionalText(rawItem.desc, `${pathLabel} description`, 1000, { allowNewlines: true }),
+            type,
+            img: normalizeImageRef(brigadeId, rawItem.img, existingImageByItemId.get(itemId)),
+        };
+        if (!isSubItem && type === 'container') {
+            const subItems = Array.isArray(rawItem.subItems) ? rawItem.subItems : [];
+            if (subItems.length > 200) {
+                const error = new Error(`${pathLabel} has too many sub-items.`);
+                error.status = 400;
+                throw error;
+            }
+            item.subItems = subItems.map((sub, idx) => cleanItem(sub, `${pathLabel} sub-item ${idx + 1}`, true));
+        }
+        return item;
+    }
+
+    const appliances = incomingData.appliances.map((rawAppliance, applianceIndex) => {
+        if (!isPlainObject(rawAppliance)) {
+            const error = new Error(`Appliance ${applianceIndex + 1} must be an object.`);
+            error.status = 400;
+            throw error;
+        }
+        const applianceId = cleanId(rawAppliance.id, `Appliance ${applianceIndex + 1} id`);
+        const lockers = Array.isArray(rawAppliance.lockers) ? rawAppliance.lockers : [];
+        if (lockers.length > 80) {
+            const error = new Error('Appliance contains too many lockers.');
+            error.status = 400;
+            throw error;
+        }
+        const appliance = {
+            id: applianceId,
+            name: cleanRequiredText(rawAppliance.name, `Appliance ${applianceIndex + 1} name`, 80),
+            lockers: lockers.map((rawLocker, lockerIndex) => {
+                if (!isPlainObject(rawLocker)) {
+                    const error = new Error(`Locker ${lockerIndex + 1} must be an object.`);
+                    error.status = 400;
+                    throw error;
+                }
+                const shelves = Array.isArray(rawLocker.shelves) ? rawLocker.shelves : [];
+                if (shelves.length > 40) {
+                    const error = new Error('Locker contains too many shelves.');
+                    error.status = 400;
+                    throw error;
+                }
+                return {
+                    id: cleanId(rawLocker.id, `Locker ${lockerIndex + 1} id`),
+                    name: cleanRequiredText(rawLocker.name, `Locker ${lockerIndex + 1} name`, 80),
+                    shelves: shelves.map((rawShelf, shelfIndex) => {
+                        if (!isPlainObject(rawShelf)) {
+                            const error = new Error(`Shelf ${shelfIndex + 1} must be an object.`);
+                            error.status = 400;
+                            throw error;
+                        }
+                        const items = Array.isArray(rawShelf.items) ? rawShelf.items : [];
+                        if (items.length > 300) {
+                            const error = new Error('Shelf contains too many items.');
+                            error.status = 400;
+                            throw error;
+                        }
+                        const shelf = {
+                            id: rawShelf.id ? cleanId(rawShelf.id, `Shelf ${shelfIndex + 1} id`) : String(shelfIndex + 1),
+                            items: items.map((item, itemIndex) => cleanItem(item, `Item ${itemIndex + 1}`)),
+                        };
+                        const shelfName = cleanOptionalText(rawShelf.name, `Shelf ${shelfIndex + 1} name`, 80);
+                        if (shelfName) shelf.name = shelfName;
+                        return shelf;
+                    }),
+                };
+            }),
+        };
+        const existing = existingById.get(applianceId);
+        const existingLock = normalizeCheckStatus(existing && existing.checkStatus);
+        if (existingLock) appliance.checkStatus = existingLock;
+        return appliance;
+    });
+
+    if (appliances.length > 30) {
+        const error = new Error('Too many appliances.');
+        error.status = 400;
+        throw error;
+    }
+
+    return { appliances };
 }
 
 function identifierPrefix(ownerType) {
@@ -538,21 +900,18 @@ apiRouter.post('/upload', async (req, res) => {
                 destination: destination,
                 metadata: {
                     contentType: 'image/webp',
-                    cacheControl: 'public, max-age=31536000',
+                    cacheControl: 'private, max-age=0, no-store',
                     metadata: {
                         brigadeId,
                         uploadedBy: req.user.uid,
                     },
                 },
             });
-            const file = bucket.file(destination);
-            await file.makePublic();
-            const publicUrl = file.publicUrl();
             await fs.unlink(uploads.filepath);
             await fs.unlink(processedTmpPath);
             res.status(200).json({
                 message: 'File uploaded successfully!',
-                filePath: publicUrl,
+                filePath: destination,
                 fileName: newFilename,
                 storagePath: destination,
             });
@@ -664,7 +1023,22 @@ userRouter.post('/:userId', async (req, res) => {
             'user',
             req.user.uid
         );
-        await userDocRef.set({ ...(req.body || {}), identifier });
+        const body = isPlainObject(req.body) ? req.body : {};
+        const patch = { identifier };
+        if (isPlainObject(body.termsAcceptance)) {
+            const version = cleanOptionalText(body.termsAcceptance.version, 'Terms version', 40);
+            if (version) {
+                patch.termsAcceptance = {
+                    version,
+                    acceptedAt: cleanOptionalText(body.termsAcceptance.acceptedAt, 'Terms accepted time', 80) || new Date().toISOString(),
+                    blurb: cleanOptionalText(body.termsAcceptance.blurb, 'Terms acknowledgement', 1000),
+                };
+            }
+        }
+        if (Object.keys(patch).length <= 1) {
+            return res.status(400).json({ message: 'No supported profile fields were provided.' });
+        }
+        await userDocRef.set(patch, { merge: true });
         res.json({ message: 'Data saved successfully!' });
     } catch (err) {
         console.error('Error writing data to Firestore:', err);
@@ -672,6 +1046,40 @@ userRouter.post('/:userId', async (req, res) => {
     }
 });
 apiRouter.use('/data', userRouter);
+
+const usersRouter = express.Router();
+usersRouter.post('/me/terms', async (req, res) => {
+    try {
+        const body = isPlainObject(req.body) ? req.body : {};
+        const version = cleanRequiredText(body.version, 'Terms version', 40);
+        const blurb = cleanOptionalText(body.blurb, 'Terms acknowledgement', 1000);
+        const userDocRef = db.collection('users').doc(req.user.uid);
+        const doc = await userDocRef.get();
+        const identifier = await ensureDocumentIdentifier(
+            userDocRef,
+            doc.exists ? doc.data() : {},
+            'user',
+            req.user.uid
+        );
+        await userDocRef.set(
+            {
+                identifier,
+                termsAcceptance: {
+                    version,
+                    acceptedAt: new Date().toISOString(),
+                    blurb,
+                },
+            },
+            { merge: true }
+        );
+        res.status(200).json({ message: 'Terms accepted.' });
+    } catch (err) {
+        console.error('Error saving terms acceptance:', err);
+        const status = err.status || 500;
+        res.status(status).json({ message: status === 500 ? 'Error saving terms acceptance.' : err.message });
+    }
+});
+apiRouter.use('/users', usersRouter);
 
 // --- Brigade Routes ---
 const brigadeRouter = express.Router();
@@ -697,6 +1105,37 @@ brigadeRouter.get('/region/:regionName', async (req, res) => {
     } catch (error) {
         console.error(`Error fetching brigades for region ${req.params.regionName}:`, error);
         res.status(500).json({ message: 'Failed to fetch brigades.' });
+    }
+});
+brigadeRouter.get('/:brigadeId/images/:fileName', async (req, res) => {
+    try {
+        const { brigadeId, fileName } = req.params;
+        if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\') || !/^image-[A-Za-z0-9._-]+\.webp$/.test(fileName)) {
+            return res.status(400).json({ message: 'Invalid filename.' });
+        }
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        const storagePath = `${IMAGE_UPLOAD_PREFIX}/${brigadeId}/${fileName}`;
+        const file = bucket.file(storagePath);
+        const [exists] = await file.exists();
+        if (!exists) {
+            return res.status(404).json({ message: 'Image not found.' });
+        }
+
+        res.setHeader('Content-Type', 'image/webp');
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        const stream = file.createReadStream();
+        stream.on('error', (error) => {
+            console.error(`Error streaming image ${storagePath}:`, error);
+            if (!res.headersSent) res.status(500).json({ message: 'Failed to load image.' });
+            else res.destroy(error);
+        });
+        stream.pipe(res);
+    } catch (error) {
+        console.error(`Error loading image for brigade ${req.params.brigadeId}:`, error);
+        res.status(500).json({ message: 'Failed to load image.' });
     }
 });
 brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
@@ -1006,7 +1445,7 @@ brigadeRouter.post('/:brigadeId/data', async (req, res) => {
     try {
         const { brigadeId } = req.params;
         const userId = req.user.uid;
-        const newData = req.body;
+        const incomingData = req.body;
         const memberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(userId);
         const memberDoc = await memberRef.get();
         if (!memberDoc.exists) {
@@ -1021,11 +1460,13 @@ brigadeRouter.post('/:brigadeId/data', async (req, res) => {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
 
+        const newData = validateApplianceData(brigadeId, incomingData, brigade.data.applianceData || { appliances: [] });
         await brigade.ref.update({ applianceData: newData });
         res.status(200).json({ message: 'Appliance data saved successfully!' });
     } catch (error) {
         console.error(`Error saving appliance data for brigade ${req.params.brigadeId}:`, error);
-        res.status(500).json({ message: 'Failed to save appliance data.' });
+        const status = error.status || 500;
+        res.status(status).json({ message: status === 500 ? 'Failed to save appliance data.' : error.message });
     }
 });
 brigadeRouter.post('/', async (req, res) => {
@@ -1076,16 +1517,8 @@ brigadeRouter.get('/:brigadeId/appliances/:applianceId/check-status', async (req
         }
         const applianceData = brigade.data.applianceData || { appliances: [] };
         const appliance = applianceData.appliances.find(a => a.id === applianceId);
-        if (appliance && appliance.checkStatus && appliance.checkStatus.inProgress) {
-            res.json({
-                inProgress: true,
-                user: appliance.checkStatus.user,
-                uid: appliance.checkStatus.uid,
-                timestamp: appliance.checkStatus.timestamp
-            });
-        } else {
-            res.json({ inProgress: false });
-        }
+        const lock = normalizeCheckStatus(appliance && appliance.checkStatus);
+        res.json(checkLockResponse(lock, req.user.uid));
     } catch (error) {
         console.error('Error getting check status:', error);
         res.status(500).json({ message: 'Failed to get check status.' });
@@ -1099,28 +1532,56 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/start-check', async (req
         if (!member) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
+        const force = !!(req.body && req.body.force);
+        const brigadeRef = db.collection('brigades').doc(brigadeId);
+        const result = await db.runTransaction(async (transaction) => {
+            const brigadeDoc = await transaction.get(brigadeRef);
+            if (!brigadeDoc.exists) {
+                const error = new Error('Brigade not found.');
+                error.status = 404;
+                throw error;
+            }
+            const brigadeData = brigadeDoc.data() || {};
+            const applianceData = brigadeData.applianceData || { appliances: [] };
+            const applianceIndex = findApplianceIndex(applianceData, applianceId);
+            if (applianceIndex === -1) {
+                const error = new Error('Appliance not found.');
+                error.status = 404;
+                throw error;
+            }
 
-        const brigade = await getBrigadeDoc(brigadeId);
-        if (!brigade) {
-            return res.status(404).json({ message: 'Brigade not found.' });
-        }
-
-        const applianceData = brigade.data.applianceData || { appliances: [] };
-        const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
-        if (applianceIndex === -1) {
-            return res.status(404).json({ message: 'Appliance not found.' });
-        }
-        applianceData.appliances[applianceIndex].checkStatus = {
-            inProgress: true,
-            user: name || email,
-            uid: uid,
-            timestamp: new Date().toISOString()
-        };
-        await brigade.ref.update({ applianceData });
-        res.status(200).json({ message: 'Check started successfully.' });
+            const appliance = applianceData.appliances[applianceIndex];
+            const existingLock = normalizeCheckStatus(appliance.checkStatus);
+            const activeLock = isCheckLockActive(existingLock) ? existingLock : null;
+            if (activeLock && activeLock.uid === uid && !force) {
+                return { alreadyOwned: true, lock: activeLock };
+            }
+            if (activeLock && activeLock.uid !== uid && !force) {
+                const error = new Error('A check is already in progress for this appliance.');
+                error.status = 409;
+                error.code = 'CHECK_LOCKED';
+                error.lock = activeLock;
+                throw error;
+            }
+            const nextLock = makeCheckLock({ uid, name, email }, activeLock && activeLock.uid !== uid ? activeLock : null);
+            applianceData.appliances[applianceIndex] = { ...appliance, checkStatus: nextLock };
+            transaction.update(brigadeRef, { applianceData });
+            return { lock: nextLock, forced: !!(activeLock && activeLock.uid !== uid && force) };
+        });
+        res.status(200).json({
+            message: 'Check started successfully.',
+            alreadyOwned: !!result.alreadyOwned,
+            forced: !!result.forced,
+            lock: checkLockResponse(result.lock, uid),
+        });
     } catch (error) {
         console.error('Error starting check:', error);
-        res.status(500).json({ message: 'Failed to start check.' });
+        const status = error.status || 500;
+        res.status(status).json({
+            message: status === 500 ? 'Failed to start check.' : error.message,
+            code: error.code,
+            lock: error.lock ? checkLockResponse(error.lock, req.user.uid) : undefined,
+        });
     }
 });
 brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (req, res) => {
@@ -1131,21 +1592,67 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
 
-        const brigade = await getBrigadeDoc(brigadeId);
-        if (!brigade) {
-            return res.status(404).json({ message: 'Brigade not found.' });
-        }
-
-        const applianceData = brigade.data.applianceData || { appliances: [] };
-        const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
-        if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
-            delete applianceData.appliances[applianceIndex].checkStatus;
-            await brigade.ref.update({ applianceData });
-        }
-        res.status(200).json({ message: 'Check completed successfully.' });
+        const force = !!(req.body && req.body.force);
+        const requesterIsAdmin = isAdminRole(member.data.role);
+        const brigadeRef = db.collection('brigades').doc(brigadeId);
+        const result = await db.runTransaction(async (transaction) => {
+            const brigadeDoc = await transaction.get(brigadeRef);
+            if (!brigadeDoc.exists) {
+                const error = new Error('Brigade not found.');
+                error.status = 404;
+                throw error;
+            }
+            const brigadeData = brigadeDoc.data() || {};
+            const applianceData = brigadeData.applianceData || { appliances: [] };
+            const applianceIndex = findApplianceIndex(applianceData, applianceId);
+            if (applianceIndex === -1) {
+                const error = new Error('Appliance not found.');
+                error.status = 404;
+                throw error;
+            }
+            const appliance = applianceData.appliances[applianceIndex];
+            const existingLock = normalizeCheckStatus(appliance.checkStatus);
+            const activeLock = isCheckLockActive(existingLock) ? existingLock : null;
+            if (!activeLock) {
+                if (appliance.checkStatus) {
+                    const nextAppliance = { ...appliance };
+                    delete nextAppliance.checkStatus;
+                    applianceData.appliances[applianceIndex] = nextAppliance;
+                    transaction.update(brigadeRef, { applianceData });
+                }
+                return { cleared: false, idempotent: true };
+            }
+            if (activeLock.uid !== req.user.uid) {
+                if (!requesterIsAdmin) {
+                    const error = new Error("You cannot complete another member's active check.");
+                    error.status = 403;
+                    error.code = 'CHECK_LOCKED';
+                    error.lock = activeLock;
+                    throw error;
+                }
+                if (!force) {
+                    const error = new Error("Admin force is required to complete another member's active check.");
+                    error.status = 409;
+                    error.code = 'CHECK_LOCKED';
+                    error.lock = activeLock;
+                    throw error;
+                }
+            }
+            const nextAppliance = { ...appliance };
+            delete nextAppliance.checkStatus;
+            applianceData.appliances[applianceIndex] = nextAppliance;
+            transaction.update(brigadeRef, { applianceData });
+            return { cleared: true, forced: activeLock.uid !== req.user.uid };
+        });
+        res.status(200).json({ message: 'Check completed successfully.', ...result });
     } catch (error) {
         console.error('Error completing check:', error);
-        res.status(500).json({ message: 'Failed to complete check.' });
+        const status = error.status || 500;
+        res.status(status).json({
+            message: status === 500 ? 'Failed to complete check.' : error.message,
+            code: error.code,
+            lock: error.lock ? checkLockResponse(error.lock, req.user.uid) : undefined,
+        });
     }
 });
 brigadeRouter.get('/:brigadeId', async (req, res) => {
@@ -1848,10 +2355,24 @@ reportRouter.post('/', async (req, res) => {
                 { merge: true }
             );
         }
-        const applianceIndex = applianceData.appliances.findIndex(a => a.id === applianceId);
-        if (applianceIndex !== -1 && applianceData.appliances[applianceIndex].checkStatus) {
-            delete applianceData.appliances[applianceIndex].checkStatus;
-            await brigade.ref.update({ applianceData });
+        try {
+            await db.runTransaction(async (transaction) => {
+                const freshBrigadeDoc = await transaction.get(brigade.ref);
+                if (!freshBrigadeDoc.exists) return;
+                const freshData = freshBrigadeDoc.data() || {};
+                const freshApplianceData = freshData.applianceData || { appliances: [] };
+                const applianceIndex = findApplianceIndex(freshApplianceData, applianceId);
+                if (applianceIndex === -1) return;
+                const freshAppliance = freshApplianceData.appliances[applianceIndex];
+                const activeLock = normalizeCheckStatus(freshAppliance.checkStatus);
+                if (!isCheckLockActive(activeLock) || activeLock.uid !== req.user.uid) return;
+                const nextAppliance = { ...freshAppliance };
+                delete nextAppliance.checkStatus;
+                freshApplianceData.appliances[applianceIndex] = nextAppliance;
+                transaction.update(brigade.ref, { applianceData: freshApplianceData });
+            });
+        } catch (lockError) {
+            console.error('Failed to clear report author check lock:', lockError);
         }
         try {
             const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();

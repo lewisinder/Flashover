@@ -6,6 +6,15 @@ function el(tag, className) {
   return node;
 }
 
+function appendRowText(parent, titleText, metaText) {
+  const title = el("div", "fs-row-title");
+  title.textContent = titleText || "";
+  const meta = el("div", "fs-row-meta");
+  meta.textContent = metaText || "";
+  parent.appendChild(title);
+  parent.appendChild(meta);
+}
+
 async function fetchJson(url, { token, method, body } = {}) {
   const res = await fetch(url, {
     method: method || "GET",
@@ -284,9 +293,12 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       left.style.alignItems = "center";
       left.style.gap = "12px";
       const bubble = el("div", "fs-icon-bubble");
-      bubble.innerHTML = `<img src="/design_assets/Truck Icon.png" alt="" />`;
+      const truckIcon = document.createElement("img");
+      truckIcon.src = "/design_assets/Truck Icon.png";
+      truckIcon.alt = "";
+      bubble.appendChild(truckIcon);
       const text = el("div");
-      text.innerHTML = `<div class="fs-row-title">${appliance.name}</div><div class="fs-row-meta">Edit lockers & items</div>`;
+      appendRowText(text, appliance.name || "Unnamed appliance", "Edit lockers & items");
       left.appendChild(bubble);
       left.appendChild(text);
 

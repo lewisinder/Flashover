@@ -51,6 +51,8 @@ let saveIndicatorTimeout = null;
 const compressThresholdBytes = 900 * 1024;
 const itemDragLongPressMs = 300;
 const itemDragCancelThreshold = 8;
+const privateImageUrlCache = new Map();
+const privateImageUrlFailures = new Set();
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -118,6 +120,142 @@ const cSectionImageStatus = document.getElementById('c-section-image-status');
 const cSectionCancelEditBtn = document.getElementById('c-section-cancel-edit-btn');
 const cSectionSaveItemBtn = document.getElementById('c-section-save-item-btn');
 const cSectionDeleteItemBtn = document.getElementById('c-section-delete-item-btn');
+
+function isPrivateImageRef(value) {
+    return typeof value === 'string' && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
+
+function isDirectImageRef(value) {
+    return typeof value === 'string' && (
+        value.startsWith('blob:') ||
+        value.startsWith('/design_assets/') ||
+        value.startsWith('https://storage.googleapis.com/') ||
+        value.startsWith('https://firebasestorage.googleapis.com/')
+    );
+}
+
+async function resolveImageDisplayUrl(imageRef) {
+    if (!imageRef) return '';
+    if (isDirectImageRef(imageRef)) return imageRef;
+    if (!isPrivateImageRef(imageRef) || !activeBrigadeId || !currentUser) return '';
+    if (privateImageUrlCache.has(imageRef)) return privateImageUrlCache.get(imageRef);
+    if (privateImageUrlFailures.has(imageRef)) return '';
+    const fileName = imageRef.split('/').pop();
+    const token = await currentUser.getIdToken();
+    const response = await fetch(`/api/brigades/${encodeURIComponent(activeBrigadeId)}/images/${encodeURIComponent(fileName)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+        privateImageUrlFailures.add(imageRef);
+        throw new Error(`Image load failed (${response.status})`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    privateImageUrlCache.set(imageRef, url);
+    return url;
+}
+
+function setImageElementSource(imgEl, imageRef, fallback = '') {
+    if (!imgEl) return;
+    const ref = imageRef || '';
+    imgEl.dataset.imageRef = ref;
+    if (!ref) {
+        imgEl.src = fallback;
+        return;
+    }
+    if (isDirectImageRef(ref)) {
+        imgEl.src = ref;
+        return;
+    }
+    imgEl.src = fallback;
+    void resolveImageDisplayUrl(ref)
+        .then((url) => {
+            if (url && imgEl.dataset.imageRef === ref) imgEl.src = url;
+        })
+        .catch((error) => {
+            if (!privateImageUrlFailures.has(ref)) {
+                console.warn('Could not load private image:', error);
+            }
+        });
+}
+
+function setPreviewImage(previewEl, imageRef) {
+    if (!previewEl) return;
+    previewEl.dataset.imageRef = imageRef || '';
+    previewEl.classList.toggle('hidden', !imageRef);
+    setImageElementSource(previewEl, imageRef, '');
+}
+
+function getPreviewImageRef(previewEl) {
+    return previewEl?.dataset?.imageRef || '';
+}
+
+function getSafePreviewImageRef(previewEl, currentImageRef = '') {
+    const previewRef = getPreviewImageRef(previewEl);
+    if (!previewRef.startsWith('blob:')) return previewRef;
+    if (currentImageRef && !currentImageRef.startsWith('blob:')) return currentImageRef;
+    return previewRef;
+}
+
+function collectItemsWithBlobImages(data) {
+    const items = [];
+    (Array.isArray(data?.appliances) ? data.appliances : []).forEach(appliance => {
+        (Array.isArray(appliance?.lockers) ? appliance.lockers : []).forEach(locker => {
+            (Array.isArray(locker?.shelves) ? locker.shelves : []).forEach(shelf => {
+                (Array.isArray(shelf?.items) ? shelf.items : []).forEach(item => {
+                    if (item?.img?.startsWith('blob:')) items.push(item);
+                    (Array.isArray(item?.subItems) ? item.subItems : []).forEach(subItem => {
+                        if (subItem?.img?.startsWith('blob:')) items.push(subItem);
+                    });
+                });
+            });
+        });
+    });
+    return items;
+}
+
+async function uploadBlobImageItem(item, index, total) {
+    const blobUrl = item?.img || '';
+    if (!blobUrl.startsWith('blob:')) return;
+
+    let pending = pendingUploads.get(blobUrl);
+    if (pending?.promise) {
+        await pending.promise;
+        if (!item.img?.startsWith('blob:')) return;
+        pending = pendingUploads.get(blobUrl);
+    }
+
+    const file = pending?.file || pending;
+    if (!file) {
+        console.warn('Clearing stale preview image before save.');
+        item.img = '';
+        try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+        pendingUploads.delete(blobUrl);
+        return;
+    }
+
+    progressText.textContent = `Compressing image ${index + 1} of ${total}`;
+    const compressedFile = await compressIfNeeded(file);
+
+    const formData = new FormData();
+    formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
+    const token = await currentUser.getIdToken();
+
+    const responseText = await uploadWithProgress(`/api/upload`, token, formData, (event) => {
+        const loadedRatio = event.total ? event.loaded / event.total : 0;
+        const percentage = loadedRatio * 100;
+        const overallProgress = ((index + loadedRatio) / total) * 100;
+        progressBar.style.width = `${overallProgress}%`;
+        progressText.textContent =
+            `Uploading image ${index + 1} of ${total}: ` +
+            `${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round(percentage)}%)`;
+    }, { 'x-brigade-id': activeBrigadeId });
+
+    const result = JSON.parse(responseText);
+    item.img = result.storagePath || result.filePath || '';
+    try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+    pendingUploads.delete(blobUrl);
+}
 
 const progressModal = document.getElementById('progress-modal');
 const progressBar = document.getElementById('progress-bar');
@@ -510,55 +648,26 @@ async function saveBrigadeData(operation) {
 
     try {
         // --- Stage 1: Upload all pending images ---
-        const itemsWithPendingUploads = [];
-        const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
-        appliance.lockers.forEach(l => l.shelves.forEach(s => s.items.forEach(i => {
-            if (i.img && i.img.startsWith('blob:')) itemsWithPendingUploads.push(i);
-            if (i.subItems) i.subItems.forEach(si => {
-                if (si.img && si.img.startsWith('blob:')) itemsWithPendingUploads.push(si);
-            });
-        })));
+        const itemsWithPendingUploads = collectItemsWithBlobImages(truckData);
 
         const shouldShowProgress = itemsWithPendingUploads.length > 0;
         if (shouldShowProgress) {
             progressModal.classList.remove('hidden');
             progressTitle.textContent = 'Uploading Images...';
-            const uploadPromises = itemsWithPendingUploads.map((item, index) => {
-                const pending = pendingUploads.get(item.img);
-                const file = pending && pending.file ? pending.file : pending;
-                if (!file) return Promise.resolve();
-                if (pending && pending.promise) {
-                    return pending.promise.then(() => {
-                        const overallProgress = ((index + 1) / itemsWithPendingUploads.length) * 100;
-                        progressBar.style.width = `${overallProgress}%`;
-                        progressText.textContent = `Finalizing image ${index + 1} of ${itemsWithPendingUploads.length}`;
-                    });
-                }
-
-                return (async () => {
-                    progressText.textContent = `Compressing image ${index + 1} of ${itemsWithPendingUploads.length}`;
-                    const compressedFile = await compressIfNeeded(file);
-
-                    const formData = new FormData();
-                    formData.append('image', compressedFile, compressedFile.name || 'compressed-image.webp');
-                    const token = await currentUser.getIdToken();
-                    
-                    const responseText = await uploadWithProgress(`/api/upload`, token, formData, (event) => {
-                        const percentage = (event.loaded / event.total) * 100;
-                        const overallProgress = ((index + (event.loaded / event.total)) / itemsWithPendingUploads.length) * 100;
-                        progressBar.style.width = `${overallProgress}%`;
-                        progressText.textContent = 
-                            `Uploading image ${index + 1} of ${itemsWithPendingUploads.length}: ` +
-                            `${formatBytes(event.loaded)} / ${formatBytes(event.total)} (${Math.round(percentage)}%)`;
-                    }, { 'x-brigade-id': activeBrigadeId });
-
-                    const result = JSON.parse(responseText);
-                    URL.revokeObjectURL(item.img); // Clean up blob URL
-                    pendingUploads.delete(item.img);
-                    item.img = result.filePath; // Replace blob with permanent URL
-                })();
-            });
+            const uploadPromises = itemsWithPendingUploads.map((item, index) =>
+                uploadBlobImageItem(item, index, itemsWithPendingUploads.length)
+            );
             await Promise.all(uploadPromises);
+        }
+
+        const unresolvedBlobImages = collectItemsWithBlobImages(truckData);
+        if (unresolvedBlobImages.length > 0) {
+            unresolvedBlobImages.forEach((item) => {
+                const blobUrl = item.img;
+                item.img = '';
+                try { URL.revokeObjectURL(blobUrl); } catch (e) {}
+                pendingUploads.delete(blobUrl);
+            });
         }
 
         // --- Stage 2: Save the final data ---
@@ -656,18 +765,33 @@ function renderLockerList() {
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
         card.dataset.lockerId = locker.id;
-        card.innerHTML = `
-            <div class="locker-card-main">
-                <div class="locker-icon">${initial}</div>
-                <div class="locker-card-text">
-                    <div class="locker-name">${locker.name}</div>
-                    <div class="locker-meta">${metaText}</div>
-                </div>
-            </div>
-            <div class="locker-card-actions">
-                <button class="locker-menu-btn" aria-label="Locker actions" type="button">⋯</button>
-            </div>
-        `;
+        const cardMain = document.createElement('div');
+        cardMain.className = 'locker-card-main';
+        const icon = document.createElement('div');
+        icon.className = 'locker-icon';
+        icon.textContent = initial;
+        const cardText = document.createElement('div');
+        cardText.className = 'locker-card-text';
+        const nameEl = document.createElement('div');
+        nameEl.className = 'locker-name';
+        nameEl.textContent = locker.name || 'Locker';
+        const metaEl = document.createElement('div');
+        metaEl.className = 'locker-meta';
+        metaEl.textContent = metaText;
+        cardText.appendChild(nameEl);
+        cardText.appendChild(metaEl);
+        cardMain.appendChild(icon);
+        cardMain.appendChild(cardText);
+        const actions = document.createElement('div');
+        actions.className = 'locker-card-actions';
+        const menuBtn = document.createElement('button');
+        menuBtn.className = 'locker-menu-btn';
+        menuBtn.setAttribute('aria-label', 'Locker actions');
+        menuBtn.type = 'button';
+        menuBtn.textContent = '⋯';
+        actions.appendChild(menuBtn);
+        card.appendChild(cardMain);
+        card.appendChild(actions);
         card.addEventListener('click', () => {
             if (Date.now() - dragJustEndedAt < 250) return;
             openLockerEditor(locker.id);
@@ -678,7 +802,7 @@ function renderLockerList() {
                 openLockerEditor(locker.id);
             }
         });
-        card.querySelector('.locker-menu-btn').addEventListener('click', (e) => {
+        menuBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openLockerActions(locker);
         });
@@ -786,12 +910,19 @@ function addShelf() {
 }
 
 // --- Item & Container Management ---
-function createShelfElement(shelf, context) {
+    function createShelfElement(shelf, context) {
     const shelfDiv = document.createElement('div');
     shelfDiv.className = 'shelf-container';
     if (context === 'locker') shelfDiv.classList.add('locker-context');
-    shelfDiv.innerHTML = `<button class="delete-shelf-btn" data-id="${shelf.id}">&times;</button><div class="shelf-items-grid"></div>`;
-    const itemsGrid = shelfDiv.querySelector('.shelf-items-grid');
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-shelf-btn';
+    deleteBtn.dataset.id = shelf.id;
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '×';
+    const itemsGrid = document.createElement('div');
+    itemsGrid.className = 'shelf-items-grid';
+    shelfDiv.appendChild(deleteBtn);
+    shelfDiv.appendChild(itemsGrid);
     itemsGrid.dataset.shelfId = shelf.id;
     itemsGrid.dataset.context = context;
     
@@ -809,7 +940,6 @@ function createShelfElement(shelf, context) {
     addItemBtn.addEventListener('click', () => openItemEditor(shelf.id, null, context));
     itemsGrid.appendChild(addItemBtn);
 
-    const deleteBtn = shelfDiv.querySelector('.delete-shelf-btn');
     if (context === 'container') {
        deleteBtn.style.display = 'none';
     } else {
@@ -828,7 +958,19 @@ function createItemElement(item, shelfId, context) {
    itemBox.dataset.shelfId = shelfId;
    itemBox.dataset.context = context;
    itemBox.draggable = true;
-   itemBox.innerHTML = `<div class="item-name-overlay" draggable="false">${item.name || 'New Item'}</div>` + (item.img ? `<img src="${item.img}" alt="${item.name}" class="w-full h-full object-contain" draggable="false">` : '');
+   const overlay = document.createElement('div');
+   overlay.className = 'item-name-overlay';
+   overlay.draggable = false;
+   overlay.textContent = item.name || 'New Item';
+   itemBox.appendChild(overlay);
+   if (item.img) {
+       const img = document.createElement('img');
+       img.alt = item.name || '';
+       img.className = 'w-full h-full object-contain';
+       img.draggable = false;
+       setImageElementSource(img, item.img, '');
+       itemBox.appendChild(img);
+   }
     itemBox.addEventListener('click', () => {
         if (Date.now() - itemDragJustEndedAt < 250) return;
         openItemEditor(shelfId, item.id, context);
@@ -890,8 +1032,7 @@ function openItemEditor(shelfId, itemId, context) {
        sectionItemNameInput.value = item.name;
        sectionItemDescInput.value = item.desc;
        sectionItemTypeSelect.value = item.type;
-       sectionImagePreview.src = item.img || '';
-       sectionImagePreview.classList.toggle('hidden', !item.img);
+       setPreviewImage(sectionImagePreview, item.img || '');
        setImageStatusForItem('locker', item);
        sectionEnterContainerBtn.classList.toggle('hidden', item.type !== 'container');
        if (moveLockerSection) moveLockerSection.classList.remove('hidden');
@@ -902,8 +1043,7 @@ function openItemEditor(shelfId, itemId, context) {
     } else { // context === 'container'
        cSectionItemNameInput.value = item.name;
        cSectionItemDescInput.value = item.desc;
-       cSectionImagePreview.src = item.img || '';
-       cSectionImagePreview.classList.toggle('hidden', !item.img);
+       setPreviewImage(cSectionImagePreview, item.img || '');
        setImageStatusForItem('container', item);
        if (moveLockerSection) moveLockerSection.classList.add('hidden');
        cItemEditorOverlay?.classList.remove('hidden');
@@ -1010,14 +1150,14 @@ function saveItem(options = {}) {
        item.name = name;
        item.desc = sectionItemDescInput.value;
        item.type = sectionItemTypeSelect.value;
-       item.img = sectionImagePreview.src;
+       item.img = getSafePreviewImageRef(sectionImagePreview, item.img);
        if (item.type === 'container' && !item.subItems) item.subItems = [];
     } else { // context === 'container'
        name = cSectionItemNameInput.value.trim();
        if (!name) { alert('Item name is required.'); return; }
        item.name = name;
        item.desc = cSectionItemDescInput.value;
-       item.img = cSectionImagePreview.src;
+       item.img = getSafePreviewImageRef(cSectionImagePreview, item.img);
     }
 
     setUnsavedChanges(true);
@@ -1448,6 +1588,7 @@ function handleImageUpload(e, context) {
 
     const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
     previewEl.src = blobUrl;
+    previewEl.dataset.imageRef = blobUrl;
     previewEl.classList.remove('hidden');
     updateImageStatus(context, 'Uploading image...');
     queueImageUpload(blobUrl, context);
@@ -1547,7 +1688,9 @@ function queueImageUpload(blobUrl, context) {
             const result = JSON.parse(responseText);
             const item = findItemByImageUrl(blobUrl);
             if (item && item.img === blobUrl) {
-                item.img = result.filePath;
+                item.img = result.storagePath || result.filePath || '';
+                const previewEl = context === 'locker' ? sectionImagePreview : cSectionImagePreview;
+                setPreviewImage(previewEl, item.img);
             }
             URL.revokeObjectURL(blobUrl);
             pendingUploads.delete(blobUrl);
