@@ -32,5 +32,13 @@ jobs:
           mkdir -p extensions
           echo "${{ secrets.FIRESTORE_SEND_EMAIL_ENV }}" > extensions/firestore-send-email.env
 
-      - name: Deploy to Firebase
-        run: firebase deploy --project flashoverapplication --non-interactive
+      - name: Deploy Firebase (hosting, rules, indexes)
+        run: firebase deploy --project flashoverapplication --non-interactive --except functions
+
+      - name: Deploy Firebase Functions (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "Functions deploy attempt $attempt"
+            firebase deploy --project flashoverapplication --non-interactive --only functions && break
+            [ $attempt -lt 3 ] && sleep 20
+          done
