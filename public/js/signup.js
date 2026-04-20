@@ -1,30 +1,45 @@
 // --- Email/Password Sign Up ---
 document.getElementById('signup-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = document.getElementById('name-input').value;
-    const email = document.getElementById('email-input').value;
+    const messageEl = document.getElementById('message');
+    const fullName = document.getElementById('name-input').value.trim();
+    const email = document.getElementById('email-input').value.trim();
     const password = document.getElementById('password-input').value;
     const signupButton = document.getElementById('signup-btn');
 
+    if (!fullName) {
+        messageEl.textContent = "Full name is required.";
+        return;
+    }
+
     if (password.length < 6) {
-        message.textContent = "Password must be at least 6 characters long.";
+        messageEl.textContent = "Password must be at least 6 characters long.";
         return;
     }
 
     signupButton.disabled = true;
     signupButton.textContent = 'Creating Account...';
-    message.textContent = '';
+    messageEl.textContent = '';
 
     Promise.resolve(window.__authReady)
         .then(() => auth.createUserWithEmailAndPassword(email, password))
-        .then((userCredential) => {
-            // After creating the user, update their profile with the name
-            return userCredential.user.updateProfile({
-                displayName: name
-            }).then(() => {
-                // Now that the profile is updated, handle the success
-                handleSuccessfulLogin(userCredential.user);
+        .then(async (userCredential) => {
+            const user = userCredential.user;
+            await user.updateProfile({ displayName: fullName });
+            const idToken = await user.getIdToken();
+            const response = await fetch(`/api/data/${encodeURIComponent(user.uid)}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fullName, email })
             });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                throw new Error(body.message || `Failed to save profile (${response.status})`);
+            }
+            handleSuccessfulLogin(user);
         })
         .catch(handleAuthError)
         .finally(() => {

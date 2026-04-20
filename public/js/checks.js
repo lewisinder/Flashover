@@ -109,6 +109,9 @@ function initChecksPage(options = {}) {
     // SECTION A: DATA MANAGEMENT
     // -------------------------------------------------------------------
     const loadingOverlay = document.getElementById('loading-overlay');
+    const CHECK_SESSION_ID_KEY = 'checkSessionId';
+    const CHECK_SESSION_BRIGADE_ID_KEY = 'checkSessionBrigadeId';
+    const CHECK_SESSION_APPLIANCE_ID_KEY = 'checkSessionApplianceId';
 
     function showLoading() {
         if (loadingOverlay) loadingOverlay.style.display = 'flex';
@@ -147,6 +150,35 @@ function initChecksPage(options = {}) {
         }
     }
 
+    async function fetchApiJson(url, { method = 'GET', body = undefined } = {}) {
+        if (!currentUser) throw new Error('You must be signed in.');
+        const token = await currentUser.getIdToken();
+        const response = await fetch(url, {
+            method,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                ...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
+            },
+            body: body !== undefined ? JSON.stringify(body) : undefined
+        });
+        const bodyText = await response.text().catch(() => '');
+        let data = {};
+        if (bodyText) {
+            try {
+                data = JSON.parse(bodyText);
+            } catch (e) {
+                data = { message: bodyText };
+            }
+        }
+        if (!response.ok) {
+            const error = new Error(data.message || bodyText || `HTTP ${response.status}`);
+            error.status = response.status;
+            error.data = data;
+            throw error;
+        }
+        return data;
+    }
+
     function getActiveAppliance() {
         const applianceId = localStorage.getItem('selectedApplianceId');
         if (!applianceId || !userAppData.appliances) return null;
@@ -163,13 +195,13 @@ function initChecksPage(options = {}) {
                     const result = checkResults.find(r => r.itemId === item.id);
                     item.status = result ? result.status : 'untouched';
                     item.note = result ? result.note : '';
-                    item.noteImage = result ? result.noteImage || '' : '';
+                    item.noteImage = result ? (result.noteImage || '') : '';
                     if (item.type === 'container' && item.subItems) {
                         item.subItems.forEach(subItem => {
                             const subResult = checkResults.find(r => r.itemId === subItem.id);
                             subItem.status = subResult ? subResult.status : 'untouched';
                             subItem.note = subResult ? subResult.note : '';
-                            subItem.noteImage = subResult ? subResult.noteImage || '' : '';
+                            subItem.noteImage = subResult ? (subResult.noteImage || '') : '';
                         });
                     }
                 });
@@ -186,6 +218,14 @@ function initChecksPage(options = {}) {
     let checkInProgress = false;
     let isReportSaved = false;
     let nextLockerToStartId = null;
+    let activeCheckSessionId = null;
+    let activeCheckSession = null;
+    let pendingAnswerSaves = 0;
+    let lastAnswerSaveFailed = false;
+    let answerSaveSequence = 0;
+    const latestAnswerSaveByItem = new Map();
+    const pendingAnswerSavePromises = new Set();
+    const failedAnswerPayloads = new Map();
 
     const SIGNOFF_NAME_KEY = 'reportSignedName';
     const SIGNOFF_SIGNATURE_KEY = 'reportSignature';
@@ -370,8 +410,13 @@ function initChecksPage(options = {}) {
     
     const exitConfirmModal = {
         overlay: getElement('exit-confirm-modal'),
+        message: getElement('exit-confirm-message'),
         exitAnywayBtn: getElement('confirm-exit-anyway-btn'),
         cancelBtn: getElement('cancel-exit-btn')
+    };
+
+    const saveStatusUI = {
+        text: getElement('check-save-status')
     };
 
     const checkButtons = {
@@ -732,6 +777,325 @@ function initChecksPage(options = {}) {
         });
     }
 
+    function getStoredCheckSessionId() {
+        return String(localStorage.getItem(CHECK_SESSION_ID_KEY) || '').trim();
+    }
+
+    function checkSessionBaseUrl() {
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        if (!brigadeId || !activeCheckSessionId) return '';
+        return `/api/brigades/${encodeURIComponent(brigadeId)}/check-sessions/${encodeURIComponent(activeCheckSessionId)}`;
+    }
+
+    function setSaveStatus(status, message) {
+        if (!saveStatusUI.text) return;
+        if (!activeCheckSessionId) {
+            saveStatusUI.text.classList.add('hidden');
+            saveStatusUI.text.textContent = '';
+            return;
+        }
+
+        saveStatusUI.text.classList.remove('hidden', 'text-gray-500', 'text-green-700', 'text-red-700');
+        if (status === 'saving') {
+            saveStatusUI.text.classList.add('text-gray-500');
+            saveStatusUI.text.textContent = message || 'Saving...';
+        } else if (status === 'failed') {
+            saveStatusUI.text.classList.add('text-red-700');
+            saveStatusUI.text.textContent = message || 'Save failed';
+        } else {
+            saveStatusUI.text.classList.add('text-green-700');
+            saveStatusUI.text.textContent = message || 'Saved';
+        }
+    }
+
+    function updateExitConfirmCopy() {
+        if (!exitConfirmModal.message) return;
+        exitConfirmModal.message.textContent = activeCheckSessionId
+            ? 'Your saved progress will be kept so this check can be resumed later.'
+            : 'You will lose your current check progress.';
+    }
+
+    function clearLocalProgressState() {
+        sessionStorage.removeItem('checkResults');
+        sessionStorage.removeItem('checkInProgress');
+        sessionStorage.removeItem('currentCheckState');
+    }
+
+    function clearStoredCheckSession() {
+        activeCheckSessionId = null;
+        activeCheckSession = null;
+        localStorage.removeItem(CHECK_SESSION_ID_KEY);
+        localStorage.removeItem(CHECK_SESSION_BRIGADE_ID_KEY);
+        localStorage.removeItem(CHECK_SESSION_APPLIANCE_ID_KEY);
+        failedAnswerPayloads.clear();
+        pendingAnswerSavePromises.clear();
+        pendingAnswerSaves = 0;
+        lastAnswerSaveFailed = false;
+        setSaveStatus();
+    }
+
+    function normalizeAnswerResult(raw, fallbackItemId = '') {
+        if (!raw || typeof raw !== 'object') return null;
+        const itemId = raw.itemId != null ? String(raw.itemId) : String(fallbackItemId || '');
+        if (!itemId) return null;
+        const result = {
+            lockerId: raw.lockerId ?? null,
+            lockerName: raw.lockerName || '',
+            itemId,
+            itemName: raw.itemName || '',
+            itemImg: raw.itemImg || raw.img || '',
+            parentItemId: raw.parentItemId || null,
+            status: raw.status || 'untouched',
+            note: raw.note || ''
+        };
+        if (raw.noteImage) result.noteImage = raw.noteImage;
+        return result;
+    }
+
+    function normalizeAnswers(answers) {
+        if (Array.isArray(answers)) {
+            return answers.map((answer) => normalizeAnswerResult(answer)).filter(Boolean);
+        }
+        if (answers && typeof answers === 'object') {
+            return Object.entries(answers)
+                .map(([itemId, answer]) => normalizeAnswerResult(answer, itemId))
+                .filter(Boolean);
+        }
+        return [];
+    }
+
+    function deriveResumeStateFromAnswers() {
+        const appliance = getActiveAppliance();
+        const fallbackState = {
+            lockerId: null,
+            selectedItemId: null,
+            isRechecking: false,
+            isInsideContainer: false,
+            parentItemId: null
+        };
+        if (!appliance || !Array.isArray(appliance.lockers) || appliance.lockers.length === 0) return fallbackState;
+
+        const answeredItemIds = new Set(checkResults.map((result) => String(result.itemId)));
+        for (const locker of appliance.lockers) {
+            for (const shelf of locker.shelves || []) {
+                for (const item of shelf.items || []) {
+                    if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
+                        const parentAnswered = answeredItemIds.has(String(item.id));
+                        const anySubAnswered = item.subItems.some((subItem) => answeredItemIds.has(String(subItem.id)));
+                        const nextSubItem = item.subItems.find((subItem) => !answeredItemIds.has(String(subItem.id)));
+                        if (!parentAnswered && anySubAnswered && nextSubItem) {
+                            return {
+                                lockerId: locker.id,
+                                selectedItemId: nextSubItem.id,
+                                isRechecking: false,
+                                isInsideContainer: true,
+                                parentItemId: item.id
+                            };
+                        }
+                    }
+                    if (!answeredItemIds.has(String(item.id))) {
+                        return {
+                            lockerId: locker.id,
+                            selectedItemId: item.id,
+                            isRechecking: false,
+                            isInsideContainer: false,
+                            parentItemId: null
+                        };
+                    }
+                }
+            }
+        }
+
+        const lastLocker = appliance.lockers[appliance.lockers.length - 1];
+        return {
+            ...fallbackState,
+            lockerId: lastLocker ? lastLocker.id : null
+        };
+    }
+
+    function stateFromSession(session) {
+        if (!session || typeof session !== 'object') return null;
+        const rawState = session.currentCheckState || session.checkState || session.state || {};
+        const lockerId = rawState.lockerId || rawState.currentLockerId || session.lockerId || session.currentLockerId;
+        if (!lockerId || !findLockerById(lockerId)) return null;
+
+        const parentItemId = rawState.parentItemId || session.parentItemId || null;
+        let selectedItemId = rawState.selectedItemId || rawState.currentItemId || session.selectedItemId || session.currentItemId || null;
+        if (selectedItemId && !findItemById(selectedItemId, parentItemId)) selectedItemId = null;
+        return {
+            lockerId,
+            selectedItemId,
+            isRechecking: false,
+            isInsideContainer: !!(rawState.isInsideContainer || session.isInsideContainer || parentItemId),
+            parentItemId
+        };
+    }
+
+    function hydrateCheckSession(payload) {
+        activeCheckSession = payload && payload.session ? payload.session : null;
+        checkResults = normalizeAnswers(payload ? payload.answers : null);
+        checkInProgress = true;
+        currentCheckState = stateFromSession(activeCheckSession) || deriveResumeStateFromAnswers();
+        saveStateToSession();
+        setSaveStatus('saved', 'Saved');
+        updateExitConfirmCopy();
+    }
+
+    async function loadCheckSessionFromServer() {
+        const sessionId = getStoredCheckSessionId();
+        if (!sessionId) {
+            activeCheckSessionId = null;
+            setSaveStatus();
+            updateExitConfirmCopy();
+            return false;
+        }
+
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        const appliance = getActiveAppliance();
+        if (!brigadeId || !appliance) return false;
+        const storedBrigadeId = String(localStorage.getItem(CHECK_SESSION_BRIGADE_ID_KEY) || '').trim();
+        const storedApplianceId = String(localStorage.getItem(CHECK_SESSION_APPLIANCE_ID_KEY) || '').trim();
+        if ((storedBrigadeId && storedBrigadeId !== String(brigadeId)) ||
+            (storedApplianceId && storedApplianceId !== String(appliance.id))) {
+            clearStoredCheckSession();
+            return false;
+        }
+
+        activeCheckSessionId = sessionId;
+        setSaveStatus('saved', 'Resuming saved check...');
+        try {
+            const baseUrl = checkSessionBaseUrl();
+            const claimed = await fetchApiJson(`${baseUrl}/claim`, { method: 'POST' });
+            const payload = await fetchApiJson(baseUrl);
+            const session = payload.session || claimed.session || claimed || null;
+            if (session && session.applianceId && String(session.applianceId) !== String(appliance.id)) {
+                console.warn('Ignoring stored check session for a different appliance:', session.applianceId);
+                clearStoredCheckSession();
+                return false;
+            }
+            localStorage.setItem(CHECK_SESSION_BRIGADE_ID_KEY, brigadeId);
+            localStorage.setItem(CHECK_SESSION_APPLIANCE_ID_KEY, appliance.id);
+            hydrateCheckSession({ ...payload, session });
+            return true;
+        } catch (error) {
+            console.error('Could not resume check session:', error);
+            if (error.status === 404 || error.status === 410) {
+                clearStoredCheckSession();
+                return false;
+            }
+            setSaveStatus('failed', 'Save failed');
+            alert('Could not resume the saved check session. Local progress will be used if available.');
+            updateExitConfirmCopy();
+            return false;
+        }
+    }
+
+    function buildAnswerPayload(result) {
+        return {
+            lockerId: result.lockerId ?? null,
+            lockerName: result.lockerName || '',
+            itemId: result.itemId,
+            itemName: result.itemName || '',
+            itemImg: result.itemImg || '',
+            parentItemId: result.parentItemId || null,
+            status: result.status || 'untouched',
+            note: result.note || '',
+            noteImage: result.noteImage || null
+        };
+    }
+
+    async function postAnswerPayload(payload) {
+        const baseUrl = checkSessionBaseUrl();
+        if (!baseUrl || !payload || !payload.itemId) return null;
+        return fetchApiJson(`${baseUrl}/answers/${encodeURIComponent(payload.itemId)}`, {
+            method: 'POST',
+            body: payload
+        });
+    }
+
+    function saveAnswerInBackground(result) {
+        if (!activeCheckSessionId || !result || !result.itemId) return;
+        const payload = buildAnswerPayload(result);
+        const itemKey = String(payload.itemId);
+        const sequence = answerSaveSequence + 1;
+        answerSaveSequence = sequence;
+        latestAnswerSaveByItem.set(itemKey, sequence);
+        failedAnswerPayloads.delete(itemKey);
+        pendingAnswerSaves += 1;
+        lastAnswerSaveFailed = false;
+        setSaveStatus('saving', 'Saving...');
+
+        const promise = postAnswerPayload(payload)
+            .then(() => {
+                if (latestAnswerSaveByItem.get(itemKey) === sequence) {
+                    failedAnswerPayloads.delete(itemKey);
+                }
+                return { ok: true };
+            })
+            .catch((error) => {
+                console.error('Could not save check answer:', error);
+                if (latestAnswerSaveByItem.get(itemKey) === sequence) {
+                    failedAnswerPayloads.set(itemKey, payload);
+                    lastAnswerSaveFailed = true;
+                }
+                return { ok: false, error };
+            })
+            .finally(() => {
+                pendingAnswerSaves = Math.max(0, pendingAnswerSaves - 1);
+                pendingAnswerSavePromises.delete(promise);
+                if (pendingAnswerSaves > 0) {
+                    setSaveStatus('saving', 'Saving...');
+                } else if (failedAnswerPayloads.size > 0 || lastAnswerSaveFailed) {
+                    setSaveStatus('failed', 'Save failed');
+                } else {
+                    setSaveStatus('saved', 'Saved');
+                }
+            });
+
+        pendingAnswerSavePromises.add(promise);
+    }
+
+    async function waitForPendingAnswerSaves() {
+        if (pendingAnswerSavePromises.size === 0) return;
+        await Promise.all(Array.from(pendingAnswerSavePromises));
+    }
+
+    async function retryFailedAnswerSaves() {
+        if (!activeCheckSessionId || failedAnswerPayloads.size === 0) return;
+        const payloads = Array.from(failedAnswerPayloads.values());
+        pendingAnswerSaves += payloads.length;
+        setSaveStatus('saving', 'Saving...');
+        await Promise.all(payloads.map(async (payload) => {
+            const itemKey = String(payload.itemId);
+            try {
+                await postAnswerPayload(payload);
+                failedAnswerPayloads.delete(itemKey);
+            } catch (error) {
+                console.error('Could not retry check answer save:', error);
+                failedAnswerPayloads.set(itemKey, payload);
+            } finally {
+                pendingAnswerSaves = Math.max(0, pendingAnswerSaves - 1);
+            }
+        }));
+        lastAnswerSaveFailed = failedAnswerPayloads.size > 0;
+        setSaveStatus(lastAnswerSaveFailed ? 'failed' : 'saved', lastAnswerSaveFailed ? 'Save failed' : 'Saved');
+    }
+
+    function recordCheckResult(nextResult) {
+        if (!nextResult || !nextResult.itemId) return null;
+        const resultIndex = checkResults.findIndex(r => r.itemId === nextResult.itemId);
+        const existing = resultIndex > -1 ? checkResults[resultIndex] : null;
+        const merged = { ...(existing || {}), ...nextResult };
+        if (existing && existing.noteImage && nextResult.noteImage === undefined && merged.status === 'note') {
+            merged.noteImage = existing.noteImage;
+        }
+        if (resultIndex > -1) checkResults[resultIndex] = merged;
+        else checkResults.push(merged);
+        saveStateToSession();
+        saveAnswerInBackground(merged);
+        return merged;
+    }
+
     // -------------------------------------------------------------------
     // SECTION D: CORE APP LOGIC
     // -------------------------------------------------------------------
@@ -970,10 +1334,8 @@ function initChecksPage(options = {}) {
         if (subItemResults.some(r => r.status === 'missing')) newStatus = 'partial';
         else if (subItemResults.some(r => r.status === 'note')) newStatus = 'note';
 
-        const resultIndex = checkResults.findIndex(r => r.itemId === parentItemId);
-        const result = { lockerId: currentCheckState.lockerId, lockerName: findLockerById(currentCheckState.lockerId).name, itemId: parentItemId, itemName: parentItem.name, itemImg: parentItem.img, status: newStatus, note: '', noteImage: '' };
-        if (resultIndex > -1) checkResults[resultIndex] = result;
-        else checkResults.push(result);
+        const result = { lockerId: currentCheckState.lockerId, lockerName: findLockerById(currentCheckState.lockerId).name, itemId: parentItemId, itemName: parentItem.name, itemImg: parentItem.img, status: newStatus, note: '' };
+        recordCheckResult(result);
         
         currentCheckState.isInsideContainer = false;
         currentCheckState.parentItemId = null;
@@ -1021,10 +1383,8 @@ function initChecksPage(options = {}) {
         const locker = findLockerById(currentCheckState.lockerId);
 
         if (!currentCheckState.isInsideContainer && item.type === 'container' && status === 'missing') {
-             const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'missing', note: '', noteImage: '' };
-             const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
-             if (resultIndex > -1) checkResults[resultIndex] = result;
-             else checkResults.push(result);
+             const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'missing', note: '' };
+             recordCheckResult(result);
              
              updateItemBoxStatus(item.id, 'missing');
              saveStateToSession();
@@ -1044,10 +1404,8 @@ function initChecksPage(options = {}) {
             return;
         }
         
-        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: status, note: '', noteImage: '', parentItemId: currentCheckState.parentItemId };
-        const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
-        if (resultIndex > -1) checkResults[resultIndex] = result;
-        else checkResults.push(result);
+        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: status, note: '', parentItemId: currentCheckState.parentItemId };
+        recordCheckResult(result);
         
         updateItemBoxStatus(item.id, status);
         saveStateToSession();
@@ -1080,23 +1438,8 @@ function initChecksPage(options = {}) {
             noteModal.saveBtn.textContent = noteModalSelectedFile ? 'Uploading...' : 'Saving...';
         }
 
-        let noteImage = noteModalImageRef || '';
-        try {
-            noteImage = await uploadNoteImageIfNeeded();
-        } catch (error) {
-            console.error('Note image upload failed:', error);
-            setNoteImageStatus(error?.message || 'Image upload failed. Try again or remove the image.', 'error');
-            if (noteModal.saveBtn) {
-                noteModal.saveBtn.disabled = false;
-                noteModal.saveBtn.textContent = originalSaveText;
-            }
-            return;
-        }
-
-        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'note', note: noteText, noteImage, parentItemId: currentCheckState.parentItemId };
-        const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
-        if (resultIndex > -1) checkResults[resultIndex] = result;
-        else checkResults.push(result);
+        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'note', note: noteText, parentItemId: currentCheckState.parentItemId };
+        recordCheckResult(result);
         
         updateItemBoxStatus(item.id, 'note');
         noteModal.overlay.classList.add('hidden');
@@ -1385,34 +1728,54 @@ function initChecksPage(options = {}) {
             reportSignature = signature;
             persistSignoffState();
 
-            const reportPayload = {
-                date: new Date().toISOString(),
-                applianceId: appliance.id,
-                applianceName: appliance.name,
-                brigadeId: brigadeId,
-                lockers: generateFullReportData().lockers,
-                signedName,
-                signature,
-                username: currentUser.displayName || currentUser.email,
-                uid: currentUser.uid
-            };
-            
-            const token = await currentUser.getIdToken();
-            const response = await fetch(`/api/reports`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(reportPayload)
-            });
+            let response = null;
+            if (activeCheckSessionId) {
+                await waitForPendingAnswerSaves();
+                if (failedAnswerPayloads.size > 0) await retryFailedAnswerSaves();
+                if (failedAnswerPayloads.size > 0) {
+                    alert('Some answers failed to save. Please try again before signing off.');
+                    hideLoading();
+                    return;
+                }
+
+                const token = await currentUser.getIdToken();
+                response = await fetch(`${checkSessionBaseUrl()}/complete`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ signedName, signature })
+                });
+            } else {
+                const reportPayload = {
+                    date: new Date().toISOString(),
+                    applianceId: appliance.id,
+                    applianceName: appliance.name,
+                    brigadeId: brigadeId,
+                    lockers: generateFullReportData().lockers,
+                    signedName,
+                    signature,
+                    username: currentUser.displayName || currentUser.email,
+                    uid: currentUser.uid
+                };
+
+                const token = await currentUser.getIdToken();
+                response = await fetch(`/api/reports`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(reportPayload)
+                });
+            }
 
             if (response.ok) {
                 isReportSaved = true;
                 alert('Report saved successfully!');
-                sessionStorage.removeItem('checkResults');
-                sessionStorage.removeItem('checkInProgress');
-                sessionStorage.removeItem('currentCheckState');
+                clearLocalProgressState();
+                clearStoredCheckSession();
                 clearSignoffState();
                 goToChecksHome();
             } else {
@@ -1458,6 +1821,7 @@ function initChecksPage(options = {}) {
                 loadLockerUI();
                 showScreen('lockerCheck');
             } else {
+                updateExitConfirmCopy();
                 exitConfirmModal.overlay.classList.remove('hidden');
             }
         });
@@ -1532,6 +1896,7 @@ function initChecksPage(options = {}) {
             if (isReportSaved) {
                 goToMenu();
             } else {
+                updateExitConfirmCopy();
                 exitConfirmModal.overlay.classList.remove('hidden');
             }
         });
@@ -1546,7 +1911,15 @@ function initChecksPage(options = {}) {
         } else {
             const appliance = getActiveAppliance();
             const brigadeId = localStorage.getItem('activeBrigadeId');
-            if (appliance && brigadeId) {
+            if (activeCheckSessionId && brigadeId) {
+                try {
+                    await waitForPendingAnswerSaves();
+                    if (failedAnswerPayloads.size > 0) await retryFailedAnswerSaves();
+                    await fetchApiJson(`${checkSessionBaseUrl()}/pause`, { method: 'POST' });
+                } catch (error) {
+                    console.error("Could not pause check session on exit:", error);
+                }
+            } else if (appliance && brigadeId) {
                 try {
                     const token = await currentUser.getIdToken();
                     await fetch(`/api/brigades/${brigadeId}/appliances/${appliance.id}/complete-check`, {
@@ -1557,9 +1930,7 @@ function initChecksPage(options = {}) {
                     console.error("Could not clear check status on exit:", error);
                 }
             }
-            sessionStorage.removeItem('checkInProgress');
-            sessionStorage.removeItem('checkResults');
-            sessionStorage.removeItem('currentCheckState');
+            clearLocalProgressState();
             clearSignoffState();
             goToChecksHome();
         }
@@ -1573,6 +1944,7 @@ function initChecksPage(options = {}) {
                 setupEventListeners();
                 loadStateFromSession();
                 await loadData();
+                await loadCheckSessionFromServer();
                 startOrResumeChecks();
             } else {
                 goToSignIn();

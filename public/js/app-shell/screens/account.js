@@ -21,6 +21,28 @@ async function fetchJson(url, { token, method, body } = {}) {
   return data;
 }
 
+function normalizeRole(role) {
+  const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (raw === "admin") return "admin";
+  if (raw === "gearmanager") return "gearManager";
+  if (raw === "member") return "member";
+  if (raw === "viewer") return "viewer";
+  return "";
+}
+
+function roleLabel(role) {
+  const normalized = normalizeRole(role);
+  if (normalized === "admin") return "Admin";
+  if (normalized === "gearManager") return "Gear Manager";
+  if (normalized === "viewer") return "Viewer";
+  if (normalized === "member") return "Member";
+  return role || "Member";
+}
+
+function isAdminRole(role) {
+  return normalizeRole(role) === "admin";
+}
+
 export async function renderAccount({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
@@ -42,7 +64,7 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
 
   const nameField = el("div", "fs-field");
   const nameLabel = el("label", "fs-label");
-  nameLabel.textContent = "Display name";
+  nameLabel.textContent = "Full name";
   const nameInput = el("input", "fs-input");
   nameInput.type = "text";
   nameInput.value = user.displayName || "";
@@ -148,8 +170,7 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   function openActionSheet(brigade) {
     actionBrigade = brigade;
     sheetSubtitle.textContent = brigade?.brigadeName || brigade?.id || "";
-    const isAdmin = String(brigade?.role || "").toLowerCase() === "admin";
-    sheetDelete.style.display = isAdmin ? "" : "none";
+    sheetDelete.style.display = isAdminRole(brigade?.role) ? "" : "none";
     actionSheet.classList.remove("hidden");
   }
 
@@ -214,6 +235,11 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
 
   saveBtn.addEventListener("click", async () => {
     const nextName = nameInput.value.trim();
+    if (!nextName) {
+      msg.style.color = "var(--red-action-2)";
+      msg.textContent = "Full name is required.";
+      return;
+    }
     if (nextName.length > 60) {
       msg.textContent = "Name is too long.";
       return;
@@ -222,6 +248,12 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     msg.textContent = "";
     try {
       await user.updateProfile({ displayName: nextName });
+      const token = await user.getIdToken();
+      await fetchJson(`/api/data/${encodeURIComponent(user.uid)}`, {
+        token,
+        method: "POST",
+        body: { fullName: nextName, email: user.email || emailInput.value.trim() },
+      });
       msg.style.color = "var(--fs-muted)";
       msg.textContent = "Saved.";
     } catch (err) {
@@ -263,6 +295,8 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   async function loadProfile() {
     const token = await user.getIdToken();
     const data = await fetchJson(`/api/data/${encodeURIComponent(user.uid)}?t=${Date.now()}`, { token });
+    nameInput.value = data.fullName || data.name || data.displayName || user.displayName || "";
+    emailInput.value = data.email || user.email || "";
     identifierText.textContent = data.identifier ? `User ID: ${data.identifier}` : "";
   }
 
@@ -279,17 +313,18 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
       }
 
       brigades.forEach((b) => {
+        const displayRole = roleLabel(b.role);
         const row = el("div", "fs-row");
         const left = el("div");
         const brigadeIdentifier = b.brigadeIdentifier ? `Brigade ID: ${b.brigadeIdentifier}` : "";
         left.innerHTML = `
           <div class="fs-row-title">${b.brigadeName || b.id}</div>
-          <div class="fs-row-meta">Role: ${b.role || "Member"}</div>
+          <div class="fs-row-meta">Role: ${displayRole}</div>
           ${brigadeIdentifier ? `<div class="fs-row-meta fs-row-meta-subtle">${brigadeIdentifier}</div>` : ""}
         `;
         const right = el("div");
-        const pill = el("span", `fs-pill ${String(b.role).toLowerCase() === "admin" ? "fs-pill-success" : ""}`);
-        pill.textContent = String(b.role || "Member");
+        const pill = el("span", `fs-pill ${isAdminRole(b.role) ? "fs-pill-success" : ""}`);
+        pill.textContent = displayRole;
 
         const menuBtn = el("button", "fs-icon-btn");
         menuBtn.type = "button";

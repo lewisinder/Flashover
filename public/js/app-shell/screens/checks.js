@@ -33,6 +33,41 @@ function clearCheckSession() {
   sessionStorage.removeItem("currentCheckState");
 }
 
+function normalizeRole(role) {
+  const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (raw === "admin") return "admin";
+  if (raw === "gearmanager") return "gearManager";
+  if (raw === "member") return "member";
+  if (raw === "viewer") return "viewer";
+  return "";
+}
+
+function canEditSetup(role) {
+  const normalized = normalizeRole(role);
+  return normalized === "admin" || normalized === "gearManager";
+}
+
+function canRunChecks(role) {
+  const normalized = normalizeRole(role);
+  return normalized === "admin" || normalized === "gearManager" || normalized === "member";
+}
+
+function checkSessionIdFrom(data) {
+  return (
+    data?.sessionId ||
+    data?.checkSessionId ||
+    data?.lock?.sessionId ||
+    data?.checkStatus?.sessionId ||
+    data?.status?.sessionId ||
+    ""
+  );
+}
+
+function preserveCheckSessionId(data) {
+  const sessionId = checkSessionIdFrom(data);
+  if (sessionId) localStorage.setItem("checkSessionId", sessionId);
+}
+
 function appendRowText(parent, titleText, metaText) {
   const title = el("div", "fs-row-title");
   title.textContent = titleText || "";
@@ -174,10 +209,9 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   }
   function updateSetupButton(brigadeId) {
     const meta = brigadeMetaById.get(brigadeId) || {};
-    const role = String(meta.role || "").toLowerCase();
-    const isAdmin = role === "admin";
-    btnSetup.disabled = !isAdmin;
-    btnSetup.title = isAdmin ? "" : "Admins only";
+    const canEdit = canEditSetup(meta.role);
+    btnSetup.disabled = !canEdit;
+    btnSetup.title = canEdit ? "" : "Admins and gear managers only";
   }
 
   async function loadAppliancesForBrigade(brigadeId) {
@@ -190,11 +224,13 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
       const data = await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, { token });
 
       const appliances = Array.isArray(data?.appliances) ? data.appliances : [];
+      const role = (brigadeMetaById.get(brigadeId) || {}).role;
+      const canStartChecks = canRunChecks(role);
       applianceList.innerHTML = "";
 
       if (appliances.length === 0) {
         applianceList.innerHTML =
-          '<div class="fs-row"><div><div class="fs-row-title">No appliances yet</div><div class="fs-row-meta">Admins can add appliances from Appliance setup.</div></div></div>';
+          '<div class="fs-row"><div><div class="fs-row-title">No appliances yet</div><div class="fs-row-meta">Admins and gear managers can add appliances from Appliance setup.</div></div></div>';
         return;
       }
 
@@ -214,7 +250,11 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
         bubble.appendChild(truckIcon);
 
         const text = el("div");
-        appendRowText(text, appliance.name || "Unnamed appliance", "Tap to start");
+        appendRowText(
+          text,
+          appliance.name || "Unnamed appliance",
+          canStartChecks ? "Tap to start" : "View only"
+        );
 
         left.appendChild(bubble);
         left.appendChild(text);
@@ -227,8 +267,11 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
 
         row.appendChild(left);
         row.appendChild(chevron);
+        row.disabled = !canStartChecks;
+        row.title = canStartChecks ? "" : "Viewers cannot start or resume checks.";
 
         row.addEventListener("click", async () => {
+          if (!canStartChecks) return;
           setAlert(errorEl, "");
           setAlert(successEl, "");
           showLoading?.();
@@ -238,6 +281,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               `/api/brigades/${encodeURIComponent(brigadeId)}/appliances/${encodeURIComponent(appliance.id)}/check-status`,
               { token }
             );
+            preserveCheckSessionId(status);
 
             const openCheckForm = () => {
               localStorage.setItem("activeBrigadeId", brigadeId);
@@ -247,13 +291,17 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
             };
 
             const startCheck = async ({ force = false } = {}) => {
-              await fetchJson(
+              const result = await fetchJson(
                 `/api/brigades/${encodeURIComponent(brigadeId)}/appliances/${encodeURIComponent(appliance.id)}/start-check`,
                 { token, method: "POST", body: force ? { force: true } : undefined }
               );
+              preserveCheckSessionId(result);
+              return result;
             };
 
-            const showLockModal = (lock) => {
+            const showLockModal = (lockResponse) => {
+              preserveCheckSessionId(lockResponse);
+              const lock = lockResponse?.lock || lockResponse?.checkStatus || lockResponse;
               hideLoading?.();
               modalText.textContent = `A check for this appliance was already started by ${lockOwnerText(lock)}. Would you like to resume or start a new check?`;
               modalOverlay.classList.remove("hidden");
@@ -273,7 +321,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
                   openCheckForm();
                 } catch (err) {
                   if (err.status === 409 || err.code === "CHECK_LOCKED") {
-                    showLockModal(err.data?.lock || err.data?.checkStatus || err.data);
+                    showLockModal(err.data);
                     return;
                   }
                   console.error("Error starting new check:", err);
@@ -293,7 +341,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               await startCheck();
             } catch (err) {
               if (err.status === 409 || err.code === "CHECK_LOCKED") {
-                showLockModal(err.data?.lock || err.data?.checkStatus || err.data);
+                showLockModal(err.data);
                 return;
               }
               throw err;

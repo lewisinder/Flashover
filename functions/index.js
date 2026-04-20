@@ -51,7 +51,14 @@ const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
 const USER_IDENTIFIER_PREFIX = 'U';
 const BRIGADE_IDENTIFIER_PREFIX = 'B';
 const CHECK_LOCK_TTL_MS = 12 * 60 * 60 * 1000;
+const CHECK_EDITOR_LEASE_MS = 15 * 60 * 1000;
 const IMAGE_UPLOAD_PREFIX = 'uploads';
+const ROLES = Object.freeze({
+    ADMIN: 'admin',
+    GEAR_MANAGER: 'gearManager',
+    MEMBER: 'member',
+    VIEWER: 'viewer',
+});
 
 // --- Firestore/Storage References ---
 const bucket = admin.storage().bucket();
@@ -76,8 +83,55 @@ async function getBrigadeMember(brigadeId, userId) {
     return { ref, data: doc.data() };
 }
 
+function normalizeRole(role) {
+    const raw = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    if (raw === 'admin') return ROLES.ADMIN;
+    if (raw === 'gearmanager') return ROLES.GEAR_MANAGER;
+    if (raw === 'member') return ROLES.MEMBER;
+    if (raw === 'viewer') return ROLES.VIEWER;
+    return null;
+}
+
+function roleLabel(role) {
+    const normalized = normalizeRole(role);
+    if (normalized === ROLES.ADMIN) return 'Admin';
+    if (normalized === ROLES.GEAR_MANAGER) return 'Gear Manager';
+    if (normalized === ROLES.VIEWER) return 'Viewer';
+    return 'Member';
+}
+
 function isAdminRole(role) {
-    return String(role || '').toLowerCase() === 'admin';
+    return normalizeRole(role) === ROLES.ADMIN;
+}
+
+function canManageMembers(role) {
+    return normalizeRole(role) === ROLES.ADMIN;
+}
+
+function canDeleteBrigade(role) {
+    return normalizeRole(role) === ROLES.ADMIN;
+}
+
+function canEditSetup(role) {
+    const normalized = normalizeRole(role);
+    return normalized === ROLES.ADMIN || normalized === ROLES.GEAR_MANAGER;
+}
+
+function canRunChecks(role) {
+    const normalized = normalizeRole(role);
+    return normalized === ROLES.ADMIN || normalized === ROLES.GEAR_MANAGER || normalized === ROLES.MEMBER;
+}
+
+function canViewReports(role) {
+    return !!normalizeRole(role);
+}
+
+function displayNameFromProfile(profile, fallback = 'Unknown') {
+    return cleanOptionalText(
+        (profile && (profile.fullName || profile.name || profile.displayName)) || fallback,
+        'Display name',
+        160
+    ) || fallback;
 }
 
 function isPlainObject(value) {
@@ -237,6 +291,8 @@ function normalizeCheckStatus(value) {
     const baseMs = Number.isFinite(timestampMs) ? timestampMs : Date.now();
     const expiresAt = cleanOptionalText(value.expiresAt, 'Check lock expiry', 80) || new Date(baseMs + CHECK_LOCK_TTL_MS).toISOString();
     const lock = { inProgress: true, user, uid, timestamp, expiresAt };
+    const sessionId = cleanOptionalText(value.sessionId, 'Check session id', 128);
+    if (sessionId) lock.sessionId = sessionId;
     if (isPlainObject(value.previousLock)) {
         lock.previousLock = {
             uid: cleanOptionalText(value.previousLock.uid, 'Previous lock user id', 128),
@@ -289,6 +345,7 @@ function checkLockResponse(lock, requesterUid) {
         uid: lock.uid,
         timestamp: lock.timestamp,
         expiresAt: lock.expiresAt,
+        sessionId: lock.sessionId,
         isMine: lock.uid === requesterUid,
         previousLock: lock.previousLock,
     };
@@ -440,6 +497,210 @@ function validateApplianceData(brigadeId, incomingData, existingData = {}) {
     return { appliances };
 }
 
+function applianceRef(brigadeId, applianceId) {
+    return db.collection('brigades').doc(brigadeId).collection('appliances').doc(applianceId);
+}
+
+function applianceDataFromDoc(doc) {
+    const data = doc.data() || {};
+    return {
+        id: doc.id,
+        name: data.name || 'Appliance',
+        order: Number.isFinite(Number(data.order)) ? Number(data.order) : 0,
+        version: Number.isFinite(Number(data.version)) ? Number(data.version) : 1,
+        lockers: Array.isArray(data.lockers) ? data.lockers : [],
+        checkStatus: normalizeCheckStatus(data.checkStatus),
+    };
+}
+
+async function loadApplianceDataForBrigade(brigade) {
+    if (!brigade) return { appliances: [] };
+    const snapshot = await brigade.ref.collection('appliances').orderBy('order', 'asc').get();
+    if (!snapshot.empty) {
+        return {
+            appliances: snapshot.docs
+                .map(applianceDataFromDoc)
+                .sort((a, b) => (a.order || 0) - (b.order || 0)),
+        };
+    }
+    const legacy = brigade.data && brigade.data.applianceData;
+    return legacy && Array.isArray(legacy.appliances) ? legacy : { appliances: [] };
+}
+
+async function getApplianceForBrigade(brigadeId, applianceId, brigade = null) {
+    const doc = await applianceRef(brigadeId, applianceId).get();
+    if (doc.exists) {
+        return { ref: doc.ref, data: applianceDataFromDoc(doc) };
+    }
+    if (brigade) {
+        const applianceData = await loadApplianceDataForBrigade(brigade);
+        const appliance = applianceData.appliances.find((item) => item && item.id === applianceId);
+        if (appliance) return { ref: applianceRef(brigadeId, applianceId), data: appliance };
+    }
+    return null;
+}
+
+async function saveApplianceDataForBrigade(brigade, brigadeId, incomingData) {
+    const existingData = await loadApplianceDataForBrigade(brigade);
+    const newData = validateApplianceData(brigadeId, incomingData, existingData);
+    const existingSnapshot = await brigade.ref.collection('appliances').get();
+    const incomingIds = new Set(newData.appliances.map((appliance) => appliance.id));
+    const existingVersions = new Map(
+        existingSnapshot.docs.map((doc) => [doc.id, Number(doc.data().version || 1)])
+    );
+    const batch = db.batch();
+    newData.appliances.forEach((appliance, index) => {
+        const currentVersion = existingVersions.get(appliance.id) || 0;
+        const docRef = brigade.ref.collection('appliances').doc(appliance.id);
+        const payload = {
+            name: appliance.name,
+            order: index,
+            lockers: appliance.lockers || [],
+            version: currentVersion + 1,
+            updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (appliance.checkStatus) payload.checkStatus = appliance.checkStatus;
+        else payload.checkStatus = FieldValue.delete();
+        if (!existingVersions.has(appliance.id)) payload.createdAt = FieldValue.serverTimestamp();
+        batch.set(docRef, payload, { merge: true });
+    });
+    existingSnapshot.docs.forEach((doc) => {
+        if (!incomingIds.has(doc.id)) batch.delete(doc.ref);
+    });
+    batch.set(brigade.ref, { applianceDataMigratedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await batch.commit();
+    return newData;
+}
+
+function checkSessionsRef(brigadeId) {
+    return db.collection('brigades').doc(brigadeId).collection('checkSessions');
+}
+
+function checkSessionRef(brigadeId, sessionId) {
+    return checkSessionsRef(brigadeId).doc(sessionId);
+}
+
+function activeSessionIdFromAppliance(appliance) {
+    const lock = normalizeCheckStatus(appliance && appliance.checkStatus);
+    return lock && lock.sessionId ? lock.sessionId : null;
+}
+
+function normalizeAnswer(raw, fallback = {}) {
+    const status = cleanOptionalText(raw && raw.status, 'Answer status', 40) || fallback.status || '';
+    const allowedStatuses = new Set(['present', 'missing', 'defect', 'note', 'partial', 'untouched']);
+    if (status && !allowedStatuses.has(status)) {
+        const error = new Error('Invalid check answer status.');
+        error.status = 400;
+        throw error;
+    }
+    return {
+        lockerId: cleanOptionalText(raw && raw.lockerId, 'Locker id', 80) || fallback.lockerId || '',
+        lockerName: cleanOptionalText(raw && raw.lockerName, 'Locker name', 120) || fallback.lockerName || '',
+        itemId: cleanOptionalText(raw && raw.itemId, 'Item id', 80) || fallback.itemId || '',
+        itemName: cleanOptionalText(raw && raw.itemName, 'Item name', 160) || fallback.itemName || '',
+        itemImg: cleanOptionalText(raw && raw.itemImg, 'Item image', 500) || fallback.itemImg || '',
+        parentItemId: cleanOptionalText(raw && raw.parentItemId, 'Parent item id', 80) || fallback.parentItemId || '',
+        status,
+        note: cleanOptionalText(raw && raw.note, 'Note', 1200, { allowNewlines: true }),
+        noteImage: cleanOptionalText(raw && raw.noteImage, 'Note image', 500),
+    };
+}
+
+function applyAnswersToReportLockers(appliance, answerDocs) {
+    const answerByItemId = new Map(answerDocs.map((answer) => [String(answer.itemId), answer]));
+    const lockers = JSON.parse(JSON.stringify(Array.isArray(appliance.lockers) ? appliance.lockers : []));
+    lockers.forEach((locker) => {
+        (locker.shelves || []).forEach((shelf) => {
+            (shelf.items || []).forEach((item) => {
+                const answer = answerByItemId.get(String(item.id));
+                if (answer) {
+                    item.status = answer.status;
+                    item.note = answer.note || '';
+                    if (answer.noteImage) item.noteImage = answer.noteImage;
+                }
+                (item.subItems || []).forEach((subItem) => {
+                    const subAnswer = answerByItemId.get(String(subItem.id));
+                    if (subAnswer) {
+                        subItem.status = subAnswer.status;
+                        subItem.note = subAnswer.note || '';
+                        if (subAnswer.noteImage) subItem.noteImage = subAnswer.noteImage;
+                    }
+                });
+            });
+        });
+    });
+    return lockers;
+}
+
+async function loadSessionAnswers(brigadeId, sessionId) {
+    const snapshot = await checkSessionRef(brigadeId, sessionId).collection('answers').get();
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
+}
+
+async function createOrClaimCheckSession({ brigadeId, appliance, requester, force = false }) {
+    const userName = displayNameFromProfile(requester.profile, requester.email || requester.uid);
+    const appRef = applianceRef(brigadeId, appliance.id);
+    const sessions = checkSessionsRef(brigadeId);
+    return db.runTransaction(async (transaction) => {
+        const appDoc = await transaction.get(appRef);
+        if (!appDoc.exists) {
+            const error = new Error('Appliance not found.');
+            error.status = 404;
+            throw error;
+        }
+        const freshAppliance = applianceDataFromDoc(appDoc);
+        const existingLock = normalizeCheckStatus(freshAppliance.checkStatus);
+        const activeLock = isCheckLockActive(existingLock) ? existingLock : null;
+        if (activeLock && activeLock.uid !== requester.uid && !force) {
+            return { appliance: freshAppliance, lock: activeLock, sessionId: activeLock.sessionId, alreadyActive: true };
+        }
+        const replacingActiveSession = !!(activeLock && force);
+        const sessionRef = activeLock && activeLock.sessionId && !replacingActiveSession
+            ? sessions.doc(activeLock.sessionId)
+            : sessions.doc();
+        const now = new Date();
+        const sessionId = sessionRef.id;
+        const nextLock = makeCheckLock({ uid: requester.uid, name: userName, email: requester.email }, activeLock && activeLock.uid !== requester.uid ? activeLock : null);
+        nextLock.sessionId = sessionId;
+        const sessionPayload = {
+            brigadeId,
+            applianceId: freshAppliance.id,
+            applianceName: freshAppliance.name,
+            applianceVersion: freshAppliance.version || 1,
+            status: 'inProgress',
+            startedByUid: activeLock && activeLock.uid ? activeLock.uid : requester.uid,
+            startedByName: activeLock && activeLock.user ? activeLock.user : userName,
+            currentEditorUid: requester.uid,
+            currentEditorName: userName,
+            editorLeaseExpiresAt: Timestamp.fromDate(new Date(now.getTime() + CHECK_EDITOR_LEASE_MS)),
+            lastSavedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (!activeLock || replacingActiveSession) {
+            sessionPayload.startedAt = FieldValue.serverTimestamp();
+        }
+        if (replacingActiveSession && activeLock.sessionId) {
+            transaction.set(sessions.doc(activeLock.sessionId), {
+                status: 'cancelled',
+                cancelledAt: FieldValue.serverTimestamp(),
+                replacedBySessionId: sessionId,
+                currentEditorUid: FieldValue.delete(),
+                currentEditorName: FieldValue.delete(),
+                editorLeaseExpiresAt: FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+        transaction.set(sessionRef, sessionPayload, { merge: true });
+        transaction.set(appRef, { checkStatus: nextLock, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return { appliance: freshAppliance, lock: nextLock, sessionId, alreadyActive: false };
+    });
+}
+
+function checkSessionResponse(sessionDoc, answers = []) {
+    const data = sessionDoc && typeof sessionDoc.data === 'function' ? sessionDoc.data() || {} : sessionDoc || {};
+    return { session: { id: sessionDoc.id || data.id, ...data }, answers };
+}
+
 function identifierPrefix(ownerType) {
     return ownerType === 'brigade' ? BRIGADE_IDENTIFIER_PREFIX : USER_IDENTIFIER_PREFIX;
 }
@@ -519,6 +780,57 @@ async function ensureUserIdentifier(userId) {
     return ensureDocumentIdentifier(ref, doc.exists ? doc.data() : {}, 'user', userId);
 }
 
+async function ensureUserProfile(user) {
+    if (!user || !user.uid) return null;
+    const ref = db.collection('users').doc(user.uid);
+    const doc = await ref.get();
+    const current = doc.exists ? doc.data() || {} : {};
+    const identifier = await ensureDocumentIdentifier(ref, current, 'user', user.uid);
+    const email = cleanOptionalText(user.email || current.email, 'Email', 254);
+    const fullName = cleanOptionalText(
+        current.fullName || current.name || user.name || user.displayName || '',
+        'Full name',
+        160
+    );
+    const patch = {
+        identifier,
+        email,
+        updatedAt: FieldValue.serverTimestamp(),
+    };
+    if (fullName) patch.fullName = fullName;
+    if (!doc.exists) patch.createdAt = FieldValue.serverTimestamp();
+    await ref.set(patch, { merge: true });
+    return { id: user.uid, ...current, fullName, email, identifier };
+}
+
+async function getUserProfile(userId, authUser = null) {
+    if (!userId) return null;
+    const ref = db.collection('users').doc(userId);
+    const doc = await ref.get();
+    if (!doc.exists && authUser) return ensureUserProfile(authUser);
+    const data = doc.exists ? doc.data() || {} : {};
+    const identifier = await ensureDocumentIdentifier(ref, data, 'user', userId);
+    let email = cleanOptionalText(data.email, 'Email', 254);
+    let fullName = cleanOptionalText(data.fullName || data.name || data.displayName, 'Full name', 160);
+    if ((!email || !fullName) && !authUser) {
+        try {
+            const userRecord = await admin.auth().getUser(userId);
+            email = email || cleanOptionalText(userRecord.email, 'Email', 254);
+            fullName = fullName || cleanOptionalText(userRecord.displayName, 'Full name', 160);
+        } catch (error) {
+            // The Firestore profile can outlive Auth during local testing; keep best-effort data.
+        }
+    }
+    const patch = { identifier };
+    if (email && data.email !== email) patch.email = email;
+    if (fullName && data.fullName !== fullName) patch.fullName = fullName;
+    if (Object.keys(patch).length > 1) {
+        patch.updatedAt = FieldValue.serverTimestamp();
+        await ref.set(patch, { merge: true });
+    }
+    return { id: userId, ...data, fullName, email, identifier };
+}
+
 async function ensureBrigadeIdentifier(brigadeId, ref, data) {
     if (!brigadeId) return null;
     const brigadeRef = ref || db.collection('brigades').doc(brigadeId);
@@ -548,6 +860,15 @@ async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, user
     if (!data.brigadeName && brigadeData.name) {
         updates.brigadeName = expectedName;
     }
+    const normalizedRole = normalizeRole(data.role) || ROLES.MEMBER;
+    if (data.role !== normalizedRole) {
+        updates.role = normalizedRole;
+    }
+    const profile = await getUserProfile(userId);
+    const memberName = data.memberName || displayNameFromProfile(profile, userId);
+    if (!data.memberName && memberName) {
+        updates.memberName = memberName;
+    }
     if (Object.keys(updates).length > 0) {
         if (batch) {
             batch.set(membershipDoc.ref, updates, { merge: true });
@@ -571,6 +892,9 @@ async function ensureUserBrigadeMembershipIdentifier(userId, membershipDoc, user
         id: membershipDoc.id,
         ...data,
         ...updates,
+        role: normalizedRole,
+        roleLabel: roleLabel(normalizedRole),
+        memberName,
         brigadeIdentifier,
     };
 }
@@ -597,7 +921,7 @@ async function ensureUserBrigadesHaveIdentifiers(userId) {
 exports.createUserIdentifier = functions.region("australia-southeast1").auth.user().onCreate(async (user) => {
     if (!user || !user.uid) return null;
     try {
-        await ensureUserIdentifier(user.uid);
+        await ensureUserProfile(user);
     } catch (error) {
         console.error(`Error creating identifier for user ${user.uid}:`, error);
     }
@@ -672,7 +996,8 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
     }
     try {
         const uid = req.user.uid;
-        const displayName = req.user.name || req.user.email || 'Demo User';
+        const profile = await ensureUserProfile(req.user);
+        const displayName = displayNameFromProfile(profile, req.user.email || 'Demo User');
 
         const brigadeId = 'demo-brigade';
         const brigadeRef = db.collection('brigades').doc(brigadeId);
@@ -763,6 +1088,9 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
             ],
         };
 
+        const demoAppliance = validateApplianceData(brigadeId, demoApplianceData).appliances[0];
+        const demoApplianceRef = brigadeRef.collection('appliances').doc(demoAppliance.id);
+
         await db.runTransaction(async (tx) => {
             const brigadeDoc = await tx.get(brigadeRef);
             if (!brigadeDoc.exists) {
@@ -773,28 +1101,42 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                     creatorId: uid,
                     identifier: brigadeIdentifier,
                     createdAt: FieldValue.serverTimestamp(),
-                    applianceData: demoApplianceData,
+                    updatedAt: FieldValue.serverTimestamp(),
                 });
             } else {
                 tx.set(
                     brigadeRef,
                     {
-                        applianceData: demoApplianceData,
                         name: 'Demo Brigade',
                         stationNumber: '000',
                         region: 'Te Hiku',
                         identifier: brigadeIdentifier,
+                        updatedAt: FieldValue.serverTimestamp(),
                     },
                     { merge: true }
                 );
             }
+            tx.set(
+                demoApplianceRef,
+                {
+                    name: demoAppliance.name,
+                    order: 0,
+                    version: 1,
+                    lockers: demoAppliance.lockers,
+                    createdAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
 
             tx.set(
                 memberRef,
                 {
-                    role: 'Admin',
+                    role: ROLES.ADMIN,
                     joinedAt: FieldValue.serverTimestamp(),
+                    fullName: displayName,
                     name: displayName,
+                    email: profile.email || req.user.email || '',
                     userIdentifier,
                 },
                 { merge: true }
@@ -805,7 +1147,8 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                 {
                     brigadeName: 'Demo Brigade (000)',
                     brigadeIdentifier,
-                    role: 'Admin',
+                    role: ROLES.ADMIN,
+                    memberName: displayName,
                 },
                 { merge: true }
             );
@@ -832,9 +1175,8 @@ async function authorizeImageUpload(req, res, { adminOnly = false } = {}) {
             res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
             return null;
         }
-        if (adminOnly && !isAdminRole(member.data.role)) {
-            res.status(403).json({ message: 'Forbidden: Admin role required.' });
-            return null;
+        if (!canEditSetup(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin or Gear Manager role required.' });
         }
         return { brigadeId, member };
     } catch (error) {
@@ -953,8 +1295,8 @@ apiRouter.delete('/image/:fileName', async (req, res) => {
         if (!member) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
-        if (!isAdminRole(member.data.role)) {
-            return res.status(403).json({ message: 'Forbidden: Admin role required.' });
+        if (!canEditSetup(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin or Gear Manager role required.' });
         }
 
         const { fileName } = req.params;
@@ -1009,21 +1351,14 @@ userRouter.get('/:userId', async (req, res) => {
         if (req.params.userId !== req.user.uid) {
             return res.status(403).json({ message: 'Forbidden: You can only load your own profile.' });
         }
-        const userDocRef = db.collection('users').doc(req.user.uid);
-        const doc = await userDocRef.get();
-        const identifier = await ensureDocumentIdentifier(
-            userDocRef,
-            doc.exists ? doc.data() : {},
-            'user',
-            req.user.uid
-        );
+        const profile = await ensureUserProfile(req.user);
         await ensureUserBrigadesHaveIdentifiers(req.user.uid);
-        if (doc.exists) {
-            return res.json({ ...doc.data(), identifier });
-        }
-        const defaultData = { appliances: [], identifier };
-        await db.collection('users').doc(req.user.uid).set(defaultData);
-        return res.json({ ...defaultData, serverTime: new Date().toISOString() });
+        return res.json({
+            ...profile,
+            fullName: profile.fullName || '',
+            email: profile.email || req.user.email || '',
+            serverTime: new Date().toISOString(),
+        });
     } catch (err) {
         console.error('Error in get-data route:', err);
         res.status(500).json({ message: 'Error loading data.' });
@@ -1043,7 +1378,11 @@ userRouter.post('/:userId', async (req, res) => {
             req.user.uid
         );
         const body = isPlainObject(req.body) ? req.body : {};
-        const patch = { identifier };
+        const patch = { identifier, updatedAt: FieldValue.serverTimestamp() };
+        const fullName = cleanOptionalText(body.fullName || body.name, 'Full name', 160);
+        if (fullName) patch.fullName = fullName;
+        const email = cleanOptionalText(body.email || req.user.email, 'Email', 254);
+        if (email) patch.email = email;
         if (isPlainObject(body.termsAcceptance)) {
             const version = cleanOptionalText(body.termsAcceptance.version, 'Terms version', 40);
             if (version) {
@@ -1054,7 +1393,7 @@ userRouter.post('/:userId', async (req, res) => {
                 };
             }
         }
-        if (Object.keys(patch).length <= 1) {
+        if (Object.keys(patch).length <= 2) {
             return res.status(400).json({ message: 'No supported profile fields were provided.' });
         }
         await userDocRef.set(patch, { merge: true });
@@ -1163,7 +1502,7 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
         const adminId = req.user.uid;
         const adminMemberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(adminId);
         const adminDoc = await adminMemberRef.get();
-        if (!adminDoc.exists || adminDoc.data().role !== 'Admin') {
+        if (!adminDoc.exists || !canManageMembers(adminDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to view join requests.' });
         }
         const requestsSnapshot = await db.collection('brigades').doc(brigadeId).collection('joinRequests').where('status', '==', 'pending').get();
@@ -1173,7 +1512,7 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
             if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
                 await doc.ref.set({ userIdentifier }, { merge: true });
             }
-            return { id: doc.id, ...data, userIdentifier };
+            return { id: doc.id, ...data, userName: data.userName || data.fullName || doc.id, userIdentifier };
         }));
         res.json(requests);
     } catch (error) {
@@ -1184,7 +1523,10 @@ brigadeRouter.get('/:brigadeId/join-requests', async (req, res) => {
 brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
     try {
         const { brigadeId } = req.params;
-        const { uid: userId, name: userName, email } = req.user;
+        const { uid: userId } = req.user;
+        const profile = await ensureUserProfile(req.user);
+        const userName = displayNameFromProfile(profile, req.user.email || userId);
+        const email = profile.email || req.user.email || '';
 
         const brigade = await getBrigadeDoc(brigadeId);
         if (!brigade) {
@@ -1206,6 +1548,8 @@ brigadeRouter.post('/:brigadeId/join-requests', async (req, res) => {
             status: 'pending',
             requestedAt: FieldValue.serverTimestamp(),
             userName: userName || email,
+            fullName: userName || '',
+            email,
             userIdentifier,
         });
         res.status(201).json({ message: 'Your request to join has been sent.' });
@@ -1221,7 +1565,7 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
         const adminId = req.user.uid;
         const adminMemberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(adminId);
         const adminDoc = await adminMemberRef.get();
-        if (!adminDoc.exists || adminDoc.data().role !== 'Admin') {
+        if (!adminDoc.exists || !canManageMembers(adminDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to handle join requests.' });
         }
         const requestRef = db.collection('brigades').doc(brigadeId).collection('joinRequests').doc(userId);
@@ -1231,7 +1575,8 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
                 return res.status(404).json({ message: 'Join request not found.' });
             }
             const requestData = requestDoc.data() || {};
-            const { userName } = requestData;
+            const userProfile = await getUserProfile(userId);
+            const userName = requestData.fullName || requestData.userName || displayNameFromProfile(userProfile, userId);
             const brigadeRef = db.collection('brigades').doc(brigadeId);
             const newMemberRef = brigadeRef.collection('members').doc(userId);
             const userBrigadeRef = db.collection('users').doc(userId).collection('userBrigades').doc(brigadeId);
@@ -1240,8 +1585,20 @@ brigadeRouter.post('/:brigadeId/join-requests/:userId', async (req, res) => {
             const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
             const userIdentifier = normalizeSixDigitIdentifier(requestData.userIdentifier, 'user') || await ensureUserIdentifier(userId);
             await db.runTransaction(async (transaction) => {
-                transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: userName, userIdentifier });
-                transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
+                transaction.set(newMemberRef, {
+                    role: ROLES.MEMBER,
+                    joinedAt: FieldValue.serverTimestamp(),
+                    fullName: userName,
+                    name: userName,
+                    email: requestData.email || (userProfile && userProfile.email) || '',
+                    userIdentifier,
+                });
+                transaction.set(userBrigadeRef, {
+                    brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`,
+                    brigadeIdentifier,
+                    role: ROLES.MEMBER,
+                    memberName: userName,
+                });
                 transaction.delete(requestRef);
             });
             res.status(200).json({ message: `User ${userName} has been added to the brigade.` });
@@ -1267,12 +1624,13 @@ brigadeRouter.post('/:brigadeId/members', async (req, res) => {
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const adminMemberRef = brigadeRef.collection('members').doc(adminId);
         const adminMemberDoc = await adminMemberRef.get();
-        if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
+        if (!adminMemberDoc.exists || !canManageMembers(adminMemberDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to add members.' });
         }
         const newMemberUserRecord = await admin.auth().getUserByEmail(newMemberEmail);
         const newMemberId = newMemberUserRecord.uid;
-        const newMemberName = newMemberUserRecord.displayName || newMemberEmail;
+        const newMemberProfile = await getUserProfile(newMemberId);
+        const newMemberName = displayNameFromProfile(newMemberProfile, newMemberUserRecord.displayName || newMemberEmail);
         const newMemberRef = brigadeRef.collection('members').doc(newMemberId);
         const userRef = db.collection('users').doc(newMemberId);
         const userBrigadeRef = userRef.collection('userBrigades').doc(brigadeId);
@@ -1281,8 +1639,20 @@ brigadeRouter.post('/:brigadeId/members', async (req, res) => {
         const brigadeIdentifier = await ensureBrigadeIdentifier(brigadeId, brigadeRef, brigadeData);
         const userIdentifier = await ensureUserIdentifier(newMemberId);
         await db.runTransaction(async (transaction) => {
-            transaction.set(newMemberRef, { role: 'Member', joinedAt: FieldValue.serverTimestamp(), name: newMemberName, userIdentifier });
-            transaction.set(userBrigadeRef, { brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`, brigadeIdentifier, role: 'Member' });
+            transaction.set(newMemberRef, {
+                role: ROLES.MEMBER,
+                joinedAt: FieldValue.serverTimestamp(),
+                fullName: newMemberName,
+                name: newMemberName,
+                email: newMemberProfile?.email || newMemberEmail,
+                userIdentifier,
+            });
+            transaction.set(userBrigadeRef, {
+                brigadeName: `${brigadeData.name} (${brigadeData.stationNumber})`,
+                brigadeIdentifier,
+                role: ROLES.MEMBER,
+                memberName: newMemberName,
+            });
         });
         res.status(201).json({ message: `User ${newMemberName} added to brigade successfully.` });
     } catch (error) {
@@ -1301,17 +1671,16 @@ brigadeRouter.put('/:brigadeId/members/:memberId', async (req, res) => {
         if (!role) {
             return res.status(400).json({ message: 'Role is required.' });
         }
-        const roleRaw = String(role || '').trim().toLowerCase();
-        const normalizedRole = roleRaw === 'admin' ? 'Admin' : roleRaw === 'member' ? 'Member' : null;
+        const normalizedRole = normalizeRole(role);
         if (!normalizedRole) {
-            return res.status(400).json({ message: 'Invalid role. Allowed roles: Admin, Member.' });
+            return res.status(400).json({ message: 'Invalid role. Allowed roles: Admin, Gear Manager, Member, Viewer.' });
         }
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const adminMemberRef = brigadeRef.collection('members').doc(adminId);
         const targetMemberRef = brigadeRef.collection('members').doc(memberId);
         const targetUserBrigadeRef = db.collection('users').doc(memberId).collection('userBrigades').doc(brigadeId);
         const adminMemberDoc = await adminMemberRef.get();
-        if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
+        if (!adminMemberDoc.exists || !canManageMembers(adminMemberDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to update roles.' });
         }
 
@@ -1321,11 +1690,12 @@ brigadeRouter.put('/:brigadeId/members/:memberId', async (req, res) => {
         }
 
         // Safety: prevent demoting the last remaining admin (including yourself).
-        const targetIsAdmin = String(targetMemberDoc.data().role || '') === 'Admin';
-        const wouldRemoveAdmin = targetIsAdmin && normalizedRole !== 'Admin';
+        const targetIsAdmin = isAdminRole(targetMemberDoc.data().role);
+        const wouldRemoveAdmin = targetIsAdmin && normalizedRole !== ROLES.ADMIN;
         if (wouldRemoveAdmin) {
-            const adminsSnapshot = await brigadeRef.collection('members').where('role', '==', 'Admin').get();
-            if (adminsSnapshot.size <= 1) {
+            const membersSnapshot = await brigadeRef.collection('members').get();
+            const adminCount = membersSnapshot.docs.filter((doc) => isAdminRole((doc.data() || {}).role)).length;
+            if (adminCount <= 1) {
                 return res.status(400).json({
                     message: 'You cannot demote the last admin. Promote another member to Admin first.',
                 });
@@ -1354,7 +1724,7 @@ brigadeRouter.delete('/:brigadeId/members/:memberId', async (req, res) => {
         const targetMemberRef = brigadeRef.collection('members').doc(memberId);
         const targetUserBrigadeRef = db.collection('users').doc(memberId).collection('userBrigades').doc(brigadeId);
         const adminMemberDoc = await adminMemberRef.get();
-        if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
+        if (!adminMemberDoc.exists || !canManageMembers(adminMemberDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to remove members.' });
         }
 
@@ -1364,10 +1734,11 @@ brigadeRouter.delete('/:brigadeId/members/:memberId', async (req, res) => {
         }
 
         // Safety: prevent removing the last remaining admin.
-        const targetIsAdmin = String(targetMemberDoc.data().role || '') === 'Admin';
+        const targetIsAdmin = isAdminRole(targetMemberDoc.data().role);
         if (targetIsAdmin) {
-            const adminsSnapshot = await brigadeRef.collection('members').where('role', '==', 'Admin').get();
-            if (adminsSnapshot.size <= 1) {
+            const membersSnapshot = await brigadeRef.collection('members').get();
+            const adminCount = membersSnapshot.docs.filter((doc) => isAdminRole((doc.data() || {}).role)).length;
+            if (adminCount <= 1) {
                 return res.status(400).json({
                     message: 'You cannot remove the last admin. Promote another member to Admin first.',
                 });
@@ -1392,9 +1763,10 @@ brigadeRouter.post('/:brigadeId/leave', async (req, res) => {
         const memberRef = brigadeRef.collection('members').doc(userId);
         const userBrigadeRef = db.collection('users').doc(userId).collection('userBrigades').doc(brigadeId);
         const memberDoc = await memberRef.get();
-        if (memberDoc.exists && memberDoc.data().role === 'Admin') {
-            const membersSnapshot = await brigadeRef.collection('members').where('role', '==', 'Admin').get();
-            if (membersSnapshot.size <= 1) {
+        if (memberDoc.exists && isAdminRole(memberDoc.data().role)) {
+            const membersSnapshot = await brigadeRef.collection('members').get();
+            const adminCount = membersSnapshot.docs.filter((doc) => isAdminRole((doc.data() || {}).role)).length;
+            if (adminCount <= 1) {
                 return res.status(400).json({ message: 'You cannot leave as you are the last admin. Please promote another member to Admin first.' });
             }
         }
@@ -1422,8 +1794,7 @@ brigadeRouter.get('/:brigadeId/data', async (req, res) => {
         if (!brigadeDoc.exists) {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
-        const brigadeData = brigadeDoc.data();
-        const applianceData = brigadeData.applianceData || { appliances: [] };
+        const applianceData = await loadApplianceDataForBrigade({ ref: brigadeRef, data: brigadeDoc.data() || {} });
         res.status(200).json(applianceData);
     } catch (error) {
         console.error(`Error fetching appliance data for brigade ${req.params.brigadeId}:`, error);
@@ -1470,8 +1841,8 @@ brigadeRouter.post('/:brigadeId/data', async (req, res) => {
         if (!memberDoc.exists) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
-        if (!isAdminRole(memberDoc.data().role)) {
-            return res.status(403).json({ message: 'Forbidden: Admin role required to edit appliance setup.' });
+        if (!canEditSetup(memberDoc.data().role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin or Gear Manager role required to edit appliance setup.' });
         }
 
         const brigade = await getBrigadeDoc(brigadeId);
@@ -1479,8 +1850,7 @@ brigadeRouter.post('/:brigadeId/data', async (req, res) => {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
 
-        const newData = validateApplianceData(brigadeId, incomingData, brigade.data.applianceData || { appliances: [] });
-        await brigade.ref.update({ applianceData: newData });
+        await saveApplianceDataForBrigade(brigade, brigadeId, incomingData);
         res.status(200).json({ message: 'Appliance data saved successfully!' });
     } catch (error) {
         console.error(`Error saving appliance data for brigade ${req.params.brigadeId}:`, error);
@@ -1492,7 +1862,8 @@ brigadeRouter.post('/', async (req, res) => {
     try {
         const { name, stationNumber, region } = req.body;
         const creatorId = req.user.uid;
-        const creatorName = req.user.name || req.user.email;
+        const profile = await ensureUserProfile(req.user);
+        const creatorName = displayNameFromProfile(profile, req.user.email || creatorId);
         if (!name || !stationNumber || !region) {
             return res.status(400).json({ message: 'Missing required fields: name, stationNumber, and region are required.' });
         }
@@ -1507,14 +1878,26 @@ brigadeRouter.post('/', async (req, res) => {
             creatorId: creatorId,
             identifier: brigadeIdentifier,
             createdAt: FieldValue.serverTimestamp(),
-            applianceData: { appliances: [] }
+            updatedAt: FieldValue.serverTimestamp(),
         };
         const adminMemberRef = newBrigadeRef.collection('members').doc(creatorId);
         const userBrigadeRef = db.collection('users').doc(creatorId).collection('userBrigades').doc(brigadeId);
         await db.runTransaction(async (transaction) => {
             transaction.set(newBrigadeRef, newBrigadeData);
-            transaction.set(adminMemberRef, { role: 'Admin', joinedAt: FieldValue.serverTimestamp(), name: creatorName, userIdentifier });
-            transaction.set(userBrigadeRef, { brigadeName: `${name} (${stationNumber})`, brigadeIdentifier, role: 'Admin' });
+            transaction.set(adminMemberRef, {
+                role: ROLES.ADMIN,
+                joinedAt: FieldValue.serverTimestamp(),
+                fullName: creatorName,
+                name: creatorName,
+                email: profile.email || req.user.email || '',
+                userIdentifier,
+            });
+            transaction.set(userBrigadeRef, {
+                brigadeName: `${name} (${stationNumber})`,
+                brigadeIdentifier,
+                role: ROLES.ADMIN,
+                memberName: creatorName,
+            });
         });
         res.status(201).json({ message: 'Brigade created successfully!', brigadeId: brigadeId, identifier: brigadeIdentifier });
     } catch (error) {
@@ -1534,10 +1917,14 @@ brigadeRouter.get('/:brigadeId/appliances/:applianceId/check-status', async (req
         if (!brigade) {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
-        const applianceData = brigade.data.applianceData || { appliances: [] };
-        const appliance = applianceData.appliances.find(a => a.id === applianceId);
-        const lock = normalizeCheckStatus(appliance && appliance.checkStatus);
-        res.json(checkLockResponse(lock, req.user.uid));
+        const appliance = await getApplianceForBrigade(brigadeId, applianceId, brigade);
+        if (!appliance) {
+            return res.status(404).json({ message: 'Appliance not found.' });
+        }
+        const lock = normalizeCheckStatus(appliance.data && appliance.data.checkStatus);
+        const response = checkLockResponse(lock, req.user.uid);
+        if (lock && lock.sessionId) response.sessionId = lock.sessionId;
+        res.json(response);
     } catch (error) {
         console.error('Error getting check status:', error);
         res.status(500).json({ message: 'Failed to get check status.' });
@@ -1546,52 +1933,47 @@ brigadeRouter.get('/:brigadeId/appliances/:applianceId/check-status', async (req
 brigadeRouter.post('/:brigadeId/appliances/:applianceId/start-check', async (req, res) => {
     try {
         const { brigadeId, applianceId } = req.params;
-        const { uid, name, email } = req.user;
         const member = await getBrigadeMember(brigadeId, req.user.uid);
         if (!member) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
+        if (!canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Viewer role cannot start checks.' });
+        }
         const force = !!(req.body && req.body.force);
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
-        const result = await db.runTransaction(async (transaction) => {
-            const brigadeDoc = await transaction.get(brigadeRef);
-            if (!brigadeDoc.exists) {
-                const error = new Error('Brigade not found.');
-                error.status = 404;
-                throw error;
-            }
-            const brigadeData = brigadeDoc.data() || {};
-            const applianceData = brigadeData.applianceData || { appliances: [] };
-            const applianceIndex = findApplianceIndex(applianceData, applianceId);
-            if (applianceIndex === -1) {
-                const error = new Error('Appliance not found.');
-                error.status = 404;
-                throw error;
-            }
-
-            const appliance = applianceData.appliances[applianceIndex];
-            const existingLock = normalizeCheckStatus(appliance.checkStatus);
-            const activeLock = isCheckLockActive(existingLock) ? existingLock : null;
-            if (activeLock && activeLock.uid === uid && !force) {
-                return { alreadyOwned: true, lock: activeLock };
-            }
-            if (activeLock && activeLock.uid !== uid && !force) {
-                const error = new Error('A check is already in progress for this appliance.');
-                error.status = 409;
-                error.code = 'CHECK_LOCKED';
-                error.lock = activeLock;
-                throw error;
-            }
-            const nextLock = makeCheckLock({ uid, name, email }, activeLock && activeLock.uid !== uid ? activeLock : null);
-            applianceData.appliances[applianceIndex] = { ...appliance, checkStatus: nextLock };
-            transaction.update(brigadeRef, { applianceData });
-            return { lock: nextLock, forced: !!(activeLock && activeLock.uid !== uid && force) };
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+        const appliance = await getApplianceForBrigade(brigadeId, applianceId, brigade);
+        if (!appliance) {
+            return res.status(404).json({ message: 'Appliance not found.' });
+        }
+        const profile = await ensureUserProfile(req.user);
+        const result = await createOrClaimCheckSession({
+            brigadeId,
+            appliance: appliance.data,
+            requester: {
+                uid: req.user.uid,
+                email: profile.email || req.user.email || '',
+                profile,
+            },
+            force,
         });
+        if (result.alreadyActive && result.lock && result.lock.uid !== req.user.uid) {
+            return res.status(409).json({
+                message: 'A check is already in progress for this appliance.',
+                code: 'CHECK_LOCKED',
+                lock: checkLockResponse(result.lock, req.user.uid),
+                sessionId: result.sessionId,
+            });
+        }
         res.status(200).json({
             message: 'Check started successfully.',
-            alreadyOwned: !!result.alreadyOwned,
-            forced: !!result.forced,
-            lock: checkLockResponse(result.lock, uid),
+            alreadyOwned: !!(result.lock && result.lock.uid === req.user.uid),
+            forced: !!force,
+            sessionId: result.sessionId,
+            lock: checkLockResponse(result.lock, req.user.uid),
         });
     } catch (error) {
         console.error('Error starting check:', error);
@@ -1610,39 +1992,31 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (
         if (!member) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
+        if (!canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Viewer role cannot complete checks.' });
+        }
 
         const force = !!(req.body && req.body.force);
-        const requesterIsAdmin = isAdminRole(member.data.role);
-        const brigadeRef = db.collection('brigades').doc(brigadeId);
+        const requesterCanForce = isAdminRole(member.data.role) || normalizeRole(member.data.role) === ROLES.GEAR_MANAGER;
+        const appRef = applianceRef(brigadeId, applianceId);
         const result = await db.runTransaction(async (transaction) => {
-            const brigadeDoc = await transaction.get(brigadeRef);
-            if (!brigadeDoc.exists) {
-                const error = new Error('Brigade not found.');
-                error.status = 404;
-                throw error;
-            }
-            const brigadeData = brigadeDoc.data() || {};
-            const applianceData = brigadeData.applianceData || { appliances: [] };
-            const applianceIndex = findApplianceIndex(applianceData, applianceId);
-            if (applianceIndex === -1) {
+            const appDoc = await transaction.get(appRef);
+            if (!appDoc.exists) {
                 const error = new Error('Appliance not found.');
                 error.status = 404;
                 throw error;
             }
-            const appliance = applianceData.appliances[applianceIndex];
+            const appliance = applianceDataFromDoc(appDoc);
             const existingLock = normalizeCheckStatus(appliance.checkStatus);
             const activeLock = isCheckLockActive(existingLock) ? existingLock : null;
             if (!activeLock) {
                 if (appliance.checkStatus) {
-                    const nextAppliance = { ...appliance };
-                    delete nextAppliance.checkStatus;
-                    applianceData.appliances[applianceIndex] = nextAppliance;
-                    transaction.update(brigadeRef, { applianceData });
+                    transaction.set(appRef, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
                 }
                 return { cleared: false, idempotent: true };
             }
             if (activeLock.uid !== req.user.uid) {
-                if (!requesterIsAdmin) {
+                if (!requesterCanForce) {
                     const error = new Error("You cannot complete another member's active check.");
                     error.status = 403;
                     error.code = 'CHECK_LOCKED';
@@ -1657,10 +2031,16 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (
                     throw error;
                 }
             }
-            const nextAppliance = { ...appliance };
-            delete nextAppliance.checkStatus;
-            applianceData.appliances[applianceIndex] = nextAppliance;
-            transaction.update(brigadeRef, { applianceData });
+            transaction.set(appRef, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+            if (activeLock.sessionId) {
+                transaction.set(checkSessionRef(brigadeId, activeLock.sessionId), {
+                    status: 'paused',
+                    currentEditorUid: FieldValue.delete(),
+                    currentEditorName: FieldValue.delete(),
+                    editorLeaseExpiresAt: FieldValue.delete(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                }, { merge: true });
+            }
             return { cleared: true, forced: activeLock.uid !== req.user.uid };
         });
         res.status(200).json({ message: 'Check completed successfully.', ...result });
@@ -1674,6 +2054,296 @@ brigadeRouter.post('/:brigadeId/appliances/:applianceId/complete-check', async (
         });
     }
 });
+
+brigadeRouter.get('/:brigadeId/appliances/:applianceId/check-sessions/active', async (req, res) => {
+    try {
+        const { brigadeId, applianceId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canViewReports(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        const appliance = await getApplianceForBrigade(brigadeId, applianceId);
+        if (!appliance) return res.status(404).json({ message: 'Appliance not found.' });
+        const lock = normalizeCheckStatus(appliance.data.checkStatus);
+        if (!lock || !lock.sessionId) return res.json({ session: null, answers: [] });
+        const sessionDoc = await checkSessionRef(brigadeId, lock.sessionId).get();
+        if (!sessionDoc.exists) return res.json({ session: null, answers: [] });
+        const answers = await loadSessionAnswers(brigadeId, lock.sessionId);
+        res.json(checkSessionResponse(sessionDoc, answers));
+    } catch (error) {
+        console.error('Error loading active check session:', error);
+        res.status(500).json({ message: 'Failed to load active check session.' });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/appliances/:applianceId/check-sessions', async (req, res) => {
+    try {
+        const { brigadeId, applianceId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        if (!canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Viewer role cannot start checks.' });
+        }
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) return res.status(404).json({ message: 'Brigade not found.' });
+        const appliance = await getApplianceForBrigade(brigadeId, applianceId, brigade);
+        if (!appliance) return res.status(404).json({ message: 'Appliance not found.' });
+        const profile = await ensureUserProfile(req.user);
+        const result = await createOrClaimCheckSession({
+            brigadeId,
+            appliance: appliance.data,
+            requester: {
+                uid: req.user.uid,
+                email: profile.email || req.user.email || '',
+                profile,
+            },
+            force: !!(req.body && req.body.force),
+        });
+        if (result.alreadyActive && result.lock && result.lock.uid !== req.user.uid) {
+            return res.status(409).json({
+                message: 'A check is already in progress for this appliance.',
+                code: 'CHECK_LOCKED',
+                sessionId: result.sessionId,
+                lock: checkLockResponse(result.lock, req.user.uid),
+            });
+        }
+        const sessionDoc = await checkSessionRef(brigadeId, result.sessionId).get();
+        const answers = await loadSessionAnswers(brigadeId, result.sessionId);
+        res.status(200).json({ ...checkSessionResponse(sessionDoc, answers), sessionId: result.sessionId });
+    } catch (error) {
+        console.error('Error creating check session:', error);
+        const status = error.status || 500;
+        res.status(status).json({ message: status === 500 ? 'Failed to create check session.' : error.message });
+    }
+});
+
+brigadeRouter.get('/:brigadeId/check-sessions/:sessionId', async (req, res) => {
+    try {
+        const { brigadeId, sessionId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canViewReports(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        const sessionDoc = await checkSessionRef(brigadeId, sessionId).get();
+        if (!sessionDoc.exists) return res.status(404).json({ message: 'Check session not found.' });
+        const answers = await loadSessionAnswers(brigadeId, sessionId);
+        res.json(checkSessionResponse(sessionDoc, answers));
+    } catch (error) {
+        console.error('Error loading check session:', error);
+        res.status(500).json({ message: 'Failed to load check session.' });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/claim', async (req, res) => {
+    try {
+        const { brigadeId, sessionId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot resume checks.' });
+        }
+        const profile = await ensureUserProfile(req.user);
+        const editorName = displayNameFromProfile(profile, req.user.email || req.user.uid);
+        const ref = checkSessionRef(brigadeId, sessionId);
+        await ref.set({
+            status: 'inProgress',
+            currentEditorUid: req.user.uid,
+            currentEditorName: editorName,
+            editorLeaseExpiresAt: Timestamp.fromDate(new Date(Date.now() + CHECK_EDITOR_LEASE_MS)),
+            lastSavedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        const sessionDoc = await ref.get();
+        const answers = await loadSessionAnswers(brigadeId, sessionId);
+        res.json(checkSessionResponse(sessionDoc, answers));
+    } catch (error) {
+        console.error('Error claiming check session:', error);
+        res.status(500).json({ message: 'Failed to resume check session.' });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/pause', async (req, res) => {
+    try {
+        const { brigadeId, sessionId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot pause checks.' });
+        }
+        await checkSessionRef(brigadeId, sessionId).set({
+            status: 'paused',
+            currentEditorUid: FieldValue.delete(),
+            currentEditorName: FieldValue.delete(),
+            editorLeaseExpiresAt: FieldValue.delete(),
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        res.json({ message: 'Check paused.' });
+    } catch (error) {
+        console.error('Error pausing check session:', error);
+        res.status(500).json({ message: 'Failed to pause check session.' });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/answers/:itemId', async (req, res) => {
+    try {
+        const { brigadeId, sessionId, itemId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot edit checks.' });
+        }
+        const profile = await ensureUserProfile(req.user);
+        const updatedByName = displayNameFromProfile(profile, req.user.email || req.user.uid);
+        const answer = normalizeAnswer(req.body || {}, { itemId });
+        answer.itemId = itemId;
+        await checkSessionRef(brigadeId, sessionId).collection('answers').doc(itemId).set({
+            ...answer,
+            updatedByUid: req.user.uid,
+            updatedByName,
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        await checkSessionRef(brigadeId, sessionId).set({
+            status: 'inProgress',
+            currentEditorUid: req.user.uid,
+            currentEditorName: updatedByName,
+            editorLeaseExpiresAt: Timestamp.fromDate(new Date(Date.now() + CHECK_EDITOR_LEASE_MS)),
+            lastSavedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        res.json({ message: 'Answer saved.' });
+    } catch (error) {
+        console.error('Error saving check answer:', error);
+        const status = error.status || 500;
+        res.status(status).json({ message: status === 500 ? 'Failed to save check answer.' : error.message });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/cancel', async (req, res) => {
+    try {
+        const { brigadeId, sessionId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot cancel checks.' });
+        }
+        const ref = checkSessionRef(brigadeId, sessionId);
+        const sessionDoc = await ref.get();
+        if (!sessionDoc.exists) return res.status(404).json({ message: 'Check session not found.' });
+        const session = sessionDoc.data() || {};
+        const appRef = applianceRef(brigadeId, session.applianceId);
+        await db.runTransaction(async (transaction) => {
+            transaction.set(ref, {
+                status: 'cancelled',
+                cancelledAt: FieldValue.serverTimestamp(),
+                currentEditorUid: FieldValue.delete(),
+                currentEditorName: FieldValue.delete(),
+                editorLeaseExpiresAt: FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            transaction.set(appRef, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        });
+        res.json({ message: 'Check cancelled.' });
+    } catch (error) {
+        console.error('Error cancelling check session:', error);
+        res.status(500).json({ message: 'Failed to cancel check session.' });
+    }
+});
+
+brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/complete', async (req, res) => {
+    try {
+        const { brigadeId, sessionId } = req.params;
+        const member = await getBrigadeMember(brigadeId, req.user.uid);
+        if (!member || !canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: You cannot complete checks.' });
+        }
+        const sessionRef = checkSessionRef(brigadeId, sessionId);
+        const sessionDoc = await sessionRef.get();
+        if (!sessionDoc.exists) return res.status(404).json({ message: 'Check session not found.' });
+        const session = sessionDoc.data() || {};
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) return res.status(404).json({ message: 'Brigade not found.' });
+        const appliance = await getApplianceForBrigade(brigadeId, session.applianceId, brigade);
+        if (!appliance) return res.status(404).json({ message: 'Appliance not found.' });
+        const profile = await ensureUserProfile(req.user);
+        const completedBy = displayNameFromProfile(profile, req.user.email || req.user.uid);
+        const signedName = normalizeSignedName(req.body && req.body.signedName);
+        const signature = sanitizeSignatureData(req.body && req.body.signature);
+        const answers = await loadSessionAnswers(brigadeId, sessionId);
+        const lockers = applyAnswersToReportLockers(appliance.data, answers);
+        const checkedAt = new Date().toISOString();
+        const safeReportData = {
+            brigadeId,
+            applianceId: appliance.data.id,
+            applianceName: appliance.data.name,
+            applianceVersion: appliance.data.version || session.applianceVersion || 1,
+            date: checkedAt,
+            checkedAt,
+            createdAt: FieldValue.serverTimestamp(),
+            uid: req.user.uid,
+            username: completedBy,
+            createdByUid: req.user.uid,
+            createdByName: completedBy,
+            signedName,
+            hasSignature: !!signature,
+            resumedFromSessionId: sessionId,
+            contributors: Array.from(new Set([
+                session.startedByName,
+                session.currentEditorName,
+                completedBy,
+                ...answers.map((answer) => answer.updatedByName),
+            ].filter(Boolean))),
+            lockers,
+        };
+        const reportRef = brigade.ref.collection('reports').doc();
+        await reportRef.set(safeReportData);
+        if (signature) {
+            await reportRef.collection('meta').doc('signoff').set({
+                signature,
+                signedName,
+                username: completedBy,
+                uid: req.user.uid,
+                createdAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+        await db.runTransaction(async (transaction) => {
+            transaction.set(sessionRef, {
+                status: 'completed',
+                reportId: reportRef.id,
+                completedAt: FieldValue.serverTimestamp(),
+                currentEditorUid: FieldValue.delete(),
+                currentEditorName: FieldValue.delete(),
+                editorLeaseExpiresAt: FieldValue.delete(),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+            transaction.set(appliance.ref, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        });
+        try {
+            const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
+            const recipients = [];
+            for (const memberDoc of membersSnapshot.docs) {
+                const memberProfile = await getUserProfile(memberDoc.id);
+                if (memberProfile && memberProfile.email) recipients.push(memberProfile.email);
+            }
+            if (recipients.length > 0) {
+                const emailHtml = generateReportHtml(safeReportData);
+                await Promise.all(recipients.map((email) => db.collection('mail').add({
+                    to: email,
+                    message: {
+                        subject: `New Report Submitted for ${safeReportData.applianceName}`,
+                        html: emailHtml,
+                    },
+                    createdAt: FieldValue.serverTimestamp(),
+                })));
+            }
+        } catch (emailError) {
+            console.error('Failed to queue report emails:', emailError);
+        }
+        res.status(201).json({ message: 'Report saved successfully.', reportId: reportRef.id });
+    } catch (error) {
+        console.error('Error completing check session:', error);
+        const status = error.status || 500;
+        res.status(status).json({ message: status === 500 ? 'Failed to complete check session.' : error.message });
+    }
+});
+
 brigadeRouter.get('/:brigadeId', async (req, res) => {
     try {
         const brigadeId = req.params.brigadeId;
@@ -1695,10 +2365,16 @@ brigadeRouter.get('/:brigadeId', async (req, res) => {
         const members = await Promise.all(membersSnapshot.docs.map(async (doc) => {
             const data = doc.data() || {};
             const userIdentifier = normalizeSixDigitIdentifier(data.userIdentifier, 'user') || await ensureUserIdentifier(doc.id);
+            const memberProfile = await getUserProfile(doc.id);
+            const fullName = data.fullName || data.name || displayNameFromProfile(memberProfile, doc.id);
+            const role = normalizeRole(data.role) || ROLES.MEMBER;
             if (!normalizeSixDigitIdentifier(data.userIdentifier, 'user') && userIdentifier) {
                 await doc.ref.set({ userIdentifier }, { merge: true });
             }
-            return { id: doc.id, ...data, userIdentifier };
+            if (data.role !== role || data.fullName !== fullName) {
+                await doc.ref.set({ role, fullName, name: fullName, email: data.email || memberProfile?.email || '' }, { merge: true });
+            }
+            return { id: doc.id, ...data, role, roleLabel: roleLabel(role), fullName, name: fullName, email: data.email || memberProfile?.email || '', userIdentifier };
         }));
         res.status(200).json({ ...brigadeData, identifier, members: members });
     } catch (error) {
@@ -1713,7 +2389,7 @@ brigadeRouter.delete('/:brigadeId', async (req, res) => {
         const brigadeRef = db.collection('brigades').doc(brigadeId);
         const adminMemberRef = brigadeRef.collection('members').doc(adminId);
         const adminMemberDoc = await adminMemberRef.get();
-        if (!adminMemberDoc.exists || adminMemberDoc.data().role !== 'Admin') {
+        if (!adminMemberDoc.exists || !canDeleteBrigade(adminMemberDoc.data().role)) {
             return res.status(403).json({ message: 'Forbidden: You must be an admin to delete a brigade.' });
         }
 
@@ -1752,6 +2428,8 @@ brigadeRouter.delete('/:brigadeId', async (req, res) => {
             };
 
             await deleteCollection(brigadeRef.collection('reports'));
+            await deleteCollection(brigadeRef.collection('appliances'));
+            await deleteCollection(brigadeRef.collection('checkSessions'));
             await deleteCollection(brigadeRef.collection('members'));
             await deleteCollection(brigadeRef.collection('joinRequests'));
             await brigadeRef.delete();
@@ -1875,14 +2553,9 @@ function parseReportDateMs(value) {
     return date.getTime();
 }
 
-function getApplianceForExport(brigade, applianceId) {
-    const applianceData = brigade && brigade.data && brigade.data.applianceData;
-    const appliances = applianceData && Array.isArray(applianceData.appliances) ? applianceData.appliances : [];
-    return appliances.find((appliance) => appliance && appliance.id === applianceId) || null;
-}
-
 async function loadReportExportPayload({ brigade, brigadeId, applianceId, range }) {
-    const appliance = getApplianceForExport(brigade, applianceId);
+    const applianceDoc = await getApplianceForBrigade(brigadeId, applianceId, brigade);
+    const appliance = applianceDoc && applianceDoc.data;
     if (!appliance) {
         const error = new Error('Appliance not found.');
         error.status = 404;
@@ -1972,6 +2645,9 @@ reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
         if (!member) {
             return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
         }
+        if (!canRunChecks(member.data.role)) {
+            return res.status(403).json({ message: 'Forbidden: Viewer role cannot submit reports.' });
+        }
 
         const brigade = await getBrigadeDoc(brigadeId);
         if (!brigade) {
@@ -1980,7 +2656,8 @@ reportRouter.get('/brigade/:brigadeId/export.pdf', async (req, res) => {
 
         const range = getExportDateRange(req.query);
         const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
-        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const profile = await ensureUserProfile(req.user);
+        payload.exportedBy = displayNameFromProfile(profile, req.user.email || 'Unknown');
         const pdfBuffer = await buildReportExportPdf(payload);
         const filename = buildReportExportFilename(payload);
 
@@ -2020,7 +2697,7 @@ reportRouter.post('/brigade/:brigadeId/export/download-link', async (req, res) =
             applianceId,
             from: range.from.toISOString(),
             to: range.to.toISOString(),
-            exportedBy: req.user.name || req.user.email || 'Unknown',
+            exportedBy: displayNameFromProfile(await ensureUserProfile(req.user), req.user.email || 'Unknown'),
             createdAt: FieldValue.serverTimestamp(),
             expiresAt: Timestamp.fromDate(expiresAtDate),
         });
@@ -2062,7 +2739,8 @@ reportRouter.post('/brigade/:brigadeId/export/email', async (req, res) => {
 
         const range = getExportDateRange(req.body || {});
         const payload = await loadReportExportPayload({ brigade, brigadeId, applianceId, range });
-        payload.exportedBy = req.user.name || req.user.email || 'Unknown';
+        const profile = await ensureUserProfile(req.user);
+        payload.exportedBy = displayNameFromProfile(profile, req.user.email || 'Unknown');
         const pdfBuffer = await buildReportExportPdf(payload);
         const filename = buildReportExportFilename(payload);
 
@@ -2338,23 +3016,30 @@ reportRouter.post('/', async (req, res) => {
             return res.status(404).json({ message: 'Brigade not found.' });
         }
 
-        const applianceData = brigade.data.applianceData || { appliances: [] };
-        const appliance = applianceData.appliances.find(a => a.id === applianceId);
+        const applianceDoc = await getApplianceForBrigade(brigadeId, applianceId, brigade);
+        const appliance = applianceDoc && applianceDoc.data;
         if (!appliance) {
             return res.status(404).json({ message: 'Appliance not found.' });
         }
 
         const signedName = normalizeSignedName(reportData.signedName);
         const signature = sanitizeSignatureData(reportData.signature);
+        const profile = await ensureUserProfile(req.user);
+        const createdByName = displayNameFromProfile(profile, req.user.email || reportData.username || 'Unknown');
 
         const safeReportData = {
             brigadeId,
             applianceId,
             applianceName: reportData.applianceName || appliance.name,
             date: reportData.date || new Date().toISOString(),
+            checkedAt: reportData.date || new Date().toISOString(),
+            createdAt: FieldValue.serverTimestamp(),
+            applianceVersion: appliance.version || 1,
             lockers: Array.isArray(reportData.lockers) ? reportData.lockers : [],
             uid: req.user.uid,
-            username: req.user.name || req.user.email || reportData.username || 'Unknown',
+            username: createdByName,
+            createdByUid: req.user.uid,
+            createdByName,
             signedName,
             hasSignature: !!signature,
         };
@@ -2378,19 +3063,12 @@ reportRouter.post('/', async (req, res) => {
         }
         try {
             await db.runTransaction(async (transaction) => {
-                const freshBrigadeDoc = await transaction.get(brigade.ref);
-                if (!freshBrigadeDoc.exists) return;
-                const freshData = freshBrigadeDoc.data() || {};
-                const freshApplianceData = freshData.applianceData || { appliances: [] };
-                const applianceIndex = findApplianceIndex(freshApplianceData, applianceId);
-                if (applianceIndex === -1) return;
-                const freshAppliance = freshApplianceData.appliances[applianceIndex];
+                const freshApplianceDoc = await transaction.get(applianceDoc.ref);
+                if (!freshApplianceDoc.exists) return;
+                const freshAppliance = applianceDataFromDoc(freshApplianceDoc);
                 const activeLock = normalizeCheckStatus(freshAppliance.checkStatus);
                 if (!isCheckLockActive(activeLock) || activeLock.uid !== req.user.uid) return;
-                const nextAppliance = { ...freshAppliance };
-                delete nextAppliance.checkStatus;
-                freshApplianceData.appliances[applianceIndex] = nextAppliance;
-                transaction.update(brigade.ref, { applianceData: freshApplianceData });
+                transaction.set(applianceDoc.ref, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
             });
         } catch (lockError) {
             console.error('Failed to clear report author check lock:', lockError);
@@ -2399,9 +3077,8 @@ reportRouter.post('/', async (req, res) => {
             const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
             if (!membersSnapshot.empty) {
                 const memberIds = membersSnapshot.docs.map(doc => doc.id);
-                const userPromises = memberIds.map(uid => admin.auth().getUser(uid));
-                const userRecords = await Promise.all(userPromises);
-                const recipients = userRecords.map(userRecord => userRecord.email).filter(email => !!email);
+                const profiles = await Promise.all(memberIds.map(uid => getUserProfile(uid)));
+                const recipients = profiles.map(userProfile => userProfile && userProfile.email).filter(email => !!email);
                 if (recipients.length > 0) {
                     
                     // Generate the rich HTML content for the email

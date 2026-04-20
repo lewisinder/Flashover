@@ -13,6 +13,31 @@ function appendRowText(parent, titleText, metaText) {
   parent.appendChild(meta);
 }
 
+const ROLE_OPTIONS = [
+  { value: "admin", label: "Admin" },
+  { value: "gearManager", label: "Gear Manager" },
+  { value: "member", label: "Member" },
+  { value: "viewer", label: "Viewer" },
+];
+
+function normalizeRole(role) {
+  const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (raw === "admin") return "admin";
+  if (raw === "gearmanager") return "gearManager";
+  if (raw === "member") return "member";
+  if (raw === "viewer") return "viewer";
+  return "";
+}
+
+function roleLabel(role) {
+  const normalized = normalizeRole(role);
+  return ROLE_OPTIONS.find((option) => option.value === normalized)?.label || role || "Member";
+}
+
+function isAdminRole(role) {
+  return normalizeRole(role) === "admin";
+}
+
 async function fetchJson(url, { token, method, body } = {}) {
   const res = await fetch(url, {
     method: method || "GET",
@@ -160,7 +185,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       sub.textContent = brigadeMeta.join(" | ");
 
       const currentMembership = (brigadeData.members || []).find((m) => m.id === user.uid);
-      const isAdmin = currentMembership && currentMembership.role === "Admin";
+      const isAdmin = currentMembership && isAdminRole(currentMembership.role);
 
       membersList.innerHTML = "";
       (brigadeData.members || []).forEach((member) => {
@@ -171,7 +196,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         const memberMeta = [];
         if (member.userIdentifier) memberMeta.push(`User ID: ${member.userIdentifier}`);
         if (member.email) memberMeta.push(member.email);
-        appendRowText(left, `${member.name || "N/A"}${isSelf ? " (you)" : ""}`, memberMeta.join(" | "));
+        appendRowText(left, `${member.fullName || member.name || "N/A"}${isSelf ? " (you)" : ""}`, memberMeta.join(" | "));
 
         const actions = el("div", "fs-row-actions");
 
@@ -179,11 +204,11 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
           const roleSelect = el("select", "fs-select");
           roleSelect.classList.add("fs-select-compact");
           roleSelect.id = `role-${member.id}`;
-          ["Member", "Gear Manager", "Admin"].forEach((role) => {
+          ROLE_OPTIONS.forEach((role) => {
             const opt = document.createElement("option");
-            opt.value = role;
-            opt.textContent = role;
-            if (member.role === role) opt.selected = true;
+            opt.value = role.value;
+            opt.textContent = role.label;
+            if (normalizeRole(member.role) === role.value) opt.selected = true;
             roleSelect.appendChild(opt);
           });
           roleSelect.addEventListener("change", async () => {
@@ -216,7 +241,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
             removeBtn.addEventListener("click", async () => {
               if (
                 !confirm(
-                  `Are you sure you want to remove ${member.name} from the brigade? This action cannot be undone.`
+                  `Are you sure you want to remove ${member.fullName || member.name || "this member"} from the brigade? This action cannot be undone.`
                 )
               ) {
                 return;
@@ -243,8 +268,8 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
           }
         } else {
           const pill = el("span", "fs-pill");
-          pill.textContent = member.role || "Member";
-          if (String(member.role).toLowerCase() === "admin") pill.classList.add("fs-pill-success");
+          pill.textContent = roleLabel(member.role);
+          if (isAdminRole(member.role)) pill.classList.add("fs-pill-success");
           actions.appendChild(pill);
         }
 
@@ -293,7 +318,7 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
         const requestMeta = [];
         if (req.userIdentifier) requestMeta.push(`User ID: ${req.userIdentifier}`);
         requestMeta.push(`Requested: ${safeFormatTimestamp(req.requestedAt)}`);
-        appendRowText(left, req.userName || req.id, requestMeta.join(" | "));
+        appendRowText(left, req.fullName || req.userFullName || req.userName || req.id, requestMeta.join(" | "));
 
         const right = el("div", "fs-row-actions fs-row-actions-pair");
 

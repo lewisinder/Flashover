@@ -11,6 +11,7 @@ const cancelBtn = document.getElementById('cancel-modal-btn');
 let currentUser = null;
 let truckData = { appliances: [] };
 let activeBrigadeId = null;
+let activeBrigadeRole = null;
 
 function showLoading() {
     if(loadingOverlay) loadingOverlay.style.display = 'flex';
@@ -18,6 +19,73 @@ function showLoading() {
 
 function hideLoading() {
     if(loadingOverlay) loadingOverlay.style.display = 'none';
+}
+
+function normalizeRole(role) {
+    const raw = String(role || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    if (raw === 'admin') return 'admin';
+    if (raw === 'gearmanager') return 'gearManager';
+    if (raw === 'member') return 'member';
+    if (raw === 'viewer') return 'viewer';
+    return '';
+}
+
+function canRunChecks(role) {
+    const normalized = normalizeRole(role);
+    return normalized === 'admin' || normalized === 'gearManager' || normalized === 'member';
+}
+
+function checkSessionIdFrom(data) {
+    return (
+        data?.sessionId ||
+        data?.checkSessionId ||
+        data?.lock?.sessionId ||
+        data?.checkStatus?.sessionId ||
+        data?.status?.sessionId ||
+        ''
+    );
+}
+
+function preserveCheckSessionId(data) {
+    const sessionId = checkSessionIdFrom(data);
+    if (sessionId) localStorage.setItem('checkSessionId', sessionId);
+}
+
+function lockOwnerText(lock) {
+    return lock?.user || lock?.name || lock?.email || 'another member';
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(data.message || `HTTP ${response.status}`);
+        error.status = response.status;
+        error.code = data.code;
+        error.data = data;
+        throw error;
+    }
+    return data;
+}
+
+async function loadActiveBrigadeRole(token) {
+    const brigades = await fetchJson(`/api/data/${encodeURIComponent(currentUser.uid)}/brigades?t=${Date.now()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const active = Array.isArray(brigades) ? brigades.find((brigade) => brigade.id === activeBrigadeId) : null;
+    activeBrigadeRole = normalizeRole(active?.role || truckData.role || truckData.currentUserRole);
+}
+
+function openCheck(appliance) {
+    localStorage.setItem('selectedApplianceId', appliance.id);
+    localStorage.setItem('selectedBrigadeId', activeBrigadeId);
+    window.location.href = 'checks.html';
+}
+
+function clearCheckSession() {
+    sessionStorage.removeItem('checkInProgress');
+    sessionStorage.removeItem('checkResults');
+    sessionStorage.removeItem('currentCheckState');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,11 +113,15 @@ async function loadBrigadeData() {
     showLoading();
     try {
         const token = await currentUser.getIdToken();
-        const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, {
+        truckData = await fetchJson(`/api/brigades/${encodeURIComponent(activeBrigadeId)}/data`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (!response.ok) throw new Error('Failed to load appliance data.');
-        truckData = await response.json();
+        activeBrigadeRole = normalizeRole(truckData.role || truckData.currentUserRole);
+        try {
+            await loadActiveBrigadeRole(token);
+        } catch (error) {
+            console.warn('Could not load active brigade role:', error);
+        }
         if (!truckData.appliances) truckData.appliances = [];
         renderApplianceList();
     } catch (error) {
@@ -62,6 +134,7 @@ async function loadBrigadeData() {
 
 function renderApplianceList() {
     applianceList.innerHTML = '';
+    const canStartChecks = canRunChecks(activeBrigadeRole);
     if (truckData.appliances && truckData.appliances.length > 0) {
         truckData.appliances.forEach(appliance => {
             const div = document.createElement('div');
@@ -75,7 +148,10 @@ function renderApplianceList() {
             title.textContent = appliance.name || 'Appliance';
             div.appendChild(icon);
             div.appendChild(title);
-            div.addEventListener('click', () => handleApplianceSelection(appliance));
+            div.title = canStartChecks ? '' : 'Viewers cannot start or resume checks.';
+            if (canStartChecks) {
+                div.addEventListener('click', () => handleApplianceSelection(appliance));
+            }
             applianceList.appendChild(div);
         });
     } else {
@@ -84,65 +160,61 @@ function renderApplianceList() {
 }
 
 async function handleApplianceSelection(appliance) {
+    if (!canRunChecks(activeBrigadeRole)) {
+        alert('Viewers cannot start or resume checks.');
+        return;
+    }
     showLoading();
     const token = await currentUser.getIdToken();
     
     try {
         // Check the server for the check status
-        const statusResponse = await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/check-status`, {
+        const status = await fetchJson(`/api/brigades/${encodeURIComponent(activeBrigadeId)}/appliances/${encodeURIComponent(appliance.id)}/check-status`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const status = await statusResponse.json();
+        preserveCheckSessionId(status);
 
         if (status.inProgress) {
             hideLoading(); // Hide loading to show the modal
-            modalText.textContent = `A check for this appliance was already started by ${status.user}. Would you like to resume or start a new check?`;
+            modalText.textContent = `A check for this appliance was already started by ${lockOwnerText(status)}. Would you like to resume or start a new check?`;
             modal.classList.remove('hidden');
 
             resumeBtn.onclick = () => {
                 showLoading();
-                localStorage.setItem('selectedApplianceId', appliance.id);
-                localStorage.setItem('selectedBrigadeId', activeBrigadeId);
-                window.location.href = 'checks.html';
+                preserveCheckSessionId(status);
+                openCheck(appliance);
             };
 
             startNewBtn.onclick = async () => {
-                showLoading();
-                // Force start a new check, overwriting the old one
-                const startResponse = await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ force: true })
-                });
-                if (!startResponse.ok) {
-                    const body = await startResponse.json().catch(() => ({}));
-                    throw new Error(body.message || `HTTP ${startResponse.status}`);
+                modal.classList.add('hidden');
+                try {
+                    showLoading();
+                    // Force start a new check, overwriting the old one
+                    const startResult = await fetchJson(`/api/brigades/${encodeURIComponent(activeBrigadeId)}/appliances/${encodeURIComponent(appliance.id)}/start-check`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ force: true })
+                    });
+                    preserveCheckSessionId(startResult);
+                    clearCheckSession();
+                    openCheck(appliance);
+                } catch (error) {
+                    console.error("Error starting new check:", error);
+                    hideLoading();
                 }
-                // Clear local session storage to ensure a fresh start
-                sessionStorage.removeItem('checkInProgress');
-                sessionStorage.removeItem('checkResults');
-                sessionStorage.removeItem('currentCheckState');
-                localStorage.setItem('selectedApplianceId', appliance.id);
-                localStorage.setItem('selectedBrigadeId', activeBrigadeId);
-                window.location.href = 'checks.html';
             };
 
         } else {
             // No check in progress, so start a new one
-            const startResponse = await fetch(`/api/brigades/${activeBrigadeId}/appliances/${appliance.id}/start-check`, {
+            const startResult = await fetchJson(`/api/brigades/${encodeURIComponent(activeBrigadeId)}/appliances/${encodeURIComponent(appliance.id)}/start-check`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (!startResponse.ok) {
-                const body = await startResponse.json().catch(() => ({}));
-                throw new Error(body.message || `HTTP ${startResponse.status}`);
-            }
-            localStorage.setItem('selectedApplianceId', appliance.id);
-            localStorage.setItem('selectedBrigadeId', activeBrigadeId);
-            window.location.href = 'checks.html';
+            preserveCheckSessionId(startResult);
+            openCheck(appliance);
         }
     } catch (error) {
         console.error("Error handling appliance selection:", error);
