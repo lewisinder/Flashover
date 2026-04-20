@@ -30,6 +30,10 @@ const statusIcons = {
   untouched: "/design_assets/Note Icon.png",
 };
 
+function isPrivateImageRef(value) {
+  return typeof value === "string" && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
+
 function drawSignatureOnCanvas(canvas, signature) {
   if (!canvas) return;
   const strokes = signature && Array.isArray(signature.strokes) ? signature.strokes : null;
@@ -91,7 +95,7 @@ function normalizeSearchText(value) {
 
 function renderItem(
   item,
-  { isSubItem, lockerName, parentName, makeAnchorId, registerEntry } = {}
+  { isSubItem, lockerName, parentName, makeAnchorId, registerEntry, resolveNoteImageUrl } = {}
 ) {
   const status = (item.status || "").toLowerCase();
   const iconSrc = statusIcons[status] || "/design_assets/Note Icon.png";
@@ -153,6 +157,31 @@ function renderItem(
     wrap.appendChild(note);
   }
 
+  if (item.noteImage) {
+    const imageWrap = el("div", "fs-row-meta");
+    imageWrap.style.marginLeft = isSubItem ? "56px" : "56px";
+    imageWrap.style.padding = "8px 0 0";
+    const image = document.createElement("img");
+    image.alt = `Attached image for ${name}`;
+    image.style.width = "100%";
+    image.style.maxWidth = "280px";
+    image.style.height = "140px";
+    image.style.objectFit = "cover";
+    image.style.borderRadius = "8px";
+    image.style.border = "1px solid rgba(15, 23, 42, 0.12)";
+    image.style.background = "rgba(15, 23, 42, 0.04)";
+    imageWrap.appendChild(image);
+    wrap.appendChild(imageWrap);
+    if (typeof resolveNoteImageUrl === "function") {
+      resolveNoteImageUrl(item.noteImage)
+        .then((url) => {
+          if (url) image.src = url;
+          else imageWrap.remove();
+        })
+        .catch(() => imageWrap.remove());
+    }
+  }
+
   if (item.type === "container" && Array.isArray(item.subItems) && item.subItems.length > 0) {
     const subWrap = el("div");
     subWrap.style.marginTop = "10px";
@@ -167,6 +196,7 @@ function renderItem(
           parentName: name,
           makeAnchorId,
           registerEntry,
+          resolveNoteImageUrl,
         })
       );
     });
@@ -392,6 +422,21 @@ export async function renderReport({
     showLoading?.();
     try {
       const token = await user.getIdToken();
+      const noteImageUrlCache = new Map();
+      async function resolveNoteImageUrl(imageRef) {
+        if (!isPrivateImageRef(imageRef)) return "";
+        if (noteImageUrlCache.has(imageRef)) return noteImageUrlCache.get(imageRef);
+        const fileName = imageRef.split("/").pop();
+        const response = await fetch(
+          `/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!response.ok) return "";
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        noteImageUrlCache.set(imageRef, url);
+        return url;
+      }
       const report = await fetchJson(
         `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
         { token }
@@ -438,6 +483,7 @@ export async function renderReport({
                   parentName: "",
                   makeAnchorId,
                   registerEntry,
+                  resolveNoteImageUrl,
                 })
               );
             });
