@@ -84,7 +84,9 @@ function noteTextForCell(cell) {
     if (!cell) return '';
     const status = safeText(cell.status).toLowerCase();
     if (isMissingStatus(status)) return '';
+    if (cell.note && cell.noteImage) return `${cell.note} Image attached.`;
     if (cell.note) return cell.note;
+    if (cell.noteImage) return 'Image attached.';
     if (status === 'defect') return 'Defect marked.';
     if (status === 'partial') return 'Container has item issues.';
     if (status === 'note') return 'Issue marked.';
@@ -95,7 +97,7 @@ function shouldShowIssueRef(cell) {
     if (!cell) return false;
     const status = safeText(cell.status).toLowerCase();
     if (isMissingStatus(status)) return false;
-    return isIssueStatus(status) || !!safeText(cell.note);
+    return isIssueStatus(status) || !!safeText(cell.note) || !!safeText(cell.noteImage);
 }
 
 function itemKey(lockerKey, item, parentItem) {
@@ -159,6 +161,7 @@ function collectExportRows(reports) {
                 group.rowMap.get(key).cells.set(reportId, {
                     status: effectiveStatus(item),
                     note: safeText(item.note),
+                    noteImage: safeText(item.noteImage),
                 });
             });
         });

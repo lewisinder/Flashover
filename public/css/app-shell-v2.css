@@ -43,7 +43,15 @@ body {
 }
 
 .fs-header-title {
-  letter-spacing: -0.02em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.fs-header > div {
+  min-width: 0;
 }
 
 .fs-header-btn {
@@ -60,6 +68,32 @@ body {
 
 .fs-header-btn:active {
   transform: translateY(1px);
+}
+
+@media (max-width: 420px) {
+  .fs-header {
+    display: grid !important;
+    grid-template-columns: minmax(42px, 1fr) minmax(0, 2fr) minmax(42px, 1fr);
+    column-gap: 6px;
+  }
+
+  .fs-header > div:first-child,
+  .fs-header > div:last-child {
+    width: auto !important;
+  }
+
+  .fs-header > div:nth-child(2) {
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .fs-header-btn {
+    padding: 8px;
+  }
+
+  .fs-header-btn span {
+    display: none;
+  }
 }
 
 .fs-tabbar {
@@ -291,6 +325,61 @@ body {
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
 }
 
+.fs-row > * {
+  min-width: 0;
+}
+
+.fs-row-main {
+  min-width: 0;
+}
+
+.fs-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.fs-btn-compact {
+  width: auto;
+  padding: 8px 10px;
+}
+
+.fs-select-compact {
+  width: auto;
+  min-width: 146px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 480px) {
+  .fs-row.fs-row-stack-sm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fs-row-stack-sm .fs-row-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .fs-row-stack-sm .fs-row-actions-pair {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .fs-row-stack-sm .fs-row-actions-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .fs-row-stack-sm .fs-btn-compact,
+  .fs-row-stack-sm .fs-select-compact {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .fs-icon-btn {
   width: 36px;
   height: 36px;
@@ -410,12 +499,14 @@ button.fs-row:focus {
 .fs-row-title {
   font-size: 16px;
   font-weight: 750;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .fs-row-meta {
   color: var(--fs-muted);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .fs-row-meta-subtle {

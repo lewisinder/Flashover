@@ -245,9 +245,18 @@
         <div id="modals-container">
             <!-- Note Taking Modal -->
             <div id="note-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
-                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+                <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-md shadow-2xl">
                     <h3 id="note-modal-title" class="text-xl font-bold mb-4">Add Note</h3>
                     <textarea id="note-input" class="w-full h-24 bg-gray-100 rounded-lg p-2 border border-gray-300" placeholder="Type note..."></textarea>
+                    <div class="mt-4">
+                        <label for="note-image-input" class="block text-sm font-semibold text-gray-700 mb-2">Attach image</label>
+                        <input id="note-image-input" type="file" accept="image/*" capture="environment" class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue file:px-4 file:py-2 file:font-bold file:text-white" />
+                        <div id="note-image-preview-wrap" class="hidden mt-3">
+                            <img id="note-image-preview" alt="Attached note image preview" class="h-32 w-full rounded-lg object-cover border border-gray-300 bg-gray-100" />
+                            <button id="clear-note-image-btn" type="button" class="mt-2 text-sm font-semibold text-red-action-2 hover:underline">Remove image</button>
+                        </div>
+                        <p id="note-image-status" class="hidden mt-2 text-sm text-gray-600"></p>
+                    </div>
                     <div class="flex justify-end mt-6">
                         <button id="cancel-note-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
                         <button id="btn-save-note" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Save Note</button>

@@ -163,11 +163,13 @@ function initChecksPage(options = {}) {
                     const result = checkResults.find(r => r.itemId === item.id);
                     item.status = result ? result.status : 'untouched';
                     item.note = result ? result.note : '';
+                    item.noteImage = result ? result.noteImage || '' : '';
                     if (item.type === 'container' && item.subItems) {
                         item.subItems.forEach(subItem => {
                             const subResult = checkResults.find(r => r.itemId === subItem.id);
                             subItem.status = subResult ? subResult.status : 'untouched';
                             subItem.note = subResult ? subResult.note : '';
+                            subItem.noteImage = subResult ? subResult.noteImage || '' : '';
                         });
                     }
                 });
@@ -249,9 +251,122 @@ function initChecksPage(options = {}) {
         overlay: getElement('note-modal'), 
         title: getElement('note-modal-title'), 
         input: getElement('note-input'), 
+        imageInput: getElement('note-image-input'),
+        imagePreviewWrap: getElement('note-image-preview-wrap'),
+        imagePreview: getElement('note-image-preview'),
+        imageStatus: getElement('note-image-status'),
+        clearImageBtn: getElement('clear-note-image-btn'),
         saveBtn: getElement('btn-save-note'),
         cancelBtn: getElement('cancel-note-btn')
     };
+    let noteModalImageRef = '';
+    let noteModalSelectedFile = null;
+    let noteModalPreviewObjectUrl = '';
+
+    function setNoteImageStatus(message, state = '') {
+        if (!noteModal.imageStatus) return;
+        noteModal.imageStatus.classList.remove('hidden', 'text-red-action-2', 'text-green-action-1', 'text-gray-600');
+        noteModal.imageStatus.classList.add(
+            state === 'error' ? 'text-red-action-2' : state === 'success' ? 'text-green-action-1' : 'text-gray-600'
+        );
+        noteModal.imageStatus.textContent = message || '';
+        if (!message) noteModal.imageStatus.classList.add('hidden');
+    }
+
+    function revokeNotePreviewObjectUrl() {
+        if (noteModalPreviewObjectUrl) {
+            URL.revokeObjectURL(noteModalPreviewObjectUrl);
+            noteModalPreviewObjectUrl = '';
+        }
+    }
+
+    function clearNoteImageSelection({ clearExisting = true } = {}) {
+        revokeNotePreviewObjectUrl();
+        noteModalSelectedFile = null;
+        if (clearExisting) noteModalImageRef = '';
+        if (noteModal.imageInput) noteModal.imageInput.value = '';
+        if (noteModal.imagePreview) {
+            noteModal.imagePreview.removeAttribute('src');
+            noteModal.imagePreview.dataset.imageRef = '';
+        }
+        noteModal.imagePreviewWrap?.classList.add('hidden');
+        setNoteImageStatus('');
+    }
+
+    function setNoteImagePreview(imageRef) {
+        if (!noteModal.imagePreview || !noteModal.imagePreviewWrap) return;
+        noteModal.imagePreviewWrap.classList.toggle('hidden', !imageRef);
+        if (!imageRef) {
+            noteModal.imagePreview.removeAttribute('src');
+            noteModal.imagePreview.dataset.imageRef = '';
+            return;
+        }
+        setImageElementSource(noteModal.imagePreview, imageRef, '/design_assets/Flashover Logo.png');
+    }
+
+    function resetNoteModalImage(existingImageRef = '') {
+        clearNoteImageSelection({ clearExisting: false });
+        noteModalImageRef = existingImageRef || '';
+        setNoteImagePreview(noteModalImageRef);
+        if (noteModalImageRef) setNoteImageStatus('Image attached.', 'success');
+    }
+
+    function handleNoteImageSelected(event) {
+        const file = event?.target?.files?.[0];
+        if (!file) return;
+        if (!file.type || !file.type.toLowerCase().startsWith('image/')) {
+            clearNoteImageSelection();
+            setNoteImageStatus('Please choose an image file.', 'error');
+            return;
+        }
+        revokeNotePreviewObjectUrl();
+        noteModalSelectedFile = file;
+        noteModalImageRef = '';
+        noteModalPreviewObjectUrl = URL.createObjectURL(file);
+        if (noteModal.imagePreview) {
+            noteModal.imagePreview.dataset.imageRef = noteModalPreviewObjectUrl;
+            noteModal.imagePreview.src = noteModalPreviewObjectUrl;
+        }
+        noteModal.imagePreviewWrap?.classList.remove('hidden');
+        setNoteImageStatus('Image ready to attach.');
+    }
+
+    function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {}) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', url, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            Object.entries(extraHeaders || {}).forEach(([key, value]) => {
+                if (value === undefined || value === null || value === '') return;
+                xhr.setRequestHeader(key, String(value));
+            });
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable && typeof onProgress === 'function') onProgress(event);
+            };
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
+                else reject(new Error(xhr.responseText || xhr.statusText || `Upload failed (${xhr.status})`));
+            };
+            xhr.onerror = () => reject(new Error('Network request failed'));
+            xhr.send(formData);
+        });
+    }
+
+    async function uploadNoteImageIfNeeded() {
+        if (!noteModalSelectedFile) return noteModalImageRef || '';
+        const brigadeId = localStorage.getItem('activeBrigadeId');
+        if (!currentUser || !brigadeId) throw new Error('Could not attach image: missing brigade or user.');
+
+        const formData = new FormData();
+        formData.append('image', noteModalSelectedFile, noteModalSelectedFile.name || 'note-image.jpg');
+        const token = await currentUser.getIdToken();
+        const responseText = await uploadWithProgress('/api/check-note-image', token, formData, (event) => {
+            const percent = Math.round((event.loaded / event.total) * 100);
+            setNoteImageStatus(`Uploading image ${percent}%...`);
+        }, { 'x-brigade-id': brigadeId });
+        const result = JSON.parse(responseText || '{}');
+        return result.storagePath || result.filePath || '';
+    }
     
     const exitConfirmModal = {
         overlay: getElement('exit-confirm-modal'),
@@ -856,7 +971,7 @@ function initChecksPage(options = {}) {
         else if (subItemResults.some(r => r.status === 'note')) newStatus = 'note';
 
         const resultIndex = checkResults.findIndex(r => r.itemId === parentItemId);
-        const result = { lockerId: currentCheckState.lockerId, lockerName: findLockerById(currentCheckState.lockerId).name, itemId: parentItemId, itemName: parentItem.name, itemImg: parentItem.img, status: newStatus, note: '' };
+        const result = { lockerId: currentCheckState.lockerId, lockerName: findLockerById(currentCheckState.lockerId).name, itemId: parentItemId, itemName: parentItem.name, itemImg: parentItem.img, status: newStatus, note: '', noteImage: '' };
         if (resultIndex > -1) checkResults[resultIndex] = result;
         else checkResults.push(result);
         
@@ -906,7 +1021,7 @@ function initChecksPage(options = {}) {
         const locker = findLockerById(currentCheckState.lockerId);
 
         if (!currentCheckState.isInsideContainer && item.type === 'container' && status === 'missing') {
-             const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'missing', note: '' };
+             const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'missing', note: '', noteImage: '' };
              const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
              if (resultIndex > -1) checkResults[resultIndex] = result;
              else checkResults.push(result);
@@ -924,11 +1039,12 @@ function initChecksPage(options = {}) {
             noteModal.title.textContent = `Add Note for ${item.name}`;
             const existingResult = checkResults.find(r => r.itemId === item.id);
             noteModal.input.value = existingResult?.note || '';
+            resetNoteModalImage(existingResult?.noteImage || '');
             noteModal.overlay.classList.remove('hidden');
             return;
         }
         
-        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: status, note: '', parentItemId: currentCheckState.parentItemId };
+        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: status, note: '', noteImage: '', parentItemId: currentCheckState.parentItemId };
         const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
         if (resultIndex > -1) checkResults[resultIndex] = result;
         else checkResults.push(result);
@@ -954,18 +1070,41 @@ function initChecksPage(options = {}) {
         }
     }
     
-    function saveNoteAndProceed() {
+    async function saveNoteAndProceed() {
         const item = findItemById(currentCheckState.selectedItemId, currentCheckState.parentItemId);
         const locker = findLockerById(currentCheckState.lockerId);
         const noteText = noteModal.input.value;
+        const originalSaveText = noteModal.saveBtn?.textContent || 'Save Note';
+        if (noteModal.saveBtn) {
+            noteModal.saveBtn.disabled = true;
+            noteModal.saveBtn.textContent = noteModalSelectedFile ? 'Uploading...' : 'Saving...';
+        }
 
-        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'note', note: noteText, parentItemId: currentCheckState.parentItemId };
+        let noteImage = noteModalImageRef || '';
+        try {
+            noteImage = await uploadNoteImageIfNeeded();
+        } catch (error) {
+            console.error('Note image upload failed:', error);
+            setNoteImageStatus(error?.message || 'Image upload failed. Try again or remove the image.', 'error');
+            if (noteModal.saveBtn) {
+                noteModal.saveBtn.disabled = false;
+                noteModal.saveBtn.textContent = originalSaveText;
+            }
+            return;
+        }
+
+        const result = { lockerId: locker.id, lockerName: locker.name, itemId: item.id, itemName: item.name, itemImg: item.img, status: 'note', note: noteText, noteImage, parentItemId: currentCheckState.parentItemId };
         const resultIndex = checkResults.findIndex(r => r.itemId === item.id);
         if (resultIndex > -1) checkResults[resultIndex] = result;
         else checkResults.push(result);
         
         updateItemBoxStatus(item.id, 'note');
         noteModal.overlay.classList.add('hidden');
+        resetNoteModalImage('');
+        if (noteModal.saveBtn) {
+            noteModal.saveBtn.disabled = false;
+            noteModal.saveBtn.textContent = originalSaveText;
+        }
         saveStateToSession();
 
         if (currentCheckState.isRechecking) return;
@@ -1093,6 +1232,27 @@ function initChecksPage(options = {}) {
             untouched: { icon: '○', color: 'text-gray-400' }
         };
 
+        function appendNoteDetails(parent, item, className) {
+            if (item.note) {
+                const note = document.createElement('div');
+                note.className = className;
+                const noteText = document.createElement('em');
+                noteText.textContent = `Note: ${item.note}`;
+                note.appendChild(noteText);
+                parent.appendChild(note);
+            }
+            if (item.noteImage) {
+                const imageWrap = document.createElement('div');
+                imageWrap.className = className;
+                const image = document.createElement('img');
+                image.alt = `Attached image for ${item.itemName || 'item note'}`;
+                image.className = 'mt-2 h-32 w-full max-w-xs rounded-lg object-cover border border-gray-300 bg-gray-100';
+                setImageElementSource(image, item.noteImage, '/design_assets/Flashover Logo.png');
+                imageWrap.appendChild(image);
+                parent.appendChild(imageWrap);
+            }
+        }
+
         for (const lockerId in resultsByLocker) {
             const locker = resultsByLocker[lockerId];
             const lockerSection = document.createElement('div');
@@ -1158,27 +1318,13 @@ function initChecksPage(options = {}) {
                             subRow.appendChild(subLeft);
                             subRow.appendChild(subRecheck);
                             subList.appendChild(subRow);
-                             if (subItem.note) {
-                                const note = document.createElement('div');
-                                note.className = 'pl-8 text-sm text-gray-600';
-                                const noteText = document.createElement('em');
-                                noteText.textContent = `Note: ${subItem.note}`;
-                                note.appendChild(noteText);
-                                subList.appendChild(note);
-                            }
+                            appendNoteDetails(subList, subItem, 'pl-8 text-sm text-gray-600');
                         });
                         itemRow.appendChild(subList);
                     }
                 }
                 
-                if (item.note) {
-                    const note = document.createElement('div');
-                    note.className = 'ml-9 mt-1 text-sm text-gray-600';
-                    const noteText = document.createElement('em');
-                    noteText.textContent = `Note: ${item.note}`;
-                    note.appendChild(noteText);
-                    itemRow.appendChild(note);
-                }
+                appendNoteDetails(itemRow, item, 'ml-9 mt-1 text-sm text-gray-600');
 
                 itemList.appendChild(itemRow);
             });
@@ -1331,7 +1477,12 @@ function initChecksPage(options = {}) {
         addSafeEventListener(checkButtons.checkContents, 'click', startContainerCheck);
         addSafeEventListener(checkButtons.containerMissing, 'click', () => processCheck('missing'));
         addSafeEventListener(noteModal.saveBtn, 'click', saveNoteAndProceed);
-        addSafeEventListener(noteModal.cancelBtn, 'click', () => noteModal.overlay.classList.add('hidden'));
+        addSafeEventListener(noteModal.imageInput, 'change', handleNoteImageSelected);
+        addSafeEventListener(noteModal.clearImageBtn, 'click', () => clearNoteImageSelection());
+        addSafeEventListener(noteModal.cancelBtn, 'click', () => {
+            noteModal.overlay.classList.add('hidden');
+            clearNoteImageSelection();
+        });
         
         addSafeEventListener('go-to-selected-locker-btn', 'click', () => {
             if(nextLockerToStartId) {

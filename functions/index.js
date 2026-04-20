@@ -1,6 +1,6 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const { FieldValue } = require('firebase-admin/firestore');
+const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const os = require('os');
@@ -819,25 +819,32 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
 });
 
 // --- Image Upload & Delete Routes ---
-apiRouter.post('/upload', async (req, res) => {
+async function authorizeImageUpload(req, res, { adminOnly = false } = {}) {
     const brigadeId = String(req.get('x-brigade-id') || '').trim();
     if (!brigadeId) {
-        return res.status(400).json({ message: 'Missing brigade id (x-brigade-id).' });
+        res.status(400).json({ message: 'Missing brigade id (x-brigade-id).' });
+        return null;
     }
 
     try {
         const member = await getBrigadeMember(brigadeId, req.user.uid);
         if (!member) {
-            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+            res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+            return null;
         }
-        if (!isAdminRole(member.data.role)) {
-            return res.status(403).json({ message: 'Forbidden: Admin role required.' });
+        if (adminOnly && !isAdminRole(member.data.role)) {
+            res.status(403).json({ message: 'Forbidden: Admin role required.' });
+            return null;
         }
+        return { brigadeId, member };
     } catch (error) {
         console.error('Upload auth check failed:', error);
-        return res.status(500).json({ message: 'Failed to authorize upload.' });
+        res.status(500).json({ message: 'Failed to authorize upload.' });
+        return null;
     }
+}
 
+function handleImageUploadRequest(req, res, brigadeId) {
     if (!req.rawBody) {
         console.error('Request did not have a rawBody.');
         return res.status(400).json({ message: 'Missing request body.' });
@@ -921,6 +928,18 @@ apiRouter.post('/upload', async (req, res) => {
         }
     });
     busboy.end(req.rawBody);
+}
+
+apiRouter.post('/upload', async (req, res) => {
+    const authz = await authorizeImageUpload(req, res, { adminOnly: true });
+    if (!authz) return;
+    handleImageUploadRequest(req, res, authz.brigadeId);
+});
+
+apiRouter.post('/check-note-image', async (req, res) => {
+    const authz = await authorizeImageUpload(req, res, { adminOnly: false });
+    if (!authz) return;
+    handleImageUploadRequest(req, res, authz.brigadeId);
 });
 
 apiRouter.delete('/image/:fileName', async (req, res) => {
@@ -2003,7 +2022,7 @@ reportRouter.post('/brigade/:brigadeId/export/download-link', async (req, res) =
             to: range.to.toISOString(),
             exportedBy: req.user.name || req.user.email || 'Unknown',
             createdAt: FieldValue.serverTimestamp(),
-            expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
+            expiresAt: Timestamp.fromDate(expiresAtDate),
         });
 
         res.status(201).json({
@@ -2259,7 +2278,8 @@ const generateReportHtml = (reportData) => {
                     if ((item.type || '').toLowerCase() === 'container') rowStyleParts.push(styles.rowContainer);
                     const rowStyle = rowStyleParts.length ? ` style="${rowStyleParts.join(' ')}"` : '';
 
-                    const noteHtml = item.note ? `<span style="${styles.note}">${item.note}</span>` : '';
+                    const noteLabel = item.noteImage ? `${item.note || ''}${item.note ? ' ' : ''}Image attached.` : item.note;
+                    const noteHtml = noteLabel ? `<span style="${styles.note}">${noteLabel}</span>` : '';
                     const tagHtml = statusTagHtml(status);
 
                     html += `<tr${rowStyle}>`;
@@ -2276,7 +2296,8 @@ const generateReportHtml = (reportData) => {
                             if (subIsIssue) subRowStyleParts.push(styles.rowIssue);
                             if ((subIndex + itemIndex) % 2 === 1) subRowStyleParts.push(styles.rowAlt);
                             const subRowStyle = ` style="${subRowStyleParts.join(' ')}"`;
-                            const subNoteHtml = sub.note ? `<span style="${styles.note}">${sub.note}</span>` : '';
+                            const subNoteLabel = sub.noteImage ? `${sub.note || ''}${sub.note ? ' ' : ''}Image attached.` : sub.note;
+                            const subNoteHtml = subNoteLabel ? `<span style="${styles.note}">${subNoteLabel}</span>` : '';
                             const subTagHtml = statusTagHtml(sub.status);
                             html += `<tr${subRowStyle}>`;
                             html += `<td style="${styles.td} ${styles.subItemPad}"><span style="${styles.subtle}">↳</span> ${subTagHtml}<span style="${styles.name}">${sub.name || 'Sub-item'}</span></td>`;

@@ -8,6 +8,7 @@ const reportDetailContent = document.getElementById('report-detail-content');
 const closeReportDetailBtn = document.getElementById('close-report-detail-btn');
 
 let currentUser = null;
+const privateImageUrlCache = new Map();
 
 function showLoading() {
     if(loadingOverlay) loadingOverlay.style.display = 'flex';
@@ -33,6 +34,27 @@ document.getElementById('back-btn').addEventListener('click', () => {
 closeReportDetailBtn.addEventListener('click', () => {
     reportDetailModal.classList.add('hidden');
 });
+
+function isPrivateImageRef(value) {
+    return typeof value === 'string' && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
+
+async function resolveReportImageUrl(imageRef) {
+    if (!isPrivateImageRef(imageRef) || !currentUser) return '';
+    if (privateImageUrlCache.has(imageRef)) return privateImageUrlCache.get(imageRef);
+    const brigadeId = localStorage.getItem('activeBrigadeId');
+    if (!brigadeId) return '';
+    const fileName = imageRef.split('/').pop();
+    const token = await currentUser.getIdToken();
+    const response = await fetch(`/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) return '';
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    privateImageUrlCache.set(imageRef, url);
+    return url;
+}
 
 async function loadReports() {
     showLoading();
@@ -138,6 +160,9 @@ async function viewReportDetails(reportId) {
             if (item.note) {
                 itemHtml += `<div class="text-sm text-gray-600 italic pl-10 py-1">Note: ${item.note}</div>`;
             }
+            if (item.noteImage) {
+                itemHtml += `<div class="pl-10 py-2"><img data-note-image-ref="${item.noteImage}" alt="Attached note image" class="h-32 w-full max-w-xs rounded-lg object-cover border border-gray-300 bg-gray-100"></div>`;
+            }
             
             if (item.type === 'container' && item.subItems && item.subItems.length > 0) {
                 itemHtml += '<div class="mt-2 space-y-2">';
@@ -173,6 +198,14 @@ async function viewReportDetails(reportId) {
 
         contentHtml += `</div>`;
         reportDetailContent.innerHTML = contentHtml;
+        reportDetailContent.querySelectorAll('[data-note-image-ref]').forEach((img) => {
+            resolveReportImageUrl(img.dataset.noteImageRef)
+                .then((url) => {
+                    if (url) img.src = url;
+                    else img.parentElement?.remove();
+                })
+                .catch(() => img.parentElement?.remove());
+        });
 
     } catch (error) {
         console.error("Error loading report details:", error);

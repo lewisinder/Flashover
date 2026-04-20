@@ -19,9 +19,9 @@ const tabbar = document.getElementById("app-tabbar");
 const loadingOverlay = document.getElementById("loading-overlay");
 const shellHeader = document.querySelector("body > header");
 
-const TERMS_VERSION = "v1.0";
+const TERMS_VERSION = "v1.1";
 const TERMS_BLURB =
-  "I acknowledge I am a testing member and agree to the Terms of Use, including that I will not disclose, copy, share, or distribute any part of the Flashover app, its content, features, or materials to any third party.";
+  "I acknowledge I am a testing member and agree to the Terms of Use and Confidentiality Agreement. I will keep Flashover confidential and will not copy, screenshot, record, disclose, share, distribute, or use any part of the app, its content, workflows, features, designs, materials, or ideas outside the authorised testing group without written permission.";
 
 let loadingCount = 0;
 let loadingTimer = null;
@@ -131,7 +131,7 @@ function renderTermsGate({ user, userData, loadError, onAccepted }) {
       <div class="fs-card fs-terms-card">
         <div class="fs-card-inner space-y-5">
           <div>
-            <p class="fs-terms-kicker">Terms of Use</p>
+            <p class="fs-terms-kicker">Terms and Confidentiality</p>
             <h2 class="fs-terms-title">Review and accept</h2>
             <p class="fs-terms-meta">Version ${TERMS_VERSION}</p>
           </div>

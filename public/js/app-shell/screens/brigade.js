@@ -164,24 +164,20 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
 
       membersList.innerHTML = "";
       (brigadeData.members || []).forEach((member) => {
-        const row = el("div", "fs-row");
+        const row = el("div", "fs-row fs-row-stack-sm");
 
-        const left = el("div");
+        const left = el("div", "fs-row-main");
         const isSelf = member.id === user.uid;
         const memberMeta = [];
         if (member.userIdentifier) memberMeta.push(`User ID: ${member.userIdentifier}`);
         if (member.email) memberMeta.push(member.email);
         appendRowText(left, `${member.name || "N/A"}${isSelf ? " (you)" : ""}`, memberMeta.join(" | "));
 
-        const actions = el("div");
-        actions.style.display = "flex";
-        actions.style.gap = "8px";
-        actions.style.alignItems = "center";
+        const actions = el("div", "fs-row-actions");
 
         if (isAdmin) {
           const roleSelect = el("select", "fs-select");
-          roleSelect.style.width = "auto";
-          roleSelect.style.padding = "8px 10px";
+          roleSelect.classList.add("fs-select-compact");
           roleSelect.id = `role-${member.id}`;
           ["Member", "Gear Manager", "Admin"].forEach((role) => {
             const opt = document.createElement("option");
@@ -212,11 +208,11 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
           actions.appendChild(roleSelect);
 
           if (!isSelf) {
+            actions.classList.add("fs-row-actions-stack");
             const removeBtn = el("button", "fs-btn fs-btn-danger");
             removeBtn.type = "button";
             removeBtn.textContent = "Remove";
-            removeBtn.style.width = "auto";
-            removeBtn.style.padding = "8px 10px";
+            removeBtn.classList.add("fs-btn-compact");
             removeBtn.addEventListener("click", async () => {
               if (
                 !confirm(
@@ -292,29 +288,24 @@ export async function renderBrigade({ root, auth, brigadeId, setTitle, showLoadi
       }
 
       requests.forEach((req) => {
-        const row = el("div", "fs-row");
-        const left = el("div");
+        const row = el("div", "fs-row fs-row-stack-sm");
+        const left = el("div", "fs-row-main");
         const requestMeta = [];
         if (req.userIdentifier) requestMeta.push(`User ID: ${req.userIdentifier}`);
         requestMeta.push(`Requested: ${safeFormatTimestamp(req.requestedAt)}`);
         appendRowText(left, req.userName || req.id, requestMeta.join(" | "));
 
-        const right = el("div");
-        right.style.display = "flex";
-        right.style.gap = "8px";
-        right.style.alignItems = "center";
+        const right = el("div", "fs-row-actions fs-row-actions-pair");
 
         const acceptBtn = el("button", "fs-btn fs-btn-primary");
         acceptBtn.type = "button";
         acceptBtn.textContent = "Accept";
-        acceptBtn.style.width = "auto";
-        acceptBtn.style.padding = "8px 10px";
+        acceptBtn.classList.add("fs-btn-compact");
 
         const denyBtn = el("button", "fs-btn fs-btn-secondary");
         denyBtn.type = "button";
         denyBtn.textContent = "Deny";
-        denyBtn.style.width = "auto";
-        denyBtn.style.padding = "8px 10px";
+        denyBtn.classList.add("fs-btn-compact");
 
         async function handle(action) {
           setAlert(jrError, "");
