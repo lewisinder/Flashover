@@ -56,6 +56,13 @@ async function resolveReportImageUrl(imageRef) {
     return url;
 }
 
+function getLockerItems(locker) {
+    if (Array.isArray(locker?.items)) return locker.items;
+    return (Array.isArray(locker?.shelves) ? locker.shelves : []).flatMap((shelf) =>
+        Array.isArray(shelf?.items) ? shelf.items : []
+    );
+}
+
 async function loadReports() {
     showLoading();
     reportsListContainer.innerHTML = '<p>Loading reports...</p>';
@@ -184,10 +191,8 @@ async function viewReportDetails(reportId) {
                         <div class="space-y-3">
                 `;
                 
-                locker.shelves.forEach(shelf => {
-                    shelf.items.forEach(item => {
-                        contentHtml += renderItem(item, false);
-                    });
+                getLockerItems(locker).forEach(item => {
+                    contentHtml += renderItem(item, false);
                 });
 
                 contentHtml += `</div></div>`;

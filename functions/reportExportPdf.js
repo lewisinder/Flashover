@@ -106,19 +106,23 @@ function itemKey(lockerKey, item, parentItem) {
     return `${lockerKey}::${parentKey}::${ownKey}`;
 }
 
+function lockerItems(locker) {
+    if (Array.isArray(locker && locker.items)) return locker.items;
+    if (Array.isArray(locker && locker.shelves)) {
+        return locker.shelves.flatMap((shelf) => Array.isArray(shelf && shelf.items) ? shelf.items : []);
+    }
+    return [];
+}
+
 function visitLockerItems(locker, visitor) {
-    const shelves = Array.isArray(locker && locker.shelves) ? locker.shelves : [];
-    shelves.forEach((shelf) => {
-        const items = Array.isArray(shelf && shelf.items) ? shelf.items : [];
-        items.forEach((item) => {
-            if (!item) return;
-            visitor(item, null);
-            if ((item.type || '').toLowerCase() === 'container' && Array.isArray(item.subItems)) {
-                item.subItems.forEach((subItem) => {
-                    if (subItem) visitor(subItem, item);
-                });
-            }
-        });
+    lockerItems(locker).forEach((item) => {
+        if (!item) return;
+        visitor(item, null);
+        if ((item.type || '').toLowerCase() === 'container' && Array.isArray(item.subItems)) {
+            item.subItems.forEach((subItem) => {
+                if (subItem) visitor(subItem, item);
+            });
+        }
     });
 }
 

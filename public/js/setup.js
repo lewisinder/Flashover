@@ -66,7 +66,6 @@ const lockerLoadingState = document.getElementById('locker-loading-state');
 const createLockerBtn = document.getElementById('create-locker-btn');
 const lockerEditorName = document.getElementById('locker-editor-name');
 const lockerEditorShelves = document.getElementById('locker-editor-shelves');
-const addShelfBtn = document.getElementById('add-shelf-btn');
 const backBtn = document.getElementById('back-btn');
 const headerSaveBtn = document.getElementById('header-save-btn');
 
@@ -132,6 +131,34 @@ function isDirectImageRef(value) {
         value.startsWith('https://storage.googleapis.com/') ||
         value.startsWith('https://firebasestorage.googleapis.com/')
     );
+}
+
+function flattenLegacyLockerItems(locker) {
+    if (Array.isArray(locker?.items)) return locker.items;
+    if (!Array.isArray(locker?.shelves)) return [];
+    return locker.shelves.flatMap((shelf) => Array.isArray(shelf?.items) ? shelf.items : []);
+}
+
+function ensureLockerItems(locker) {
+    if (!locker) return [];
+    if (!Array.isArray(locker.items)) locker.items = flattenLegacyLockerItems(locker);
+    return locker.items;
+}
+
+function normalizeTruckDataShape(data) {
+    const normalized = data && typeof data === 'object' ? data : {};
+    normalized.appliances = Array.isArray(normalized.appliances) ? normalized.appliances : [];
+    normalized.appliances = normalized.appliances.map((appliance) => ({
+        ...appliance,
+        lockers: Array.isArray(appliance?.lockers)
+            ? appliance.lockers.map((locker) => {
+                const nextLocker = { ...locker, items: flattenLegacyLockerItems(locker) };
+                delete nextLocker.shelves;
+                return nextLocker;
+            })
+            : [],
+    }));
+    return normalized;
 }
 
 async function resolveImageDisplayUrl(imageRef) {
@@ -201,17 +228,59 @@ function collectItemsWithBlobImages(data) {
     const items = [];
     (Array.isArray(data?.appliances) ? data.appliances : []).forEach(appliance => {
         (Array.isArray(appliance?.lockers) ? appliance.lockers : []).forEach(locker => {
-            (Array.isArray(locker?.shelves) ? locker.shelves : []).forEach(shelf => {
-                (Array.isArray(shelf?.items) ? shelf.items : []).forEach(item => {
-                    if (item?.img?.startsWith('blob:')) items.push(item);
-                    (Array.isArray(item?.subItems) ? item.subItems : []).forEach(subItem => {
-                        if (subItem?.img?.startsWith('blob:')) items.push(subItem);
-                    });
+            getLockerItems(locker).forEach(item => {
+                if (item?.img?.startsWith('blob:')) items.push(item);
+                (Array.isArray(item?.subItems) ? item.subItems : []).forEach(subItem => {
+                    if (subItem?.img?.startsWith('blob:')) items.push(subItem);
                 });
             });
         });
     });
     return items;
+}
+
+function createLockerItemArea(areaId = String(Date.now()), items = []) {
+    return {
+        id: String(areaId),
+        name: 'Items',
+        items: Array.isArray(items) ? items : []
+    };
+}
+
+function getLockerShelfList(locker) {
+    return Array.isArray(locker?.shelves) ? locker.shelves.filter(Boolean) : [];
+}
+
+function getLockerItems(locker) {
+    return ensureLockerItems(locker);
+}
+
+function ensureLockerItemArea(locker, { markUnsaved = false } = {}) {
+    if (!locker) return null;
+
+    const shelves = getLockerShelfList(locker);
+    const hadCanonicalItems = Array.isArray(locker.items);
+    const canonicalItems = ensureLockerItems(locker);
+    let changed = false;
+
+    if (!hadCanonicalItems) {
+        changed = true;
+    }
+
+    const areaId = shelves[0]?.id || `${locker.id || Date.now()}-items`;
+    if (!Array.isArray(locker.shelves) || locker.shelves.length !== 1) {
+        locker.shelves = [createLockerItemArea(areaId, canonicalItems)];
+        changed = true;
+    } else {
+        const [area] = locker.shelves;
+        if (!Array.isArray(area.items) || area.items !== canonicalItems) {
+            area.items = canonicalItems;
+            changed = true;
+        }
+    }
+
+    if (changed && markUnsaved) setUnsavedChanges(true);
+    return locker.shelves[0] || null;
 }
 
 async function uploadBlobImageItem(item, index, total) {
@@ -319,7 +388,7 @@ function triggerSavedIndicator() {
 }
 
 const defaultLockerSubtitle =
-    applianceNameSubtitle?.dataset?.default || 'Choose a locker to edit shelves and items.';
+    applianceNameSubtitle?.dataset?.default || 'Choose a locker to edit items and containers.';
 
 function setLockerLoading(isLoading) {
     if (lockerLoadingState) lockerLoadingState.classList.toggle('hidden', !isLoading);
@@ -417,9 +486,6 @@ function addEventListeners() {
     cItemEditorOverlay?.addEventListener('click', (e) => {
         if (e.target === cItemEditorOverlay) closeItemEditor();
     });
-
-    // Shelf Management
-    addShelfBtn.addEventListener('click', addShelf);
 
     // Delete Confirmation
     cancelDeleteBtn.addEventListener('click', () => {
@@ -602,7 +668,7 @@ async function loadBrigadeData() {
         const token = await currentUser.getIdToken();
         const response = await fetch(`/api/brigades/${activeBrigadeId}/data`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (!response.ok) throw new Error('Failed to load brigade data');
-        truckData = await response.json();
+        truckData = normalizeTruckDataShape(await response.json());
         lastSavedTruckData = JSON.parse(JSON.stringify(truckData)); // Deep copy
         if (!truckData.appliances) truckData.appliances = [];
         
@@ -758,8 +824,8 @@ function renderLockerList() {
     lockerListContainer.innerHTML = '';
     (appliance.lockers || []).forEach(locker => {
         const card = document.createElement('div');
-        const shelfCount = (locker.shelves || []).length;
-        const metaText = shelfCount ? `${shelfCount} shelf${shelfCount === 1 ? '' : 's'}` : 'No shelves yet';
+        const itemCount = getLockerItems(locker).length;
+        const metaText = itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : 'No items yet';
         const initial = (locker.name || 'L').trim().charAt(0).toUpperCase();
         card.className = 'locker-card';
         card.setAttribute('role', 'button');
@@ -821,7 +887,7 @@ function renderLockerList() {
             <div class="locker-add-icon">+</div>
             <div class="locker-card-text">
                 <div class="locker-name">Create a new locker</div>
-                <div class="locker-meta">Name it, then add shelves and items.</div>
+                <div class="locker-meta">Name it, then add items and containers.</div>
             </div>
         </div>
     `;
@@ -841,15 +907,9 @@ function openLockerEditor(lockerId) {
     const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === lockerId);
     if (!locker) return;
 
-    if (!locker.shelves) locker.shelves = [];
-    
-    if (locker.shelves.length < 2) {
-        locker.shelves.push({ id: String(Date.now() + locker.shelves.length), name: `Shelf ${locker.shelves.length + 1}`, items: [] });
-        setUnsavedChanges(true);
-    }
-    
+    ensureLockerItemArea(locker);
     lockerEditorName.value = locker.name;
-    renderLockerShelves();
+    renderLockerItemsArea();
     selectLockerScreen.classList.remove('active');
     lockerEditorScreen.classList.add('active');
 }
@@ -864,7 +924,14 @@ async function saveNewLocker() {
             if (locker) locker.name = name;
             await saveBrigadeData('renameLocker');
         } else {
-            const newLocker = { id: String(Date.now()), name, shelves: [] };
+            const newLockerId = String(Date.now());
+            const items = [];
+            const newLocker = {
+                id: newLockerId,
+                name,
+                items,
+                shelves: [createLockerItemArea(`${newLockerId}-items`, items)]
+            };
             appliance.lockers.push(newLocker);
             await saveBrigadeData('addLocker'); // Immediate save as requested
         }
@@ -881,47 +948,22 @@ function updateLockerName(e) {
     }
 }
 
-// --- Shelf Management ---
-function renderLockerShelves() {
+function renderLockerItemsArea() {
     const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
     if (!locker) return;
+    const itemArea = ensureLockerItemArea(locker);
     lockerEditorShelves.innerHTML = '';
-    (locker.shelves || []).forEach((shelf, index) => {
-        const shelfWrapper = document.createElement('div');
-        shelfWrapper.className = 'locker-shelf-wrapper';
-        const shelfDiv = createShelfElement(shelf, 'locker');
-        const label = document.createElement('h3');
-        label.className = 'locker-shelf-label';
-        label.textContent = `Shelf ${index + 1}`;
-        shelfWrapper.appendChild(shelfDiv);
-        shelfWrapper.appendChild(label);
-        lockerEditorShelves.appendChild(shelfWrapper);
-    });
-}
-
-function addShelf() {
-    const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
-    if (!locker) return;
-    if (!locker.shelves) locker.shelves = [];
-    const newShelf = { id: String(Date.now()), name: `Shelf ${locker.shelves.length + 1}`, items: [] };
-    locker.shelves.push(newShelf);
-    setUnsavedChanges(true);
-    renderLockerShelves();
+    if (!itemArea) return;
+    lockerEditorShelves.appendChild(createShelfElement(itemArea, 'locker'));
 }
 
 // --- Item & Container Management ---
-    function createShelfElement(shelf, context) {
+function createShelfElement(shelf, context) {
     const shelfDiv = document.createElement('div');
     shelfDiv.className = 'shelf-container';
     if (context === 'locker') shelfDiv.classList.add('locker-context');
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'delete-shelf-btn';
-    deleteBtn.dataset.id = shelf.id;
-    deleteBtn.type = 'button';
-    deleteBtn.textContent = '×';
     const itemsGrid = document.createElement('div');
     itemsGrid.className = 'shelf-items-grid';
-    shelfDiv.appendChild(deleteBtn);
     shelfDiv.appendChild(itemsGrid);
     itemsGrid.dataset.shelfId = shelf.id;
     itemsGrid.dataset.context = context;
@@ -939,15 +981,6 @@ function addShelf() {
     addItemBtn.textContent = '+';
     addItemBtn.addEventListener('click', () => openItemEditor(shelf.id, null, context));
     itemsGrid.appendChild(addItemBtn);
-
-    if (context === 'container') {
-       deleteBtn.style.display = 'none';
-    } else {
-       deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            confirmDelete('shelf', shelf.id, shelf.name);
-       });
-    }
     return shelfDiv;
 }
 
@@ -1058,7 +1091,8 @@ function closeItemEditor() {
         if (shelf) {
             const item = findItem(activeShelfId, activeItemId, currentEditingContext);
             if (item && item.name === 'New Item') {
-                 shelf.items = shelf.items.filter(i => i.id !== activeItemId);
+                 const remainingItems = shelf.items.filter(i => i.id !== activeItemId);
+                 shelf.items.splice(0, shelf.items.length, ...remainingItems);
                  if (item.img && item.img.startsWith('blob:')) {
                     URL.revokeObjectURL(item.img);
                     pendingUploads.delete(item.img);
@@ -1122,11 +1156,8 @@ function moveItemToLocker() {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     const targetLocker = appliance?.lockers?.find((l) => l.id === targetLockerId);
     if (!targetLocker) return;
-    if (!targetLocker.shelves) targetLocker.shelves = [];
-    if (targetLocker.shelves.length === 0) {
-        targetLocker.shelves.push({ id: String(Date.now()), name: 'Shelf 1', items: [] });
-    }
-    const targetShelf = targetLocker.shelves[0];
+    const targetShelf = ensureLockerItemArea(targetLocker);
+    if (!targetShelf) return;
     if (!targetShelf.items) targetShelf.items = [];
     targetShelf.items.unshift(item);
 
@@ -1448,19 +1479,16 @@ function moveItemBetweenShelves({ itemId, fromShelfId, fromContext, toShelfId, t
 function findContainer(containerId) {
    if (!activeLockerId || !containerId) return null;
    const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
-   if (!locker || !locker.shelves) return null;
-   for (const shelf of locker.shelves) {
-       if (shelf.items) {
-           const item = shelf.items.find(i => i.id === containerId);
-           if (item && item.type === 'container') return item;
-       }
-   }
-   return null;
+   if (!locker) return null;
+   return getLockerItems(locker).find((item) => item.id === containerId && item.type === 'container') || null;
 }
 
 function findShelf(shelfId, context) {
     if (context === 'locker') {
-        return truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId)?.shelves.find(s => s.id === shelfId);
+        const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
+        if (!locker) return null;
+        const itemArea = ensureLockerItemArea(locker);
+        return itemArea && itemArea.id === shelfId ? itemArea : null;
     } else { // context === 'container'
         const container = findContainer(shelfId);
         if (!container) return null;
@@ -1477,7 +1505,7 @@ function findItem(shelfId, itemId, context) {
 
 function refreshCurrentView() {
     if (lockerEditorScreen.classList.contains('active')) {
-        renderLockerShelves();
+        renderLockerItemsArea();
     } else if (containerEditorScreen.classList.contains('active')) {
         renderContainerItems();
     } else {
@@ -1528,7 +1556,8 @@ function deleteItemFromShelf(itemId, parentId = null) {
             URL.revokeObjectURL(itemToDelete.img);
             pendingUploads.delete(itemToDelete.img);
         }
-        shelf.items = shelf.items.filter(i => i.id !== itemId);
+        const remainingItems = shelf.items.filter(i => i.id !== itemId);
+        shelf.items.splice(0, shelf.items.length, ...remainingItems);
     }
 }
 
@@ -1541,9 +1570,6 @@ function confirmDelete(type, id, name, parentId = null) {
             const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
             appliance.lockers = appliance.lockers.filter(l => l.id !== id);
             shouldSaveImmediately = true;
-        } else if (type === 'shelf') {
-            const locker = truckData.appliances.find(a => a.id === activeApplianceId)?.lockers.find(l => l.id === activeLockerId);
-            locker.shelves = locker.shelves.filter(s => s.id !== id);
         } else if (type === 'item') {
             deleteItemFromShelf(id, parentId);
             closeItemEditor();
@@ -1636,13 +1662,11 @@ function findItemByImageUrl(imgUrl) {
     const appliance = truckData.appliances.find(a => a.id === activeApplianceId);
     if (!appliance || !appliance.lockers) return null;
     for (const locker of appliance.lockers) {
-        for (const shelf of locker.shelves || []) {
-            for (const item of shelf.items || []) {
-                if (item.img === imgUrl) return item;
-                if (item.subItems) {
-                    const subItem = item.subItems.find(si => si.img === imgUrl);
-                    if (subItem) return subItem;
-                }
+        for (const item of getLockerItems(locker)) {
+            if (item.img === imgUrl) return item;
+            if (item.subItems) {
+                const subItem = item.subItems.find(si => si.img === imgUrl);
+                if (subItem) return subItem;
             }
         }
     }

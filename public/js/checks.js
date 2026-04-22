@@ -185,26 +185,31 @@ function initChecksPage(options = {}) {
         return userAppData.appliances.find(a => a.id == applianceId);
     }
 
+    function getLockerItems(locker) {
+        if (Array.isArray(locker?.items)) return locker.items;
+        return (Array.isArray(locker?.shelves) ? locker.shelves : []).flatMap((shelf) =>
+            Array.isArray(shelf?.items) ? shelf.items : []
+        );
+    }
+
     function generateFullReportData() {
         const appliance = getActiveAppliance();
         if (!appliance) return { lockers: [] };
         const reportApplianceData = JSON.parse(JSON.stringify(appliance)); // Deep copy
         reportApplianceData.lockers.forEach(locker => {
-            locker.shelves.forEach(shelf => {
-                shelf.items.forEach(item => {
-                    const result = checkResults.find(r => r.itemId === item.id);
-                    item.status = result ? result.status : 'untouched';
-                    item.note = result ? result.note : '';
-                    item.noteImage = result ? (result.noteImage || '') : '';
-                    if (item.type === 'container' && item.subItems) {
-                        item.subItems.forEach(subItem => {
-                            const subResult = checkResults.find(r => r.itemId === subItem.id);
-                            subItem.status = subResult ? subResult.status : 'untouched';
-                            subItem.note = subResult ? subResult.note : '';
-                            subItem.noteImage = subResult ? (subResult.noteImage || '') : '';
-                        });
-                    }
-                });
+            getLockerItems(locker).forEach(item => {
+                const result = checkResults.find(r => r.itemId === item.id);
+                item.status = result ? result.status : 'untouched';
+                item.note = result ? result.note : '';
+                item.noteImage = result ? (result.noteImage || '') : '';
+                if (item.type === 'container' && item.subItems) {
+                    item.subItems.forEach(subItem => {
+                        const subResult = checkResults.find(r => r.itemId === subItem.id);
+                        subItem.status = subResult ? subResult.status : 'untouched';
+                        subItem.note = subResult ? subResult.note : '';
+                        subItem.noteImage = subResult ? (subResult.noteImage || '') : '';
+                    });
+                }
             });
         });
         return reportApplianceData;
@@ -277,10 +282,12 @@ function initChecksPage(options = {}) {
     const checkerUI = { 
         headerTitle: getElement('header-title'),
         lockerName: getElement('locker-editor-name'), 
+        lockerContextLabel: getElement('locker-context-label'),
         itemImage: getElement('item-image'), 
         itemName: getElement('item-name'), 
         itemDesc: getElement('item-desc'), 
         lockerLayout: getElement('locker-layout'), 
+        scrollArea: document.querySelector('#locker-check-screen main'),
         controls: getElement('controls'), 
         containerControls: getElement('container-controls'), 
         nextLockerBtn: getElement('go-to-next-locker-btn'), 
@@ -877,31 +884,29 @@ function initChecksPage(options = {}) {
 
         const answeredItemIds = new Set(checkResults.map((result) => String(result.itemId)));
         for (const locker of appliance.lockers) {
-            for (const shelf of locker.shelves || []) {
-                for (const item of shelf.items || []) {
-                    if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
-                        const parentAnswered = answeredItemIds.has(String(item.id));
-                        const anySubAnswered = item.subItems.some((subItem) => answeredItemIds.has(String(subItem.id)));
-                        const nextSubItem = item.subItems.find((subItem) => !answeredItemIds.has(String(subItem.id)));
-                        if (!parentAnswered && anySubAnswered && nextSubItem) {
-                            return {
-                                lockerId: locker.id,
-                                selectedItemId: nextSubItem.id,
-                                isRechecking: false,
-                                isInsideContainer: true,
-                                parentItemId: item.id
-                            };
-                        }
-                    }
-                    if (!answeredItemIds.has(String(item.id))) {
+            for (const item of getLockerItems(locker)) {
+                if (item.type === 'container' && Array.isArray(item.subItems) && item.subItems.length > 0) {
+                    const parentAnswered = answeredItemIds.has(String(item.id));
+                    const anySubAnswered = item.subItems.some((subItem) => answeredItemIds.has(String(subItem.id)));
+                    const nextSubItem = item.subItems.find((subItem) => !answeredItemIds.has(String(subItem.id)));
+                    if (!parentAnswered && anySubAnswered && nextSubItem) {
                         return {
                             lockerId: locker.id,
-                            selectedItemId: item.id,
+                            selectedItemId: nextSubItem.id,
                             isRechecking: false,
-                            isInsideContainer: false,
-                            parentItemId: null
+                            isInsideContainer: true,
+                            parentItemId: item.id
                         };
                     }
+                }
+                if (!answeredItemIds.has(String(item.id))) {
+                    return {
+                        lockerId: locker.id,
+                        selectedItemId: item.id,
+                        isRechecking: false,
+                        isInsideContainer: false,
+                        parentItemId: null
+                    };
                 }
             }
         }
@@ -1159,52 +1164,52 @@ function initChecksPage(options = {}) {
         const existingFinishContainerBtn = getElement('finish-container-check-btn');
         if (existingFinishContainerBtn) existingFinishContainerBtn.remove();
         checkerUI.nextLockerBtn.classList.add('hidden');
+        checkerUI.lockerContextLabel?.classList.add('hidden');
+        if (checkerUI.lockerContextLabel) checkerUI.lockerContextLabel.textContent = '';
 
         checkerUI.headerTitle.textContent = locker.name;
         checkerUI.lockerName.textContent = locker.name;
         checkerUI.lockerLayout.innerHTML = '';
-        
-        const shelves = locker.shelves || [];
-        shelves.forEach((shelf, index) => {
-            const shelfWrapper = document.createElement('div');
-            const items = shelf.items || [];
-            const shelfContainer = document.createElement('div');
-            shelfContainer.className = 'shelf-container';
-            const itemsGrid = document.createElement('div');
-            itemsGrid.className = 'shelf-items-grid';
-            items.forEach((item) => {
-                const result = checkResults.find(r => r.itemId === item.id);
-                const itemBox = document.createElement('div');
-                itemBox.className = 'item-box';
-                if (result && ['present', 'missing', 'note', 'defect', 'partial', 'untouched'].includes(result.status)) {
-                    itemBox.classList.add(`status-${result.status}`);
-                }
-                itemBox.dataset.id = item.id;
-                const overlay = document.createElement('div');
-                overlay.className = 'item-name-overlay';
-                overlay.textContent = item.name || 'Item';
-                itemBox.appendChild(overlay);
-                itemsGrid.appendChild(itemBox);
-            });
-            shelfContainer.appendChild(itemsGrid);
-            const label = document.createElement('h3');
-            label.className = 'text-white text-center font-bold text-sm mt-1';
-            label.textContent = `Shelf ${index + 1}`;
-            shelfWrapper.appendChild(shelfContainer);
-            shelfWrapper.appendChild(label);
-            checkerUI.lockerLayout.appendChild(shelfWrapper);
+
+        const lockerItems = getLockerItems(locker);
+        const shelfContainer = document.createElement('div');
+        shelfContainer.className = 'shelf-container';
+        const itemsGrid = document.createElement('div');
+        itemsGrid.className = 'shelf-items-grid';
+        lockerItems.forEach((item) => {
+            const result = checkResults.find(r => r.itemId === item.id);
+            const itemBox = document.createElement('div');
+            itemBox.className = 'item-box';
+            if (result && ['present', 'missing', 'note', 'defect', 'partial', 'untouched'].includes(result.status)) {
+                itemBox.classList.add(`status-${result.status}`);
+            }
+            itemBox.dataset.id = item.id;
+            const overlay = document.createElement('div');
+            overlay.className = 'item-name-overlay';
+            overlay.textContent = item.name || 'Item';
+            itemBox.appendChild(overlay);
+            itemsGrid.appendChild(itemBox);
         });
+        shelfContainer.appendChild(itemsGrid);
+        checkerUI.lockerLayout.appendChild(shelfContainer);
         
         let itemToSelect = null;
         if (currentCheckState.selectedItemId) {
-            itemToSelect = findItemById(currentCheckState.selectedItemId);
-        } else {
-            itemToSelect = shelves.flatMap(s => s.items || []).find(i => !checkResults.some(r => r.itemId === i.id));
+            const selectedItemId = String(currentCheckState.selectedItemId);
+            itemToSelect = lockerItems.find((item) =>
+                String(item.id) === selectedItemId && !checkResults.some((result) => String(result.itemId) === selectedItemId)
+            ) || null;
+        }
+        if (!itemToSelect) {
+            itemToSelect = lockerItems.find(i => !checkResults.some(r => r.itemId === i.id));
         }
         
         if (itemToSelect) {
             selectItemForCheck(itemToSelect.id);
         } else {
+            currentCheckState.selectedItemId = null;
+            currentCheckState.parentItemId = null;
+            saveStateToSession();
             checkIfLockerIsComplete();
         }
 
@@ -1213,7 +1218,10 @@ function initChecksPage(options = {}) {
 
     function selectItemForCheck(itemId, parentId = null) {
         if (!itemId) {
+            currentCheckState.selectedItemId = null;
+            if (!currentCheckState.isInsideContainer) currentCheckState.parentItemId = null;
             updateItemDetails(null);
+            saveStateToSession();
             checkIfLockerIsComplete();
             return;
         }
@@ -1248,20 +1256,23 @@ function initChecksPage(options = {}) {
         } else {
             checkerUI.itemImage.dataset.imageRef = '';
             checkerUI.itemImage.src = '/design_assets/Flashover Logo.png';
-            checkerUI.itemName.textContent = 'Select an Item';
-            checkerUI.itemDesc.textContent = 'All items in this locker have been checked.';
+            checkerUI.itemName.textContent = currentCheckState.isInsideContainer ? 'Container Complete' : 'Select an Item';
+            checkerUI.itemDesc.textContent = currentCheckState.isInsideContainer
+                ? 'All items in this container have been checked.'
+                : 'All items in this locker have been checked.';
             checkerUI.controls.classList.add('hidden');
             checkerUI.containerControls.classList.add('hidden');
         }
     }
 
     function scrollItemToTop(activeBox) {
-        const container = checkerUI.lockerLayout;
+        const container = checkerUI.scrollArea;
         if (!container || !activeBox) return;
         const containerRect = container.getBoundingClientRect();
         const itemRect = activeBox.getBoundingClientRect();
         const offsetTop = itemRect.top - containerRect.top + container.scrollTop;
-        container.scrollTo({ top: Math.max(0, offsetTop - 8), behavior: 'smooth' });
+        const centeredTop = offsetTop - Math.max(0, (container.clientHeight - itemRect.height) / 2);
+        container.scrollTo({ top: Math.max(0, centeredTop), behavior: 'smooth' });
     }
 
     function startContainerCheck() {
@@ -1281,7 +1292,14 @@ function initChecksPage(options = {}) {
     }
 
     function loadContainerUI(container) {
+        const locker = findLockerById(currentCheckState.lockerId);
         checkerUI.headerTitle.textContent = `Container: ${container.name}`;
+        checkerUI.lockerName.textContent = locker?.name || 'Locker';
+        if (checkerUI.lockerContextLabel) {
+            checkerUI.lockerContextLabel.textContent = `Inside container: ${container.name}`;
+            checkerUI.lockerContextLabel.classList.remove('hidden');
+        }
+        checkerUI.nextLockerBtn.classList.add('hidden');
         const subItems = container.subItems || [];
 
         checkerUI.lockerLayout.innerHTML = '';
@@ -1313,14 +1331,20 @@ function initChecksPage(options = {}) {
 
         let itemToSelect = null;
         if (currentCheckState.selectedItemId && currentCheckState.parentItemId === container.id) {
-             itemToSelect = findItemById(currentCheckState.selectedItemId, container.id);
-        } else {
+             const selectedItemId = String(currentCheckState.selectedItemId);
+             itemToSelect = subItems.find((item) =>
+                String(item.id) === selectedItemId && !checkResults.some((result) => String(result.itemId) === selectedItemId)
+             ) || null;
+        }
+        if (!itemToSelect) {
             itemToSelect = subItems.find(i => !checkResults.some(r => r.itemId === i.id));
         }
 
         if (itemToSelect) {
             selectItemForCheck(itemToSelect.id, container.id);
         } else {
+            currentCheckState.selectedItemId = null;
+            saveStateToSession();
             checkIfContainerIsComplete();
         }
     }
@@ -1389,7 +1413,7 @@ function initChecksPage(options = {}) {
              updateItemBoxStatus(item.id, 'missing');
              saveStateToSession();
              
-            const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+            const allItemsInLocker = getLockerItems(locker);
             const nextUncheckedItem = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
             selectItemForCheck(nextUncheckedItem?.id);
              return;
@@ -1422,7 +1446,7 @@ function initChecksPage(options = {}) {
                 selectItemForCheck(nextItemToSelect.id, currentCheckState.parentItemId);
             }
         } else {
-            const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+            const allItemsInLocker = getLockerItems(locker);
             nextItemToSelect = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
             selectItemForCheck(nextItemToSelect?.id);
         }
@@ -1462,7 +1486,7 @@ function initChecksPage(options = {}) {
                 selectItemForCheck(nextItemToSelect.id, currentCheckState.parentItemId);
             }
         } else {
-            const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+            const allItemsInLocker = getLockerItems(locker);
             nextItemToSelect = allItemsInLocker.find(i => !checkResults.some(r => r.itemId === i.id));
             selectItemForCheck(nextItemToSelect?.id);
         }
@@ -1473,13 +1497,14 @@ function initChecksPage(options = {}) {
         const locker = findLockerById(currentCheckState.lockerId);
         if (!locker) return false;
 
-        const allItemsInLocker = locker.shelves.flatMap(s => s.items);
+        const allItemsInLocker = getLockerItems(locker);
         const allItemsChecked = allItemsInLocker.every(item => checkResults.some(r => r.itemId === item.id));
 
         checkerUI.nextLockerBtn.classList.toggle('hidden', !allItemsChecked);
         
         if (allItemsChecked) {
             updateItemDetails(null);
+            checkerUI.nextLockerBtn.classList.remove('hidden');
         }
 
         return allItemsChecked;
@@ -1493,7 +1518,7 @@ function initChecksPage(options = {}) {
     function getLockerCheckStatus(lockerId) {
         const locker = findLockerById(lockerId);
         if (!locker) return 'unknown';
-        const allItems = locker.shelves.flatMap(s => s.items);
+        const allItems = getLockerItems(locker);
         if (allItems.length === 0) return 'complete';
 
         const allItemsChecked = allItems.every(item => checkResults.some(r => r.itemId === item.id));
@@ -1693,10 +1718,8 @@ function initChecksPage(options = {}) {
             return parent && parent.subItems ? parent.subItems.find(i => i.id == itemId) : null;
         }
         for (const locker of appliance.lockers) {
-            for (const shelf of locker.shelves) {
-                const item = shelf.items.find(i => i.id == itemId);
-                if (item) return item;
-            }
+            const item = getLockerItems(locker).find(i => i.id == itemId);
+            if (item) return item;
         }
         return null;
     }

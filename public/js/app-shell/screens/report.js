@@ -93,6 +93,13 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+function getLockerItems(locker) {
+  if (Array.isArray(locker?.items)) return locker.items;
+  return (Array.isArray(locker?.shelves) ? locker.shelves : []).flatMap((shelf) =>
+    Array.isArray(shelf?.items) ? shelf.items : []
+  );
+}
+
 function renderItem(
   item,
   { isSubItem, lockerName, parentName, makeAnchorId, registerEntry, resolveNoteImageUrl } = {}
@@ -474,19 +481,17 @@ export async function renderReport({
         `;
 
           const itemsWrap = el("div", "fs-stack");
-          (locker.shelves || []).forEach((shelf) => {
-            (shelf.items || []).forEach((item) => {
-              itemsWrap.appendChild(
-                renderItem(item, {
-                  isSubItem: false,
-                  lockerName: locker.name || "",
-                  parentName: "",
-                  makeAnchorId,
-                  registerEntry,
-                  resolveNoteImageUrl,
-                })
-              );
-            });
+          getLockerItems(locker).forEach((item) => {
+            itemsWrap.appendChild(
+              renderItem(item, {
+                isSubItem: false,
+                lockerName: locker.name || "",
+                parentName: "",
+                makeAnchorId,
+                registerEntry,
+                resolveNoteImageUrl,
+              })
+            );
           });
           inner.appendChild(itemsWrap);
           section.appendChild(inner);

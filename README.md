@@ -3,7 +3,7 @@
 Flashover is a Firebase web application for fire brigades to manage:
 
 - Brigades, members, roles, and join requests
-- Appliances and inventory structure: lockers, shelves, items, container items, and sub-items
+- Appliances and inventory structure: lockers, items, container items, and sub-items
 - Appliance checks and report sign-off
 - Report history and email notifications when new reports are submitted
 

@@ -356,6 +356,59 @@ function findApplianceIndex(applianceData, applianceId) {
     return appliances.findIndex(a => a && a.id === applianceId);
 }
 
+function cloneItemTree(item) {
+    if (!isPlainObject(item)) return null;
+    const clone = { ...item };
+    if (Array.isArray(item.subItems)) {
+        clone.subItems = item.subItems.map((subItem) => cloneItemTree(subItem)).filter(Boolean);
+    } else {
+        delete clone.subItems;
+    }
+    return clone;
+}
+
+function cloneShelfShape(shelf, fallbackId = '1') {
+    if (!isPlainObject(shelf)) return null;
+    return {
+        ...shelf,
+        id: shelf.id || fallbackId,
+        items: (Array.isArray(shelf.items) ? shelf.items : []).map((item) => cloneItemTree(item)).filter(Boolean),
+    };
+}
+
+function lockerItems(locker) {
+    if (Array.isArray(locker && locker.items)) return locker.items;
+    if (Array.isArray(locker && locker.shelves)) {
+        return locker.shelves.flatMap((shelf) => Array.isArray(shelf && shelf.items) ? shelf.items : []);
+    }
+    return [];
+}
+
+function visitLockerItems(locker, visitor) {
+    lockerItems(locker).forEach((item) => {
+        if (!item) return;
+        visitor(item);
+    });
+}
+
+function normalizeLockerShape(locker = {}, { includeShelves = false } = {}) {
+    const normalized = isPlainObject(locker) ? { ...locker } : {};
+    const items = lockerItems(locker).map((item) => cloneItemTree(item)).filter(Boolean);
+    normalized.items = items;
+    if (includeShelves) {
+        if (!Array.isArray(locker && locker.items) && Array.isArray(locker && locker.shelves)) {
+            normalized.shelves = locker.shelves.map((shelf, index) => cloneShelfShape(shelf, String(index + 1))).filter(Boolean);
+        } else {
+            normalized.shelves = items.length > 0
+                ? [{ id: '1', name: 'Shelf 1', items: items.map((item) => cloneItemTree(item)).filter(Boolean) }]
+                : [];
+        }
+    } else {
+        delete normalized.shelves;
+    }
+    return normalized;
+}
+
 function validateApplianceData(brigadeId, incomingData, existingData = {}) {
     if (!isPlainObject(incomingData) || !Array.isArray(incomingData.appliances)) {
         const error = new Error('Appliance data must contain an appliances array.');
@@ -378,12 +431,10 @@ function validateApplianceData(brigadeId, incomingData, existingData = {}) {
     const existingImageByItemId = new Map();
     (Array.isArray(existingData.appliances) ? existingData.appliances : []).forEach((appliance) => {
         (Array.isArray(appliance && appliance.lockers) ? appliance.lockers : []).forEach((locker) => {
-            (Array.isArray(locker && locker.shelves) ? locker.shelves : []).forEach((shelf) => {
-                (Array.isArray(shelf && shelf.items) ? shelf.items : []).forEach((item) => {
-                    if (item && item.id && item.img) existingImageByItemId.set(String(item.id), item.img);
-                    (Array.isArray(item && item.subItems) ? item.subItems : []).forEach((subItem) => {
-                        if (subItem && subItem.id && subItem.img) existingImageByItemId.set(String(subItem.id), subItem.img);
-                    });
+            visitLockerItems(locker, (item) => {
+                if (item && item.id && item.img) existingImageByItemId.set(String(item.id), item.img);
+                (Array.isArray(item && item.subItems) ? item.subItems : []).forEach((subItem) => {
+                    if (subItem && subItem.id && subItem.img) existingImageByItemId.set(String(subItem.id), subItem.img);
                 });
             });
         });
@@ -450,35 +501,18 @@ function validateApplianceData(brigadeId, incomingData, existingData = {}) {
                     error.status = 400;
                     throw error;
                 }
-                const shelves = Array.isArray(rawLocker.shelves) ? rawLocker.shelves : [];
-                if (shelves.length > 40) {
-                    const error = new Error('Locker contains too many shelves.');
+                const rawItems = Array.isArray(rawLocker.items)
+                    ? rawLocker.items
+                    : lockerItems(rawLocker);
+                if (rawItems.length > 2000) {
+                    const error = new Error('Locker contains too many items.');
                     error.status = 400;
                     throw error;
                 }
                 return {
                     id: cleanId(rawLocker.id, `Locker ${lockerIndex + 1} id`),
                     name: cleanRequiredText(rawLocker.name, `Locker ${lockerIndex + 1} name`, 80),
-                    shelves: shelves.map((rawShelf, shelfIndex) => {
-                        if (!isPlainObject(rawShelf)) {
-                            const error = new Error(`Shelf ${shelfIndex + 1} must be an object.`);
-                            error.status = 400;
-                            throw error;
-                        }
-                        const items = Array.isArray(rawShelf.items) ? rawShelf.items : [];
-                        if (items.length > 300) {
-                            const error = new Error('Shelf contains too many items.');
-                            error.status = 400;
-                            throw error;
-                        }
-                        const shelf = {
-                            id: rawShelf.id ? cleanId(rawShelf.id, `Shelf ${shelfIndex + 1} id`) : String(shelfIndex + 1),
-                            items: items.map((item, itemIndex) => cleanItem(item, `Item ${itemIndex + 1}`)),
-                        };
-                        const shelfName = cleanOptionalText(rawShelf.name, `Shelf ${shelfIndex + 1} name`, 80);
-                        if (shelfName) shelf.name = shelfName;
-                        return shelf;
-                    }),
+                    items: rawItems.map((item, itemIndex) => cleanItem(item, `Locker ${lockerIndex + 1} item ${itemIndex + 1}`)),
                 };
             }),
         };
@@ -508,7 +542,7 @@ function applianceDataFromDoc(doc) {
         name: data.name || 'Appliance',
         order: Number.isFinite(Number(data.order)) ? Number(data.order) : 0,
         version: Number.isFinite(Number(data.version)) ? Number(data.version) : 1,
-        lockers: Array.isArray(data.lockers) ? data.lockers : [],
+        lockers: Array.isArray(data.lockers) ? data.lockers.map((locker) => normalizeLockerShape(locker, { includeShelves: true })) : [],
         checkStatus: normalizeCheckStatus(data.checkStatus),
     };
 }
@@ -524,7 +558,17 @@ async function loadApplianceDataForBrigade(brigade) {
         };
     }
     const legacy = brigade.data && brigade.data.applianceData;
-    return legacy && Array.isArray(legacy.appliances) ? legacy : { appliances: [] };
+    if (legacy && Array.isArray(legacy.appliances)) {
+        return {
+            appliances: legacy.appliances.map((appliance) => ({
+                ...appliance,
+                lockers: Array.isArray(appliance && appliance.lockers)
+                    ? appliance.lockers.map((locker) => normalizeLockerShape(locker, { includeShelves: true }))
+                    : [],
+            })),
+        };
+    }
+    return { appliances: [] };
 }
 
 async function getApplianceForBrigade(brigadeId, applianceId, brigade = null) {
@@ -608,24 +652,24 @@ function normalizeAnswer(raw, fallback = {}) {
 
 function applyAnswersToReportLockers(appliance, answerDocs) {
     const answerByItemId = new Map(answerDocs.map((answer) => [String(answer.itemId), answer]));
-    const lockers = JSON.parse(JSON.stringify(Array.isArray(appliance.lockers) ? appliance.lockers : []));
+    const lockers = JSON.parse(JSON.stringify(
+        Array.isArray(appliance.lockers) ? appliance.lockers.map((locker) => normalizeLockerShape(locker)) : []
+    ));
     lockers.forEach((locker) => {
-        (locker.shelves || []).forEach((shelf) => {
-            (shelf.items || []).forEach((item) => {
-                const answer = answerByItemId.get(String(item.id));
-                if (answer) {
-                    item.status = answer.status;
-                    item.note = answer.note || '';
-                    if (answer.noteImage) item.noteImage = answer.noteImage;
+        (locker.items || []).forEach((item) => {
+            const answer = answerByItemId.get(String(item.id));
+            if (answer) {
+                item.status = answer.status;
+                item.note = answer.note || '';
+                if (answer.noteImage) item.noteImage = answer.noteImage;
+            }
+            (item.subItems || []).forEach((subItem) => {
+                const subAnswer = answerByItemId.get(String(subItem.id));
+                if (subAnswer) {
+                    subItem.status = subAnswer.status;
+                    subItem.note = subAnswer.note || '';
+                    if (subAnswer.noteImage) subItem.noteImage = subAnswer.noteImage;
                 }
-                (item.subItems || []).forEach((subItem) => {
-                    const subAnswer = answerByItemId.get(String(subItem.id));
-                    if (subAnswer) {
-                        subItem.status = subAnswer.status;
-                        subItem.note = subAnswer.note || '';
-                        if (subAnswer.noteImage) subItem.noteImage = subAnswer.noteImage;
-                    }
-                });
             });
         });
     });
@@ -1015,47 +1059,43 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                         {
                             id: 'locker-ns-transverse',
                             name: 'NS Transverse Locker',
-                            shelves: [
+                            items: [
                                 {
-                                    items: [
+                                    id: 'item-broom',
+                                    name: 'Broom',
+                                    desc: 'General purpose broom.',
+                                    img: '/design_assets/Gear Icon.png',
+                                },
+                                {
+                                    id: 'item-mop',
+                                    name: 'Mop',
+                                    desc: 'Standard mop head.',
+                                    img: '/design_assets/Gear Icon.png',
+                                },
+                                {
+                                    id: 'item-milwaukee-box',
+                                    name: 'Milwaukee Box',
+                                    desc: 'Power tool kit container.',
+                                    img: '/design_assets/Gear Icon.png',
+                                    type: 'container',
+                                    subItems: [
                                         {
-                                            id: 'item-broom',
-                                            name: 'Broom',
-                                            desc: 'General purpose broom.',
+                                            id: 'sub-batteries',
+                                            name: 'Batteries',
+                                            desc: '2x charged batteries.',
                                             img: '/design_assets/Gear Icon.png',
                                         },
                                         {
-                                            id: 'item-mop',
-                                            name: 'Mop',
-                                            desc: 'Standard mop head.',
+                                            id: 'sub-drill',
+                                            name: 'Drill',
+                                            desc: '18V drill.',
                                             img: '/design_assets/Gear Icon.png',
                                         },
                                         {
-                                            id: 'item-milwaukee-box',
-                                            name: 'Milwaukee Box',
-                                            desc: 'Power tool kit container.',
+                                            id: 'sub-recsaw',
+                                            name: 'Rec Saw',
+                                            desc: 'Reciprocating saw.',
                                             img: '/design_assets/Gear Icon.png',
-                                            type: 'container',
-                                            subItems: [
-                                                {
-                                                    id: 'sub-batteries',
-                                                    name: 'Batteries',
-                                                    desc: '2x charged batteries.',
-                                                    img: '/design_assets/Gear Icon.png',
-                                                },
-                                                {
-                                                    id: 'sub-drill',
-                                                    name: 'Drill',
-                                                    desc: '18V drill.',
-                                                    img: '/design_assets/Gear Icon.png',
-                                                },
-                                                {
-                                                    id: 'sub-recsaw',
-                                                    name: 'Rec Saw',
-                                                    desc: 'Reciprocating saw.',
-                                                    img: '/design_assets/Gear Icon.png',
-                                                },
-                                            ],
                                         },
                                     ],
                                 },
@@ -1064,22 +1104,18 @@ apiRouter.post('/dev/seed-demo', async (req, res) => {
                         {
                             id: 'locker-os-1',
                             name: 'OS Locker #1',
-                            shelves: [
+                            items: [
                                 {
-                                    items: [
-                                        {
-                                            id: 'item-first-aid',
-                                            name: 'First Aid Kit',
-                                            desc: 'Primary first aid kit.',
-                                            img: '/design_assets/Gear Icon.png',
-                                        },
-                                        {
-                                            id: 'item-traffic-cones',
-                                            name: 'Road Cones',
-                                            desc: '4x road cones.',
-                                            img: '/design_assets/Gear Icon.png',
-                                        },
-                                    ],
+                                    id: 'item-first-aid',
+                                    name: 'First Aid Kit',
+                                    desc: 'Primary first aid kit.',
+                                    img: '/design_assets/Gear Icon.png',
+                                },
+                                {
+                                    id: 'item-traffic-cones',
+                                    name: 'Road Cones',
+                                    desc: '4x road cones.',
+                                    img: '/design_assets/Gear Icon.png',
                                 },
                             ],
                         },
@@ -1825,7 +1861,15 @@ brigadeRouter.get('/:brigadeId/reports/:reportId', async (req, res) => {
         } catch (e) {
             // If the signature doc is missing or unreadable, still return the report.
         }
-        res.status(200).json({ id: reportDoc.id, ...reportDoc.data(), signature });
+        const reportData = reportDoc.data() || {};
+        res.status(200).json({
+            id: reportDoc.id,
+            ...reportData,
+            lockers: Array.isArray(reportData.lockers)
+                ? reportData.lockers.map((locker) => normalizeLockerShape(locker, { includeShelves: true }))
+                : [],
+            signature,
+        });
     } catch (error) {
         console.error(`Error fetching report ${req.params.reportId}:`, error);
         res.status(500).json({ message: 'Failed to fetch report.' });
@@ -2907,18 +2951,16 @@ const generateReportHtml = (reportData) => {
     let itemsCount = 0;
     if (Array.isArray(lockers)) {
         lockers.forEach(locker => {
-            (locker.shelves || []).forEach(shelf => {
-                (shelf.items || []).forEach(item => {
-                    if (!item) return;
-                    itemsCount += 1;
-                    const itemStatus = effectiveContainerStatus(item);
-                    if (isIssueStatus(itemStatus)) issuesCount += 1;
+            lockerItems(locker).forEach(item => {
+                if (!item) return;
+                itemsCount += 1;
+                const itemStatus = effectiveContainerStatus(item);
+                if (isIssueStatus(itemStatus)) issuesCount += 1;
 
-                    (item.subItems || []).forEach(sub => {
-                        if (!sub) return;
-                        itemsCount += 1;
-                        if (isIssueStatus(sub.status)) issuesCount += 1;
-                    });
+                (item.subItems || []).forEach(sub => {
+                    if (!sub) return;
+                    itemsCount += 1;
+                    if (isIssueStatus(sub.status)) issuesCount += 1;
                 });
             });
         });
@@ -2938,13 +2980,12 @@ const generateReportHtml = (reportData) => {
             html += `<div style="${styles.section}">`;
             html += `<div style="${styles.sectionHeader}">${locker.name || 'Locker'}</div>`;
 
-            const shelves = locker.shelves || [];
-            if (shelves.length === 0) {
+            const orderedItems = lockerItems(locker);
+            if (orderedItems.length === 0) {
                 html += `<div style="padding: 12px 14px; color: #6b7280; font-size: 13px;">No items recorded.</div>`;
             } else {
                 html += `<table style="${styles.table}"><tbody>`;
 
-                const orderedItems = shelves.flatMap((shelf) => Array.isArray(shelf.items) ? shelf.items : []);
                 orderedItems.forEach((item, itemIndex) => {
                     if (!item) return;
 
@@ -3035,7 +3076,7 @@ reportRouter.post('/', async (req, res) => {
             checkedAt: reportData.date || new Date().toISOString(),
             createdAt: FieldValue.serverTimestamp(),
             applianceVersion: appliance.version || 1,
-            lockers: Array.isArray(reportData.lockers) ? reportData.lockers : [],
+            lockers: Array.isArray(reportData.lockers) ? reportData.lockers.map((locker) => normalizeLockerShape(locker)) : [],
             uid: req.user.uid,
             username: createdByName,
             createdByUid: req.user.uid,
