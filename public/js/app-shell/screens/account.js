@@ -1,4 +1,4 @@
-import { getUserBrigades } from "../cache.js";
+import { getUserBrigades, invalidateUserBrigades } from "../cache.js";
 
 function el(tag, className) {
   const node = document.createElement(tag);
@@ -43,6 +43,56 @@ function isAdminRole(role) {
   return normalizeRole(role) === "admin";
 }
 
+function parseBooleanPreference(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off"].includes(normalized)) return false;
+  }
+  return null;
+}
+
+function getReportEmailPreference(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const candidates = [
+    profile.reportEmails,
+    profile.reportEmail,
+    profile.reportEmailOptIn,
+    profile.reportEmailPreference,
+    profile.reportEmailsEnabled,
+    profile.receiveReportEmails,
+    profile.emailPreferences && profile.emailPreferences.reportEmails,
+    profile.emailPreferences && profile.emailPreferences.reportEmail,
+    profile.emailPreferences && profile.emailPreferences.reportEmailOptIn,
+    profile.emailPreferences && profile.emailPreferences.reportEmailPreference,
+    profile.emailPreferences && profile.emailPreferences.reportEmailsEnabled,
+    profile.emailPreferences && profile.emailPreferences.receiveReportEmails,
+    profile.preferences && profile.preferences.reportEmails,
+    profile.preferences && profile.preferences.reportEmail,
+    profile.preferences && profile.preferences.reportEmailOptIn,
+    profile.preferences && profile.preferences.reportEmailPreference,
+    profile.preferences && profile.preferences.reportEmailsEnabled,
+    profile.preferences && profile.preferences.receiveReportEmails,
+  ];
+  for (const candidate of candidates) {
+    const parsed = parseBooleanPreference(candidate);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function brigadesGrantReportEmailsByDefault(brigades = []) {
+  return brigades.some((brigade) => {
+    const role = normalizeRole(brigade?.role);
+    return role === "admin" || role === "gearManager";
+  });
+}
+
 export async function renderAccount({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
@@ -82,6 +132,33 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   emailField.appendChild(emailLabel);
   emailField.appendChild(emailInput);
 
+  const reportEmailsField = el("div", "fs-field");
+  const reportEmailsLabel = el("label", "fs-label");
+  reportEmailsLabel.textContent = "Report emails";
+  const reportEmailsRow = el("label");
+  reportEmailsRow.style.display = "flex";
+  reportEmailsRow.style.alignItems = "flex-start";
+  reportEmailsRow.style.gap = "10px";
+  reportEmailsRow.style.cursor = "pointer";
+  const reportEmailsCheckbox = el("input");
+  reportEmailsCheckbox.type = "checkbox";
+  reportEmailsCheckbox.style.marginTop = "4px";
+  const reportEmailsCopy = el("div");
+  const reportEmailsCopyTitle = el("div");
+  reportEmailsCopyTitle.style.fontWeight = "600";
+  reportEmailsCopyTitle.textContent = "Receive report emails";
+  const reportEmailsCopyBody = el("div");
+  reportEmailsCopyBody.style.color = "var(--fs-muted)";
+  reportEmailsCopyBody.style.fontSize = "13px";
+  reportEmailsCopyBody.textContent =
+    "Admins and gear managers get report emails by default. Everyone else can opt in.";
+  reportEmailsCopy.appendChild(reportEmailsCopyTitle);
+  reportEmailsCopy.appendChild(reportEmailsCopyBody);
+  reportEmailsRow.appendChild(reportEmailsCheckbox);
+  reportEmailsRow.appendChild(reportEmailsCopy);
+  reportEmailsField.appendChild(reportEmailsLabel);
+  reportEmailsField.appendChild(reportEmailsRow);
+
   const identifierText = el("p", "text-sm");
   identifierText.style.color = "var(--fs-muted)";
   identifierText.textContent = "User ID: Loading...";
@@ -90,10 +167,6 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   msg.style.color = "var(--fs-muted)";
 
   const actions = el("div", "fs-actions");
-  const saveBtn = el("button", "fs-btn fs-btn-primary");
-  saveBtn.type = "button";
-  saveBtn.textContent = "Save profile";
-
   const resetBtn = el("button", "fs-btn fs-btn-secondary");
   resetBtn.type = "button";
   resetBtn.textContent = "Send password reset email";
@@ -102,13 +175,13 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   signOutBtn.type = "button";
   signOutBtn.textContent = "Sign out";
 
-  actions.appendChild(saveBtn);
   actions.appendChild(resetBtn);
   actions.appendChild(signOutBtn);
 
   profileInner.appendChild(profileTitle);
   profileInner.appendChild(nameField);
   profileInner.appendChild(emailField);
+  profileInner.appendChild(reportEmailsField);
   profileInner.appendChild(identifierText);
   profileInner.appendChild(actions);
   profileInner.appendChild(msg);
@@ -162,10 +235,83 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   document.body.appendChild(actionSheet);
 
   let actionBrigade = null;
+  let isHydratingProfile = true;
+  let saveTimer = null;
+  let latestSaveToken = 0;
+  let lastSavedProfileState = null;
   const renderEmptyBrigades = () => {
     brigadeList.innerHTML =
       '<div class="fs-row"><div><div class="fs-row-title">No brigades yet</div><div class="fs-row-meta">Join or create a brigade from the Brigades tab.</div></div></div>';
   };
+
+  function currentProfileState() {
+    return {
+      fullName: nameInput.value.trim(),
+      reportEmails: !!reportEmailsCheckbox.checked,
+    };
+  }
+
+  function sameProfileState(a, b) {
+    return !!a && !!b && a.fullName === b.fullName && a.reportEmails === b.reportEmails;
+  }
+
+  function setMessage(text, color = "var(--fs-muted)") {
+    msg.style.color = color;
+    msg.textContent = text || "";
+  }
+
+  async function persistProfile() {
+    if (isHydratingProfile) return;
+    const nextState = currentProfileState();
+    if (!nextState.fullName) {
+      setMessage("Full name is required.", "var(--red-action-2)");
+      return;
+    }
+    if (nextState.fullName.length > 60) {
+      setMessage("Name is too long.", "var(--red-action-2)");
+      return;
+    }
+    if (sameProfileState(nextState, lastSavedProfileState)) {
+      return;
+    }
+
+    const saveToken = ++latestSaveToken;
+    setMessage("Saving…");
+    try {
+      await user.updateProfile({ displayName: nextState.fullName });
+      const token = await user.getIdToken();
+      await fetchJson(`/api/data/${encodeURIComponent(user.uid)}`, {
+        token,
+        method: "POST",
+        body: {
+          fullName: nextState.fullName,
+          email: user.email || emailInput.value.trim(),
+          reportEmailPreference: nextState.reportEmails,
+          reportEmails: nextState.reportEmails,
+          emailPreferences: {
+            reportEmails: nextState.reportEmails,
+          },
+        },
+      });
+      lastSavedProfileState = nextState;
+      if (saveToken === latestSaveToken) {
+        setMessage("Saved.");
+      }
+    } catch (err) {
+      console.error("Failed to save profile:", err);
+      if (saveToken === latestSaveToken) {
+        setMessage(err.message || "Failed to save.", "var(--red-action-2)");
+      }
+    }
+  }
+
+  function scheduleProfileSave(delay = 700) {
+    if (saveTimer) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null;
+      void persistProfile();
+    }, delay);
+  }
 
   function openActionSheet(brigade) {
     actionBrigade = brigade;
@@ -179,30 +325,80 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     actionBrigade = null;
   }
 
+  sheet.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+
   actionSheet.addEventListener("click", (e) => {
     if (e.target === actionSheet) closeActionSheet();
   });
 
+  async function refreshBrigadesList({ force = false } = {}) {
+    const brigades = await getUserBrigades({ db, uid: user.uid, force });
+    brigadeList.innerHTML = "";
+
+    if (brigades.length === 0) {
+      renderEmptyBrigades();
+      return;
+    }
+
+    brigades.forEach((b) => {
+      const displayRole = roleLabel(b.role);
+      const row = el("div", "fs-row");
+      const left = el("div");
+      const brigadeIdentifier = b.brigadeIdentifier ? `Brigade ID: ${b.brigadeIdentifier}` : "";
+      left.innerHTML = `
+        <div class="fs-row-title">${b.brigadeName || b.id}</div>
+        <div class="fs-row-meta">Role: ${displayRole}</div>
+        ${brigadeIdentifier ? `<div class="fs-row-meta fs-row-meta-subtle">${brigadeIdentifier}</div>` : ""}
+      `;
+      const right = el("div");
+      const pill = el("span", `fs-pill ${isAdminRole(b.role) ? "fs-pill-success" : ""}`);
+      pill.textContent = displayRole;
+
+      const menuBtn = el("button", "fs-icon-btn");
+      menuBtn.type = "button";
+      menuBtn.textContent = "⋯";
+      menuBtn.setAttribute("aria-label", "More actions");
+
+      right.style.display = "flex";
+      right.style.gap = "8px";
+      right.style.alignItems = "center";
+      right.appendChild(pill);
+      right.appendChild(menuBtn);
+
+      menuBtn.addEventListener("click", () => {
+        openActionSheet({ ...b, row });
+      });
+
+      row.appendChild(left);
+      row.appendChild(right);
+      brigadeList.appendChild(row);
+    });
+  }
+
   sheetCancel.addEventListener("click", closeActionSheet);
   sheetManage.addEventListener("click", () => {
-    if (!actionBrigade) return;
+    const brigade = actionBrigade;
+    if (!brigade) return;
     closeActionSheet();
-    window.location.hash = `#/brigade/${encodeURIComponent(actionBrigade.id)}`;
+    window.location.hash = `#/brigade/${encodeURIComponent(brigade.id)}`;
   });
   sheetLeave.addEventListener("click", async () => {
-    if (!actionBrigade) return;
-    const name = actionBrigade.brigadeName || actionBrigade.id;
+    const brigade = actionBrigade;
+    if (!brigade) return;
+    const name = brigade.brigadeName || brigade.id;
     if (!confirm(`Leave brigade: ${name}?`)) return;
     closeActionSheet();
     showLoading?.();
     try {
       const token = await user.getIdToken();
-      await fetchJson(`/api/brigades/${encodeURIComponent(actionBrigade.id)}/leave`, {
+      await fetchJson(`/api/brigades/${encodeURIComponent(brigade.id)}/leave`, {
         token,
         method: "POST",
       });
-      actionBrigade.row?.remove();
-      if (brigadeList.children.length === 0) renderEmptyBrigades();
+      invalidateUserBrigades(user.uid);
+      await refreshBrigadesList({ force: true });
     } catch (err) {
       alert(err.message || "Failed to leave brigade.");
     } finally {
@@ -210,8 +406,9 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     }
   });
   sheetDelete.addEventListener("click", async () => {
-    if (!actionBrigade) return;
-    const name = actionBrigade.brigadeName || actionBrigade.id;
+    const brigade = actionBrigade;
+    if (!brigade) return;
+    const name = brigade.brigadeName || brigade.id;
     if (!confirm(`Are you sure you want to delete the brigade "${name}"? This will remove all members and cannot be undone.`)) {
       return;
     }
@@ -220,12 +417,12 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     showLoading?.();
     try {
       const token = await user.getIdToken();
-      await fetchJson(`/api/brigades/${encodeURIComponent(actionBrigade.id)}`, {
+      await fetchJson(`/api/brigades/${encodeURIComponent(brigade.id)}`, {
         token,
         method: "DELETE",
       });
-      actionBrigade.row?.remove();
-      if (brigadeList.children.length === 0) renderEmptyBrigades();
+      invalidateUserBrigades(user.uid);
+      await refreshBrigadesList({ force: true });
     } catch (err) {
       alert(err.message || "Failed to delete brigade.");
     } finally {
@@ -233,36 +430,37 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
     }
   });
 
-  saveBtn.addEventListener("click", async () => {
+  nameInput.addEventListener("input", () => {
+    if (isHydratingProfile) return;
     const nextName = nameInput.value.trim();
     if (!nextName) {
-      msg.style.color = "var(--red-action-2)";
-      msg.textContent = "Full name is required.";
+      setMessage("Full name is required.", "var(--red-action-2)");
       return;
     }
     if (nextName.length > 60) {
-      msg.textContent = "Name is too long.";
+      setMessage("Name is too long.", "var(--red-action-2)");
       return;
     }
-    showLoading?.();
-    msg.textContent = "";
-    try {
-      await user.updateProfile({ displayName: nextName });
-      const token = await user.getIdToken();
-      await fetchJson(`/api/data/${encodeURIComponent(user.uid)}`, {
-        token,
-        method: "POST",
-        body: { fullName: nextName, email: user.email || emailInput.value.trim() },
-      });
-      msg.style.color = "var(--fs-muted)";
-      msg.textContent = "Saved.";
-    } catch (err) {
-      console.error("Failed to update profile:", err);
-      msg.style.color = "var(--red-action-2)";
-      msg.textContent = err.message || "Failed to save.";
-    } finally {
-      hideLoading?.();
+    setMessage("Changes pending…");
+    scheduleProfileSave();
+  });
+
+  nameInput.addEventListener("blur", () => {
+    if (isHydratingProfile) return;
+    if (saveTimer) {
+      window.clearTimeout(saveTimer);
+      saveTimer = null;
     }
+    void persistProfile();
+  });
+
+  reportEmailsCheckbox.addEventListener("change", () => {
+    if (isHydratingProfile) return;
+    if (saveTimer) {
+      window.clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    void persistProfile();
   });
 
   resetBtn.addEventListener("click", async () => {
@@ -295,56 +493,28 @@ export async function renderAccount({ root, auth, db, showLoading, hideLoading }
   async function loadProfile() {
     const token = await user.getIdToken();
     const data = await fetchJson(`/api/data/${encodeURIComponent(user.uid)}?t=${Date.now()}`, { token });
+    isHydratingProfile = true;
     nameInput.value = data.fullName || data.name || data.displayName || user.displayName || "";
     emailInput.value = data.email || user.email || "";
+    reportEmailsCheckbox.checked = getReportEmailPreference(data) ?? false;
     identifierText.textContent = data.identifier ? `User ID: ${data.identifier}` : "";
+    lastSavedProfileState = currentProfileState();
+    isHydratingProfile = false;
+    return data;
   }
 
   // Load brigades list + allow leaving (async; don't block route transition).
   void (async () => {
     try {
-      await loadProfile();
+      const profileData = await loadProfile();
       const brigades = await getUserBrigades({ db, uid: user.uid, force: true });
-      brigadeList.innerHTML = "";
-
-      if (brigades.length === 0) {
-        renderEmptyBrigades();
-        return;
-      }
-
-      brigades.forEach((b) => {
-        const displayRole = roleLabel(b.role);
-        const row = el("div", "fs-row");
-        const left = el("div");
-        const brigadeIdentifier = b.brigadeIdentifier ? `Brigade ID: ${b.brigadeIdentifier}` : "";
-        left.innerHTML = `
-          <div class="fs-row-title">${b.brigadeName || b.id}</div>
-          <div class="fs-row-meta">Role: ${displayRole}</div>
-          ${brigadeIdentifier ? `<div class="fs-row-meta fs-row-meta-subtle">${brigadeIdentifier}</div>` : ""}
-        `;
-        const right = el("div");
-        const pill = el("span", `fs-pill ${isAdminRole(b.role) ? "fs-pill-success" : ""}`);
-        pill.textContent = displayRole;
-
-        const menuBtn = el("button", "fs-icon-btn");
-        menuBtn.type = "button";
-        menuBtn.textContent = "⋯";
-        menuBtn.setAttribute("aria-label", "More actions");
-
-        right.style.display = "flex";
-        right.style.gap = "8px";
-        right.style.alignItems = "center";
-        right.appendChild(pill);
-        right.appendChild(menuBtn);
-
-        menuBtn.addEventListener("click", () => {
-          openActionSheet({ ...b, row });
-        });
-
-        row.appendChild(left);
-        row.appendChild(right);
-        brigadeList.appendChild(row);
-      });
+      const reportEmailsPreference = getReportEmailPreference(profileData);
+      isHydratingProfile = true;
+      reportEmailsCheckbox.checked =
+        reportEmailsPreference !== null ? reportEmailsPreference : brigadesGrantReportEmailsByDefault(brigades);
+      lastSavedProfileState = currentProfileState();
+      isHydratingProfile = false;
+      await refreshBrigadesList({ force: true });
     } catch (err) {
       console.error("Failed to load brigades (account):", err);
       identifierText.textContent = "";

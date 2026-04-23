@@ -48,11 +48,13 @@ const transporter = nodemailer.createTransport({
 });
 const DEFAULT_FROM_EMAIL = smtpConfig.from || "hello@theblueprintcollective.co.nz";
 const REPORT_EXPORT_DOWNLOAD_TTL_MS = 10 * 60 * 1000;
+const REPORT_EMAIL_PREFERENCE_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const USER_IDENTIFIER_PREFIX = 'U';
 const BRIGADE_IDENTIFIER_PREFIX = 'B';
 const CHECK_LOCK_TTL_MS = 12 * 60 * 60 * 1000;
 const CHECK_EDITOR_LEASE_MS = 15 * 60 * 1000;
 const IMAGE_UPLOAD_PREFIX = 'uploads';
+const APP_BASE_URL = (functions.config().app && functions.config().app.url) || 'https://flashoverapplication.web.app';
 const ROLES = Object.freeze({
     ADMIN: 'admin',
     GEAR_MANAGER: 'gearManager',
@@ -124,6 +126,81 @@ function canRunChecks(role) {
 
 function canViewReports(role) {
     return !!normalizeRole(role);
+}
+
+function defaultReportEmailsEnabled(role) {
+    const normalized = normalizeRole(role);
+    return normalized === ROLES.ADMIN || normalized === ROLES.GEAR_MANAGER;
+}
+
+function cleanOptionalBoolean(value, label) {
+    if (value == null || value === '') return null;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') {
+        if (value === 1) return true;
+        if (value === 0) return false;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+    }
+    const error = new Error(`${label} must be true or false.`);
+    error.status = 400;
+    throw error;
+}
+
+function explicitReportEmailPreference(profile) {
+    if (!isPlainObject(profile)) return null;
+    if (typeof profile.reportEmailPreference === 'boolean') return profile.reportEmailPreference;
+    if (isPlainObject(profile.emailPreferences)) {
+        const direct = profile.emailPreferences.reportEmails;
+        if (typeof direct === 'boolean') return direct;
+    }
+    if (typeof profile.reportEmailsEnabled === 'boolean') return profile.reportEmailsEnabled;
+    return null;
+}
+
+function shouldReceiveReportEmails(role, reportEmailPreference = null) {
+    const explicit = typeof reportEmailPreference === 'boolean'
+        ? reportEmailPreference
+        : cleanOptionalBoolean(reportEmailPreference, 'Report email preference');
+    if (typeof explicit === 'boolean') return explicit;
+    return defaultReportEmailsEnabled(role);
+}
+
+function shouldSendReportEmails(role, profile) {
+    return shouldReceiveReportEmails(role, explicitReportEmailPreference(profile));
+}
+
+function normalizeEmailAddress(value) {
+    return cleanOptionalText(value, 'Email', 254);
+}
+
+function buildPublicBaseUrl(req) {
+    const fallback = APP_BASE_URL;
+    try {
+        const host = cleanOptionalText(
+            req && typeof req.get === 'function' ? req.get('host') : '',
+            'Host',
+            255
+        );
+        if (!host) return fallback;
+        const rawProto = cleanOptionalText(
+            req && typeof req.get === 'function' ? req.get('x-forwarded-proto') : (req && req.protocol) || '',
+            'Protocol',
+            16
+        );
+        const proto = String(rawProto || 'https').split(',')[0].trim().toLowerCase();
+        const safeProto = proto === 'http' ? 'http' : 'https';
+        return `${safeProto}://${host}`;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function buildReportEmailUnsubscribeUrl(req, token) {
+    return new URL(`/api/report-email-unsubscribe/${encodeURIComponent(token)}`, buildPublicBaseUrl(req)).toString();
 }
 
 function displayNameFromProfile(profile, fallback = 'Unknown') {
@@ -349,6 +426,27 @@ function checkLockResponse(lock, requesterUid) {
         isMine: lock.uid === requesterUid,
         previousLock: lock.previousLock,
     };
+}
+
+function toIsoString(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value.toDate === 'function') {
+        try {
+            return value.toDate().toISOString();
+        } catch (error) {
+            return '';
+        }
+    }
+    if (typeof value._seconds === 'number') {
+        try {
+            return new Date(value._seconds * 1000).toISOString();
+        } catch (error) {
+            return '';
+        }
+    }
+    return '';
 }
 
 function findApplianceIndex(applianceData, applianceId) {
@@ -742,7 +840,84 @@ async function createOrClaimCheckSession({ brigadeId, appliance, requester, forc
 
 function checkSessionResponse(sessionDoc, answers = []) {
     const data = sessionDoc && typeof sessionDoc.data === 'function' ? sessionDoc.data() || {} : sessionDoc || {};
-    return { session: { id: sessionDoc.id || data.id, ...data }, answers };
+    const session = { id: sessionDoc.id || data.id, ...data };
+    [
+        'startedAt',
+        'updatedAt',
+        'lastSavedAt',
+        'editorLeaseExpiresAt',
+        'completedAt',
+        'cancelledAt',
+        'createdAt',
+    ].forEach((field) => {
+        if (field in session) session[field] = toIsoString(session[field]);
+    });
+    return { session, answers };
+}
+
+function reportEmailUnsubscribeTokenRef(token) {
+    return db.collection('reportEmailUnsubscribes').doc(token);
+}
+
+async function createReportEmailUnsubscribeToken({ userId, email, brigadeId, reportId = '' }) {
+    if (!userId || !email) return '';
+    const token = crypto.randomBytes(32).toString('hex');
+    await reportEmailUnsubscribeTokenRef(token).set({
+        token,
+        userId,
+        email,
+        brigadeId: brigadeId || '',
+        reportId: reportId || '',
+        purpose: 'reportEmails',
+        status: 'active',
+        createdAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromDate(new Date(Date.now() + REPORT_EMAIL_PREFERENCE_TOKEN_TTL_MS)),
+    });
+    return token;
+}
+
+async function listReportEmailRecipients(brigadeId) {
+    const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
+    const recipients = [];
+    const seenEmails = new Set();
+    for (const memberDoc of membersSnapshot.docs) {
+        const memberData = memberDoc.data() || {};
+        const profile = await getUserProfile(memberDoc.id);
+        const email = cleanOptionalText((profile && profile.email) || memberData.email, 'Email', 254);
+        if (!email) continue;
+        if (!shouldReceiveReportEmails(memberData.role, explicitReportEmailPreference(profile))) continue;
+        const normalizedEmail = email.toLowerCase();
+        if (seenEmails.has(normalizedEmail)) continue;
+        seenEmails.add(normalizedEmail);
+        recipients.push({ userId: memberDoc.id, email });
+    }
+    return recipients;
+}
+
+async function queueReportNotificationEmails({ brigadeId, reportData, req, subject }) {
+    const recipients = await listReportEmailRecipients(brigadeId);
+    if (recipients.length === 0) return 0;
+
+    await Promise.all(recipients.map(async ({ userId, email }) => {
+        const unsubscribeToken = await createReportEmailUnsubscribeToken({
+            userId,
+            email,
+            brigadeId,
+            reportId: reportData && reportData.reportId ? reportData.reportId : '',
+        });
+        const emailHtml = generateReportHtml(reportData, {
+            unsubscribeUrl: buildReportEmailUnsubscribeUrl(req, unsubscribeToken),
+        });
+        return db.collection('mail').add({
+            to: email,
+            message: {
+                subject,
+                html: emailHtml,
+            },
+            createdAt: FieldValue.serverTimestamp(),
+        });
+    }));
+    return recipients.length;
 }
 
 function identifierPrefix(ownerType) {
@@ -842,6 +1017,9 @@ async function ensureUserProfile(user) {
         updatedAt: FieldValue.serverTimestamp(),
     };
     if (fullName) patch.fullName = fullName;
+    if (current.emailPreferences && isPlainObject(current.emailPreferences) && typeof current.emailPreferences.reportEmails === 'boolean') {
+        patch.emailPreferences = current.emailPreferences;
+    }
     if (!doc.exists) patch.createdAt = FieldValue.serverTimestamp();
     await ref.set(patch, { merge: true });
     return { id: user.uid, ...current, fullName, email, identifier };
@@ -1393,6 +1571,7 @@ userRouter.get('/:userId', async (req, res) => {
             ...profile,
             fullName: profile.fullName || '',
             email: profile.email || req.user.email || '',
+            reportEmailPreference: explicitReportEmailPreference(profile),
             serverTime: new Date().toISOString(),
         });
     } catch (err) {
@@ -1414,11 +1593,23 @@ userRouter.post('/:userId', async (req, res) => {
             req.user.uid
         );
         const body = isPlainObject(req.body) ? req.body : {};
+        const existingProfileData = doc.exists ? doc.data() || {} : {};
         const patch = { identifier, updatedAt: FieldValue.serverTimestamp() };
         const fullName = cleanOptionalText(body.fullName || body.name, 'Full name', 160);
         if (fullName) patch.fullName = fullName;
         const email = cleanOptionalText(body.email || req.user.email, 'Email', 254);
         if (email) patch.email = email;
+        const reportEmailPreference = cleanOptionalBoolean(
+            body.reportEmailPreference ?? body.reportEmails ?? body.emailPreferences?.reportEmails,
+            'Report email preference'
+        );
+        if (reportEmailPreference !== null) {
+            patch.reportEmailPreference = reportEmailPreference;
+            patch.emailPreferences = {
+                ...(isPlainObject(existingProfileData.emailPreferences) ? existingProfileData.emailPreferences : {}),
+                reportEmails: reportEmailPreference,
+            };
+        }
         if (isPlainObject(body.termsAcceptance)) {
             const version = cleanOptionalText(body.termsAcceptance.version, 'Terms version', 40);
             if (version) {
@@ -2338,6 +2529,7 @@ brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/complete', async (req,
         };
         const reportRef = brigade.ref.collection('reports').doc();
         await reportRef.set(safeReportData);
+        safeReportData.reportId = reportRef.id;
         if (signature) {
             await reportRef.collection('meta').doc('signoff').set({
                 signature,
@@ -2360,22 +2552,14 @@ brigadeRouter.post('/:brigadeId/check-sessions/:sessionId/complete', async (req,
             transaction.set(appliance.ref, { checkStatus: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         });
         try {
-            const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
-            const recipients = [];
-            for (const memberDoc of membersSnapshot.docs) {
-                const memberProfile = await getUserProfile(memberDoc.id);
-                if (memberProfile && memberProfile.email) recipients.push(memberProfile.email);
-            }
-            if (recipients.length > 0) {
-                const emailHtml = generateReportHtml(safeReportData);
-                await Promise.all(recipients.map((email) => db.collection('mail').add({
-                    to: email,
-                    message: {
-                        subject: `New Report Submitted for ${safeReportData.applianceName}`,
-                        html: emailHtml,
-                    },
-                    createdAt: FieldValue.serverTimestamp(),
-                })));
+            const queuedCount = await queueReportNotificationEmails({
+                brigadeId,
+                reportData: safeReportData,
+                req,
+                subject: `New Report Submitted for ${safeReportData.applianceName}`,
+            });
+            if (queuedCount > 0) {
+                console.log(`Successfully queued emails for ${queuedCount} brigade members.`);
             }
         } catch (emailError) {
             console.error('Failed to queue report emails:', emailError);
@@ -2852,7 +3036,7 @@ reportRouter.get('/brigade/:brigadeId', async (req, res) => {
     }
 });
 // A helper function to generate a clearer HTML email for the report
-const generateReportHtml = (reportData) => {
+const generateReportHtml = (reportData, options = {}) => {
     const {
         applianceName = 'Unknown Appliance',
         date,
@@ -2860,6 +3044,7 @@ const generateReportHtml = (reportData) => {
         signedName,
         lockers = [],
     } = reportData || {};
+    const unsubscribeUrl = cleanOptionalText(options.unsubscribeUrl, 'Unsubscribe URL', 500) || '';
 
     const completedBy = String(signedName || '').trim() || username;
 
@@ -3035,6 +3220,10 @@ const generateReportHtml = (reportData) => {
         html += `<p>No checklist items in this report.</p>`;
     }
 
+    if (unsubscribeUrl) {
+        html += `<p style="margin: 20px 0 0 0; font-size: 12px; color: #6b7280;">To stop report emails, <a href="${unsubscribeUrl}" style="color: #2563eb;">unsubscribe here</a>.</p>`;
+    }
+
     html += `</div></div>`;
     return html;
 };
@@ -3088,6 +3277,7 @@ reportRouter.post('/', async (req, res) => {
         const reportRef = brigade.ref.collection('reports').doc();
         await reportRef.set(safeReportData);
         const reportId = reportRef.id;
+        safeReportData.reportId = reportId;
 
         // Store the signature separately so large reports don't risk hitting Firestore's 1MiB document limit.
         if (signature) {
@@ -3115,29 +3305,14 @@ reportRouter.post('/', async (req, res) => {
             console.error('Failed to clear report author check lock:', lockError);
         }
         try {
-            const membersSnapshot = await db.collection('brigades').doc(brigadeId).collection('members').get();
-            if (!membersSnapshot.empty) {
-                const memberIds = membersSnapshot.docs.map(doc => doc.id);
-                const profiles = await Promise.all(memberIds.map(uid => getUserProfile(uid)));
-                const recipients = profiles.map(userProfile => userProfile && userProfile.email).filter(email => !!email);
-                if (recipients.length > 0) {
-                    
-                    // Generate the rich HTML content for the email
-                    const emailHtml = generateReportHtml(safeReportData);
-
-                    const mailCollection = db.collection('mail');
-                    const emailPromises = recipients.map(email => {
-                        return mailCollection.add({
-                            to: email,
-                            message: {
-                                subject: `New Report Submitted for ${safeReportData.applianceName}`,
-                                html: emailHtml, // Use the new, detailed HTML
-                            },
-                        });
-                    });
-                    await Promise.all(emailPromises);
-                    console.log(`Successfully queued emails for ${recipients.length} brigade members.`);
-                }
+            const queuedCount = await queueReportNotificationEmails({
+                brigadeId,
+                reportData: safeReportData,
+                req,
+                subject: `New Report Submitted for ${safeReportData.applianceName}`,
+            });
+            if (queuedCount > 0) {
+                console.log(`Successfully queued emails for ${queuedCount} brigade members.`);
             }
         } catch (emailError) {
             console.error("Failed to send email notifications:", emailError);
@@ -3204,6 +3379,70 @@ app.get('/api/report-export-downloads/:token.pdf', async (req, res) => {
             ? 'Failed to download report export.'
             : (error && error.message ? error.message : 'Report export download link is no longer available.');
         return res.status(status).json({ message });
+    }
+});
+
+app.get('/api/report-email-unsubscribe/:token', async (req, res) => {
+    const token = String(req.params.token || '').trim();
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+        return res.status(404).type('html').send('<!doctype html><html><body><p>Unsubscribe link not found.</p></body></html>');
+    }
+
+    try {
+        const tokenRef = db.collection('reportEmailUnsubscribes').doc(token);
+        const tokenDoc = await tokenRef.get();
+        if (!tokenDoc.exists) {
+            return res.status(404).type('html').send('<!doctype html><html><body><p>Unsubscribe link not found.</p></body></html>');
+        }
+
+        const tokenData = tokenDoc.data() || {};
+        const expiresAtMs = timestampToMillis(tokenData.expiresAt);
+        if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
+            return res.status(404).type('html').send('<!doctype html><html><body><p>Unsubscribe link not found.</p></body></html>');
+        }
+        const userId = String(tokenData.userId || '').trim();
+        if (userId) {
+            const userRef = db.collection('users').doc(userId);
+            const userDoc = await userRef.get();
+            const existingProfileData = userDoc.exists ? userDoc.data() || {} : {};
+            const identifier = await ensureDocumentIdentifier(
+                userRef,
+                existingProfileData,
+                'user',
+                userId
+            );
+            await userRef.set({
+                identifier,
+                reportEmailPreference: false,
+                emailPreferences: {
+                    ...(isPlainObject(existingProfileData.emailPreferences) ? existingProfileData.emailPreferences : {}),
+                    reportEmails: false,
+                },
+                reportEmailPreferenceUpdatedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+        }
+
+        await tokenRef.set({
+            status: 'unsubscribed',
+            unsubscribedAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        return res.status(200).type('html').send(`<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Unsubscribed</title>
+</head>
+<body>
+    <p>You have been unsubscribed from report emails.</p>
+</body>
+</html>`);
+    } catch (error) {
+        console.error('Error processing report email unsubscribe:', error);
+        return res.status(500).type('html').send('<!doctype html><html><body><p>Unable to process unsubscribe request.</p></body></html>');
     }
 });
 

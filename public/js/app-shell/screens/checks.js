@@ -81,6 +81,34 @@ function lockOwnerText(lock) {
   return lock?.user || lock?.name || lock?.email || "another member";
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return dateTimeFormatter.format(date);
+}
+
+function lockStartedAt(lockResponse) {
+  return lockResponse?.timestamp || lockResponse?.lock?.timestamp || "";
+}
+
+function sessionStartedBy(session, lock) {
+  return session?.startedByName || session?.startedBy || lockOwnerText(lock);
+}
+
+function sessionStartedAt(session, lock) {
+  return session?.startedAt || lockStartedAt(lock);
+}
+
+function sessionLastEditedAt(session) {
+  return session?.lastSavedAt || session?.updatedAt || session?.editedAt || "";
+}
+
 export async function renderChecks({ root, auth, db, showLoading, hideLoading }) {
   root.innerHTML = "";
 
@@ -173,6 +201,13 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   modalTitle.textContent = "Check Already in Progress";
   const modalText = el("p");
   modalText.style.color = "var(--fs-muted)";
+  const modalDetails = el("div");
+  modalDetails.style.display = "grid";
+  modalDetails.style.gap = "10px";
+  modalDetails.style.textAlign = "left";
+  const modalDetailsTitle = el("div", "fs-label");
+  modalDetailsTitle.textContent = "Details";
+  modalDetails.appendChild(modalDetailsTitle);
   const resumeBtn = el("button", "fs-btn fs-btn-primary");
   resumeBtn.type = "button";
   resumeBtn.textContent = "Resume Check";
@@ -190,6 +225,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
 
   modalInner.appendChild(modalTitle);
   modalInner.appendChild(modalText);
+  modalInner.appendChild(modalDetails);
   modalInner.appendChild(modalButtons);
   modal.appendChild(modalInner);
   modalOverlay.appendChild(modal);
@@ -203,6 +239,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
   if (!user) return;
 
   let brigadeMetaById = new Map();
+  let activeModalToken = 0;
   function setAlert(el, message) {
     el.textContent = message || "";
     el.style.display = message ? "block" : "none";
@@ -299,20 +336,68 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               return result;
             };
 
-            const showLockModal = (lockResponse) => {
+            const renderLockDetails = (lockResponse, session) => {
+              const lock = lockResponse?.lock || lockResponse?.checkStatus || lockResponse || {};
+              const startedBy = sessionStartedBy(session, lock);
+              const startedAt = formatDateTime(sessionStartedAt(session, lock));
+              const lastEditedAt = formatDateTime(sessionLastEditedAt(session));
+              modalDetails.replaceChildren(modalDetailsTitle);
+
+              const rows = [
+                { label: "Started by", value: startedBy },
+                { label: "Started", value: startedAt },
+              ];
+              if (lastEditedAt) rows.push({ label: "Last edited", value: lastEditedAt });
+
+              rows.forEach((entry) => {
+                const row = el("div");
+                row.style.display = "grid";
+                row.style.gap = "2px";
+                const rowLabel = el("div", "fs-row-meta");
+                rowLabel.textContent = entry.label;
+                const rowValue = el("div");
+                rowValue.textContent = entry.value || "Not available";
+                row.appendChild(rowLabel);
+                row.appendChild(rowValue);
+                modalDetails.appendChild(row);
+              });
+            };
+
+            const showLockModal = async (lockResponse) => {
               preserveCheckSessionId(lockResponse);
-              const lock = lockResponse?.lock || lockResponse?.checkStatus || lockResponse;
+              const lock = lockResponse?.lock || lockResponse?.checkStatus || lockResponse || {};
+              const modalToken = ++activeModalToken;
               hideLoading?.();
-              modalText.textContent = `A check for this appliance was already started by ${lockOwnerText(lock)}. Would you like to resume or start a new check?`;
+              modalText.textContent = "Resume the existing check or start a new one.";
+              renderLockDetails(lockResponse, null);
               modalOverlay.classList.remove("hidden");
 
+              if (lockResponse?.sessionId) {
+                void (async () => {
+                  try {
+                    const tokenForSession = await user.getIdToken();
+                    const sessionResponse = await fetchJson(
+                      `/api/brigades/${encodeURIComponent(brigadeId)}/check-sessions/${encodeURIComponent(lockResponse.sessionId)}`,
+                      { token: tokenForSession }
+                    );
+                    if (modalToken !== activeModalToken || modalOverlay.classList.contains("hidden")) return;
+                    renderLockDetails(lockResponse, sessionResponse?.session || sessionResponse);
+                  } catch (err) {
+                    if (modalToken !== activeModalToken) return;
+                    console.warn("Unable to load check session details:", err);
+                  }
+                })();
+              }
+
               resumeBtn.onclick = () => {
+                activeModalToken += 1;
                 modalOverlay.classList.add("hidden");
                 showLoading?.();
                 openCheckForm();
               };
 
               startNewBtn.onclick = async () => {
+                activeModalToken += 1;
                 modalOverlay.classList.add("hidden");
                 showLoading?.();
                 try {
@@ -333,7 +418,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
             };
 
             if (status?.inProgress) {
-              showLockModal(status);
+              await showLockModal(status);
               return;
             }
 
@@ -341,7 +426,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               await startCheck();
             } catch (err) {
               if (err.status === 409 || err.code === "CHECK_LOCKED") {
-                showLockModal(err.data);
+                await showLockModal(err.data);
                 return;
               }
               throw err;
