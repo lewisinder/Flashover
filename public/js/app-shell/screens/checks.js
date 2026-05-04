@@ -408,7 +408,6 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               startNewBtn.onclick = async () => {
                 activeModalToken += 1;
                 modalOverlay.classList.add("hidden");
-                showLoading?.();
                 try {
                   await startCheck({ force: true });
                   clearCheckSession();
@@ -421,7 +420,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
                   console.error("Error starting new check:", err);
                   setAlert(errorEl, err.message);
                 } finally {
-                  hideLoading?.();
+                  setRowBusy(false);
                 }
               };
             };

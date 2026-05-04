@@ -212,16 +212,32 @@ function renderTermsGate({ user, userData, loadError, onAccepted }) {
   });
 }
 
+function renderStartupStatus(message) {
+  setShellChromeVisible(true);
+  appRoot.innerHTML = `
+    <section class="fs-page max-w-md mx-auto">
+      <div class="fs-card">
+        <div class="fs-card-inner">
+          <div class="fs-row">
+            <div>
+              <div class="fs-row-title">${message || "Loading..."}</div>
+              <div class="fs-row-meta">Preparing your Flashover session</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 async function ensureTermsAccepted(user) {
   let userData = null;
   let loadError = null;
+  renderStartupStatus("Loading account...");
   try {
-    showLoading();
     userData = await fetchUserProfile(user);
   } catch (err) {
     loadError = err;
-  } finally {
-    hideLoading();
   }
 
   if (hasAcceptedTerms(userData)) return true;
