@@ -112,8 +112,10 @@ function initChecksPage(options = {}) {
     const CHECK_SESSION_ID_KEY = 'checkSessionId';
     const CHECK_SESSION_BRIGADE_ID_KEY = 'checkSessionBrigadeId';
     const CHECK_SESSION_APPLIANCE_ID_KEY = 'checkSessionApplianceId';
+    let isInitialShellLoad = isShell;
 
     function showLoading() {
+        if (isInitialShellLoad) return;
         if (loadingOverlay) loadingOverlay.style.display = 'flex';
     }
 
@@ -1964,12 +1966,17 @@ function initChecksPage(options = {}) {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
             if (user) {
                 currentUser = user;
-                setupEventListeners();
-                loadStateFromSession();
-                await loadData();
-                await loadCheckSessionFromServer();
-                startOrResumeChecks();
+                try {
+                    setupEventListeners();
+                    loadStateFromSession();
+                    await loadData();
+                    await loadCheckSessionFromServer();
+                    startOrResumeChecks();
+                } finally {
+                    isInitialShellLoad = false;
+                }
             } else {
+                isInitialShellLoad = false;
                 goToSignIn();
             }
         });

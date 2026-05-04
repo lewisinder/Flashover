@@ -292,6 +292,15 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
           appliance.name || "Unnamed appliance",
           canStartChecks ? "Tap to start" : "View only"
         );
+        const rowMeta = text.querySelector(".fs-row-meta");
+        const defaultMeta = rowMeta ? rowMeta.textContent : "";
+        let rowBusy = false;
+        const setRowBusy = (busy, message) => {
+          rowBusy = busy;
+          row.disabled = busy || !canStartChecks;
+          row.setAttribute("aria-busy", busy ? "true" : "false");
+          if (rowMeta) rowMeta.textContent = busy ? message : defaultMeta;
+        };
 
         left.appendChild(bubble);
         left.appendChild(text);
@@ -308,10 +317,10 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
         row.title = canStartChecks ? "" : "Viewers cannot start or resume checks.";
 
         row.addEventListener("click", async () => {
-          if (!canStartChecks) return;
+          if (!canStartChecks || rowBusy) return;
           setAlert(errorEl, "");
           setAlert(successEl, "");
-          showLoading?.();
+          setRowBusy(true, "Checking status...");
           try {
             const token = await user.getIdToken();
             const status = await fetchJson(
@@ -328,6 +337,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
             };
 
             const startCheck = async ({ force = false } = {}) => {
+              setRowBusy(true, force ? "Starting new check..." : "Starting check...");
               const result = await fetchJson(
                 `/api/brigades/${encodeURIComponent(brigadeId)}/appliances/${encodeURIComponent(appliance.id)}/start-check`,
                 { token, method: "POST", body: force ? { force: true } : undefined }
@@ -392,7 +402,6 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               resumeBtn.onclick = () => {
                 activeModalToken += 1;
                 modalOverlay.classList.add("hidden");
-                showLoading?.();
                 openCheckForm();
               };
 
@@ -437,6 +446,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
             setAlert(errorEl, err.message);
           } finally {
             hideLoading?.();
+            setRowBusy(false);
           }
         });
 
