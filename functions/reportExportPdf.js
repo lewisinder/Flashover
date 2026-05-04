@@ -65,7 +65,7 @@ function chunkArray(items, size) {
 function effectiveStatus(item) {
     const raw = safeText(item && item.status).toLowerCase();
     if ((item && item.type || '').toLowerCase() === 'container') {
-        if (raw === 'present' || raw === 'missing' || raw === 'defect') return raw;
+        if (raw === 'present' || raw === 'missing' || raw === 'defect' || raw === 'note' || raw === 'partial') return raw;
         return '';
     }
     return raw;
@@ -97,13 +97,26 @@ function shouldShowIssueRef(cell) {
     if (!cell) return false;
     const status = safeText(cell.status).toLowerCase();
     if (isMissingStatus(status)) return false;
+    if (status === 'not-in-setup') return false;
     return isIssueStatus(status) || !!safeText(cell.note) || !!safeText(cell.noteImage);
 }
 
-function itemKey(lockerKey, item, parentItem) {
+function rawItemIdentity(item, parentItem, locker) {
+    const id = safeText(item && item.id);
+    if (id) return `id:${id}`;
+
+    const lockerKey = safeText(locker && (locker.id || locker.name), 'locker');
     const parentKey = parentItem ? safeText(parentItem.id || parentItem.name, 'parent') : '';
-    const ownKey = safeText(item && (item.id || item.name), 'item');
-    return `${lockerKey}::${parentKey}::${ownKey}`;
+    const name = safeText(item && item.name, 'item');
+    return `legacy:${lockerKey}:${parentKey}:${name}`;
+}
+
+function itemKey(identity, item, parentItem, locker, duplicateIdentity = false) {
+    if (!duplicateIdentity) return identity;
+
+    const lockerKey = safeText(locker && (locker.id || locker.name), 'locker');
+    const parentKey = parentItem ? safeText(parentItem.id || parentItem.name, 'parent') : '';
+    return `${identity}:${lockerKey}:${parentKey}`;
 }
 
 function lockerItems(locker) {
@@ -126,52 +139,186 @@ function visitLockerItems(locker, visitor) {
     });
 }
 
-function collectExportRows(reports) {
-    const lockerMap = new Map();
-    const lockers = [];
+function reportHasSetupSnapshot(report) {
+    return Array.isArray(report && report.lockers);
+}
 
-    const ensureLocker = (locker) => {
-        const key = safeText(locker && (locker.id || locker.name), `locker-${lockers.length + 1}`);
-        if (!lockerMap.has(key)) {
-            const group = {
-                key,
-                name: safeText(locker && locker.name, 'Locker'),
-                rowMap: new Map(),
-                rows: [],
-            };
-            lockerMap.set(key, group);
-            lockers.push(group);
-        }
-        return lockerMap.get(key);
-    };
+function reportSnapshotItems(report) {
+    const appearances = [];
+    const reportLockers = reportHasSetupSnapshot(report) ? report.lockers : [];
 
-    reports.forEach((report) => {
-        const reportId = report.id;
-        const reportLockers = Array.isArray(report.lockers) ? report.lockers : [];
-        reportLockers.forEach((locker) => {
-            const group = ensureLocker(locker);
-            visitLockerItems(locker, (item, parentItem) => {
-                const key = itemKey(group.key, item, parentItem);
-                if (!group.rowMap.has(key)) {
-                    const row = {
-                        key,
-                        name: safeText(item.name, 'Item'),
-                        parentName: parentItem ? safeText(parentItem.name) : '',
-                        cells: new Map(),
-                    };
-                    group.rowMap.set(key, row);
-                    group.rows.push(row);
-                }
-                group.rowMap.get(key).cells.set(reportId, {
-                    status: effectiveStatus(item),
-                    note: safeText(item.note),
-                    noteImage: safeText(item.noteImage),
-                });
+    reportLockers.forEach((locker) => {
+        const lockerKey = safeText(locker && (locker.id || locker.name), `locker-${appearances.length + 1}`);
+        const lockerName = safeText(locker && locker.name, 'Locker');
+        visitLockerItems(locker, (item, parentItem) => {
+            const parentName = parentItem ? safeText(parentItem.name, 'Container') : '';
+            const locationLabel = parentName ? `${lockerName} / ${parentName}` : lockerName;
+            const identity = rawItemIdentity(item, parentItem, locker);
+            appearances.push({
+                identity,
+                item,
+                parentItem,
+                locker,
+                lockerKey,
+                lockerName,
+                parentName,
+                locationLabel,
             });
         });
     });
 
-    return lockers.map((group) => ({
+    return appearances;
+}
+
+function buildSnapshotAppearances(reports) {
+    return reports.map((report, reportIndex) => {
+        const appearances = reportSnapshotItems(report);
+        const identityCounts = new Map();
+        appearances.forEach((appearance) => {
+            identityCounts.set(appearance.identity, (identityCounts.get(appearance.identity) || 0) + 1);
+        });
+
+        return {
+            report,
+            reportIndex,
+            hasSetupSnapshot: reportHasSetupSnapshot(report),
+            appearances,
+            identityCounts,
+        };
+    });
+}
+
+function collectExportRows(reports) {
+    const orderedReports = Array.isArray(reports) ? reports : [];
+    const snapshots = buildSnapshotAppearances(orderedReports);
+    const rowMap = new Map();
+    const rowOrder = [];
+    const latestSnapshotIndex = snapshots.reduce((latest, snapshot) => (
+        snapshot.hasSetupSnapshot ? snapshot.reportIndex : latest
+    ), -1);
+
+    const ensureRow = (key, appearance, snapshot) => {
+        if (!rowMap.has(key)) {
+            const row = {
+                key,
+                identity: appearance.identity,
+                name: safeText(appearance.item && appearance.item.name, 'Item'),
+                parentName: appearance.parentName,
+                groupKey: appearance.lockerKey,
+                groupName: appearance.lockerName,
+                firstSeenIndex: snapshot.reportIndex,
+                lastSeenIndex: snapshot.reportIndex,
+                firstLocationLabel: appearance.locationLabel,
+                latestLocationLabel: appearance.locationLabel,
+                latestName: safeText(appearance.item && appearance.item.name, 'Item'),
+                latestParentName: appearance.parentName,
+                latestGroupKey: appearance.lockerKey,
+                latestGroupName: appearance.lockerName,
+                cells: new Map(),
+                setupNotes: [],
+                seenLocationLabels: new Set([appearance.locationLabel]),
+                seenNames: new Set([safeText(appearance.item && appearance.item.name, 'Item')]),
+            };
+            rowMap.set(key, row);
+            rowOrder.push(row);
+        }
+        return rowMap.get(key);
+    };
+
+    snapshots.forEach((snapshot) => {
+        const reportId = snapshot.report.id;
+        snapshot.appearances.forEach((appearance) => {
+            const duplicateIdentity = (snapshot.identityCounts.get(appearance.identity) || 0) > 1;
+            const key = itemKey(appearance.identity, appearance.item, appearance.parentItem, appearance.locker, duplicateIdentity);
+            const row = ensureRow(key, appearance, snapshot);
+            const itemName = safeText(appearance.item && appearance.item.name, 'Item');
+
+            if (row.latestLocationLabel !== appearance.locationLabel) {
+                row.setupNotes.push({
+                    reportId,
+                    date: snapshot.report.date,
+                    item: itemName,
+                    note: `Moved from ${row.latestLocationLabel} to ${appearance.locationLabel}.`,
+                });
+                row.seenLocationLabels.add(appearance.locationLabel);
+            }
+            if (row.latestName !== itemName) {
+                row.setupNotes.push({
+                    reportId,
+                    date: snapshot.report.date,
+                    item: itemName,
+                    note: `Renamed from ${row.latestName} to ${itemName}.`,
+                });
+                row.seenNames.add(itemName);
+            }
+
+            row.lastSeenIndex = snapshot.reportIndex;
+            row.name = itemName;
+            row.parentName = appearance.parentName;
+            row.latestName = itemName;
+            row.latestParentName = appearance.parentName;
+            row.latestLocationLabel = appearance.locationLabel;
+            row.latestGroupKey = appearance.lockerKey;
+            row.latestGroupName = appearance.lockerName;
+            row.cells.set(reportId, {
+                status: effectiveStatus(appearance.item),
+                note: safeText(appearance.item && appearance.item.note),
+                noteImage: safeText(appearance.item && appearance.item.noteImage),
+                name: itemName,
+                parentName: appearance.parentName,
+                locationLabel: appearance.locationLabel,
+            });
+        });
+    });
+
+    rowOrder.forEach((row) => {
+        snapshots.forEach((snapshot) => {
+            const reportId = snapshot.report.id;
+            if (snapshot.hasSetupSnapshot && !row.cells.has(reportId)) {
+                row.cells.set(reportId, {
+                    status: 'not-in-setup',
+                    note: '',
+                    noteImage: '',
+                    locationLabel: '',
+                });
+            }
+        });
+    });
+
+    const groupMap = new Map();
+    const groups = [];
+    const archivedRows = [];
+    const ensureGroup = (key, name) => {
+        if (!groupMap.has(key)) {
+            const group = { key, name, rows: [] };
+            groupMap.set(key, group);
+            groups.push(group);
+        }
+        return groupMap.get(key);
+    };
+
+    rowOrder.forEach((row) => {
+        const archived = latestSnapshotIndex >= 0 && row.lastSeenIndex < latestSnapshotIndex;
+        if (archived) {
+            archivedRows.push(row);
+            return;
+        }
+
+        row.groupKey = row.latestGroupKey;
+        row.groupName = row.latestGroupName;
+        row.parentName = row.latestParentName;
+        ensureGroup(row.groupKey, row.groupName).rows.push(row);
+    });
+
+    if (archivedRows.length > 0) {
+        groups.push({
+            key: '__archived__',
+            name: 'Archived / historical items',
+            rows: archivedRows,
+        });
+    }
+
+    return groups.map((group) => ({
         key: group.key,
         name: group.name,
         rows: group.rows,
@@ -260,6 +407,18 @@ function buildNoteRefs(page) {
             });
         });
     });
+    page.units.forEach((unit) => {
+        if (unit.type !== 'row' || !Array.isArray(unit.row.setupNotes)) return;
+        unit.row.setupNotes.forEach((setupNote) => {
+            if (!page.reportChunk.some((report) => report.id === setupNote.reportId)) return;
+            notes.push({
+                ref: notes.length + 1,
+                date: formatDate(setupNote.date, { shortYear: true }),
+                item: setupNote.item || unit.row.name,
+                note: setupNote.note,
+            });
+        });
+    });
     return { refs, notes };
 }
 
@@ -302,6 +461,19 @@ function drawIssueMark(doc, cellX, cellY, cellWidth, cellHeight, size, ref) {
         .restore();
 }
 
+function drawNotInSetupMark(doc, cellX, cellY, cellWidth, cellHeight) {
+    doc.save()
+        .fillColor('#6b7280')
+        .font('Helvetica-Bold')
+        .fontSize(5.8)
+        .text('N/A', cellX + 2, cellY + 5, {
+            width: cellWidth - 4,
+            height: cellHeight - 4,
+            align: 'center',
+        })
+        .restore();
+}
+
 function drawVerticalHeaderText(doc, text, x, y, width, height, options = {}) {
     doc.save()
         .translate(x + width / 2, y + height)
@@ -332,8 +504,10 @@ function drawPageHeader(doc, payload, page, pageIndex, totalPages) {
     doc.fillColor('#222222').font('Helvetica').fontSize(9)
         .text(`Appliance: ${safeText(payload.applianceName, 'Appliance')}`, MARGIN, 46)
         .text(`Range: ${formatDate(payload.from)} to ${formatDate(payload.to)}`, MARGIN, 59);
+    doc.fillColor('#666666').font('Helvetica').fontSize(7.5)
+        .text('Export uses the appliance layout saved with each report. N/A = item was not in setup.', MARGIN, 72, { width: pageWidth - MARGIN * 2 - 180 });
     doc.fillColor('#111111').font('Helvetica-Bold').fontSize(10)
-        .text(groupLabel, MARGIN, 80, { width: pageWidth - MARGIN * 2 - 180 });
+        .text(groupLabel, MARGIN, 84, { width: pageWidth - MARGIN * 2 - 180 });
     doc.fillColor('#444444').fontSize(8)
         .text(`Generated: ${formatDateTime(new Date())}`, pageWidth - MARGIN - 170, 48, { width: 170, align: 'right' })
         .text(`Page ${pageIndex + 1} of ${totalPages}`, pageWidth - MARGIN - 170, 62, { width: 170, align: 'right' });
@@ -418,6 +592,8 @@ function drawRow(doc, y, row, page, metrics, refs, rowIndex) {
             drawTick(doc, markX, markY, markSize);
         } else if (status === 'missing') {
             drawCross(doc, markX, markY, markSize);
+        } else if (status === 'not-in-setup') {
+            drawNotInSetupMark(doc, x, y, dateColWidth, ROW_HEIGHT);
         }
     });
 }
@@ -425,11 +601,11 @@ function drawRow(doc, y, row, page, metrics, refs, rowIndex) {
 function drawFootnotes(doc, notes, metrics) {
     const { tableLeft, tableWidth } = metrics;
     doc.fillColor('#111111').font('Helvetica-Bold').fontSize(9)
-        .text('Issue notes', tableLeft, FOOTNOTE_TOP, { width: tableWidth });
+        .text('Issue and setup notes', tableLeft, FOOTNOTE_TOP, { width: tableWidth });
 
     if (notes.length === 0) {
         doc.fillColor('#444444').font('Helvetica').fontSize(8)
-            .text('No issue notes recorded on this page.', tableLeft, FOOTNOTE_TOP + 14, { width: tableWidth });
+            .text('No issue or setup notes recorded on this page.', tableLeft, FOOTNOTE_TOP + 14, { width: tableWidth });
         return;
     }
 
