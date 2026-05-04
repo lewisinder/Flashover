@@ -101,6 +101,17 @@ function initChecksPage(options = {}) {
             });
     }
 
+    function appendItemThumbnail(itemBox, item) {
+        const imageRef = item && item.img ? item.img : '';
+        if (!itemBox || !imageRef) return;
+        const img = document.createElement('img');
+        img.alt = '';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        itemBox.appendChild(img);
+        setImageElementSource(img, imageRef, '/design_assets/Flashover Logo.png');
+    }
+
     // ===================================================================
     // JAVASCRIPT - THE BRAIN OF THE APP
     // ===================================================================
@@ -112,8 +123,11 @@ function initChecksPage(options = {}) {
     const CHECK_SESSION_ID_KEY = 'checkSessionId';
     const CHECK_SESSION_BRIGADE_ID_KEY = 'checkSessionBrigadeId';
     const CHECK_SESSION_APPLIANCE_ID_KEY = 'checkSessionApplianceId';
+    const CHECK_SESSION_STARTUP_MODE_KEY = 'checkSessionStartupMode';
+    let isInitialShellLoad = isShell;
 
     function showLoading() {
+        if (isInitialShellLoad) return;
         if (loadingOverlay) loadingOverlay.style.display = 'flex';
     }
 
@@ -967,7 +981,9 @@ function initChecksPage(options = {}) {
         }
 
         activeCheckSessionId = sessionId;
-        setSaveStatus('saved', 'Resuming saved check...');
+        const startupMode = String(localStorage.getItem(CHECK_SESSION_STARTUP_MODE_KEY) || '').trim();
+        localStorage.removeItem(CHECK_SESSION_STARTUP_MODE_KEY);
+        setSaveStatus('saved', startupMode === 'new' ? 'Starting new check...' : 'Resuming saved check...');
         try {
             const baseUrl = checkSessionBaseUrl();
             const claimed = await fetchApiJson(`${baseUrl}/claim`, { method: 'POST' });
@@ -1184,6 +1200,7 @@ function initChecksPage(options = {}) {
                 itemBox.classList.add(`status-${result.status}`);
             }
             itemBox.dataset.id = item.id;
+            appendItemThumbnail(itemBox, item);
             const overlay = document.createElement('div');
             overlay.className = 'item-name-overlay';
             overlay.textContent = item.name || 'Item';
@@ -1319,6 +1336,7 @@ function initChecksPage(options = {}) {
             }
             itemBox.dataset.id = item.id;
             itemBox.dataset.parentId = container.id;
+            appendItemThumbnail(itemBox, item);
             const overlay = document.createElement('div');
             overlay.className = 'item-name-overlay';
             overlay.textContent = item.name || 'Item';
@@ -1964,12 +1982,17 @@ function initChecksPage(options = {}) {
         unsubscribeAuth = auth.onAuthStateChanged(async (user) => {
             if (user) {
                 currentUser = user;
-                setupEventListeners();
-                loadStateFromSession();
-                await loadData();
-                await loadCheckSessionFromServer();
-                startOrResumeChecks();
+                try {
+                    setupEventListeners();
+                    loadStateFromSession();
+                    await loadData();
+                    await loadCheckSessionFromServer();
+                    startOrResumeChecks();
+                } finally {
+                    isInitialShellLoad = false;
+                }
             } else {
+                isInitialShellLoad = false;
                 goToSignIn();
             }
         });

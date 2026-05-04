@@ -29,6 +29,12 @@ const CHECK_SCREEN_STYLES = `
   height: 100%;
   object-fit: cover;
 }
+#shell-check-wrapper .item-box.status-present > img,
+#shell-check-wrapper .item-box.status-missing > img,
+#shell-check-wrapper .item-box.status-note > img,
+#shell-check-wrapper .item-box.status-partial > img {
+  opacity: 0.35;
+}
 #shell-check-wrapper .item-box:hover { background-color: #d1d5db; }
 #shell-check-wrapper .item-box.is-active {
   border: 4px solid #180F5E;
@@ -161,7 +167,7 @@ const CHECK_SCREEN_MARKUP = `
         <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
       </button>
     </div>
-    <h1 id="header-title" class="text-white text-2xl font-bold flex-grow text-center">Locker Name</h1>
+    <h1 id="header-title" class="text-white text-2xl font-bold flex-grow text-center">Loading check</h1>
     <div class="w-20 flex justify-end">
       <button id="go-to-locker-status-btn">
         <img src="/design_assets/Truck Icon White.png" alt="Locker Status" class="h-10 w-10">
@@ -180,8 +186,8 @@ const CHECK_SCREEN_MARKUP = `
               </div>
             </div>
             <div class="col-span-1 md:col-span-2 bg-blue rounded-lg shadow-[0_4px_8px_3px_rgba(0,0,0,0.25)] p-4 flex flex-col text-white">
-              <h2 id="item-name" class="text-2xl font-bold mb-2">Item Name</h2>
-              <p id="item-desc" class="text-base whitespace-pre-wrap flex-grow overflow-y-auto">Item description.</p>
+              <h2 id="item-name" class="text-2xl font-bold mb-2">Preparing items</h2>
+              <p id="item-desc" class="text-base whitespace-pre-wrap flex-grow overflow-y-auto">Fetching appliance setup and saved progress.</p>
             </div>
           </div>
         </div>
@@ -191,7 +197,7 @@ const CHECK_SCREEN_MARKUP = `
         <div class="bg-blue rounded-lg p-4 flex flex-col gap-4 min-h-full">
           <div class="flex items-center justify-center mb-4 flex-shrink-0">
             <div class="text-center">
-              <h2 id="locker-editor-name" class="text-white text-2xl font-bold uppercase tracking-wider">Locker Name</h2>
+              <h2 id="locker-editor-name" class="text-white text-2xl font-bold uppercase tracking-wider">Loading check</h2>
               <p id="locker-context-label" class="hidden text-sm font-semibold text-blue-100 mt-1">Inside container</p>
             </div>
           </div>
