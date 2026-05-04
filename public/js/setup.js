@@ -108,6 +108,8 @@ const sectionDeleteItemBtn = document.getElementById('section-delete-item-btn');
 const moveLockerSection = document.getElementById('move-locker-section');
 const moveLockerSelect = document.getElementById('move-locker-select');
 const moveLockerBtn = document.getElementById('move-locker-btn');
+const sectionMoveUpBtn = document.getElementById('section-move-up-btn');
+const sectionMoveDownBtn = document.getElementById('section-move-down-btn');
 
 const cItemEditorOverlay = document.getElementById('c-item-editor-overlay');
 const cItemEditorSection = document.getElementById('c-item-editor-section');
@@ -119,6 +121,8 @@ const cSectionImageStatus = document.getElementById('c-section-image-status');
 const cSectionCancelEditBtn = document.getElementById('c-section-cancel-edit-btn');
 const cSectionSaveItemBtn = document.getElementById('c-section-save-item-btn');
 const cSectionDeleteItemBtn = document.getElementById('c-section-delete-item-btn');
+const cSectionMoveUpBtn = document.getElementById('c-section-move-up-btn');
+const cSectionMoveDownBtn = document.getElementById('c-section-move-down-btn');
 
 function isPrivateImageRef(value) {
     return typeof value === 'string' && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
@@ -457,6 +461,8 @@ function addEventListeners() {
     sectionCancelEditBtn.addEventListener('click', closeItemEditor);
     sectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('locker'));
     moveLockerBtn?.addEventListener('click', moveItemToLocker);
+    sectionMoveUpBtn?.addEventListener('click', () => moveEditedItem('up'));
+    sectionMoveDownBtn?.addEventListener('click', () => moveEditedItem('down'));
     sectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'locker'));
     sectionItemTypeSelect.addEventListener('change', (e) => {
        sectionEnterContainerBtn.classList.toggle('hidden', e.target.value !== 'container');
@@ -467,6 +473,8 @@ function addEventListeners() {
    cSectionSaveItemBtn.addEventListener('click', saveItem);
    cSectionCancelEditBtn.addEventListener('click', closeItemEditor);
    cSectionDeleteItemBtn.addEventListener('click', () => openItemDeleteConfirm('container'));
+   cSectionMoveUpBtn?.addEventListener('click', () => moveEditedItem('up'));
+   cSectionMoveDownBtn?.addEventListener('click', () => moveEditedItem('down'));
    cSectionFileUpload.addEventListener('change', (e) => handleImageUpload(e, 'container'));
 
     // Navigation
@@ -1055,11 +1063,8 @@ function openItemEditor(shelfId, itemId, context) {
         return;
     }
 
-    document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
-    requestAnimationFrame(() => {
-        const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
-        if (activeBox) activeBox.classList.add('editing');
-    });
+    highlightActiveItemBox();
+    updateItemOrderButtons();
 
     if (context === 'locker') {
        sectionItemNameInput.value = item.name;
@@ -1112,6 +1117,50 @@ function closeItemEditor() {
     cItemEditorSection.style.opacity = 0;
     if (moveLockerSection) moveLockerSection.classList.remove('hidden');
     document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
+    updateItemOrderButtons();
+}
+
+function highlightActiveItemBox() {
+    document.querySelectorAll('.item-editor-box').forEach(b => b.classList.remove('editing'));
+    requestAnimationFrame(() => {
+        const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
+        if (activeBox) activeBox.classList.add('editing');
+    });
+}
+
+function updateItemOrderButtons() {
+    const buttons = currentEditingContext === 'container'
+        ? [cSectionMoveUpBtn, cSectionMoveDownBtn]
+        : [sectionMoveUpBtn, sectionMoveDownBtn];
+    const [upBtn, downBtn] = buttons;
+    if (!upBtn || !downBtn) return;
+    const shelf = activeItemId ? findShelf(activeShelfId, currentEditingContext) : null;
+    const items = Array.isArray(shelf?.items) ? shelf.items : [];
+    const index = items.findIndex((item) => item.id === activeItemId);
+    const hasSelection = index !== -1;
+    upBtn.disabled = !hasSelection || index === 0;
+    downBtn.disabled = !hasSelection || index === items.length - 1;
+}
+
+function moveEditedItem(direction) {
+    if (!activeItemId) return;
+    if (!saveItem({ closeEditor: false })) return;
+    const shelf = findShelf(activeShelfId, currentEditingContext);
+    const items = Array.isArray(shelf?.items) ? shelf.items : null;
+    if (!items) return;
+    const fromIndex = items.findIndex((item) => item.id === activeItemId);
+    if (fromIndex === -1) return;
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= items.length) {
+        updateItemOrderButtons();
+        return;
+    }
+    const [movedItem] = items.splice(fromIndex, 1);
+    items.splice(toIndex, 0, movedItem);
+    setUnsavedChanges(true);
+    refreshCurrentView();
+    highlightActiveItemBox();
+    updateItemOrderButtons();
 }
 
 function populateMoveLockerOptions() {
@@ -1168,16 +1217,16 @@ function moveItemToLocker() {
 
 function saveItem(options = {}) {
     const shouldClose = options.closeEditor !== false;
-    if (!activeItemId) return;
+    if (!activeItemId) return false;
     
     const context = currentEditingContext;
     const item = findItem(activeShelfId, activeItemId, context);
-    if (!item) { console.error("Could not find item to save."); return; }
+    if (!item) { console.error("Could not find item to save."); return false; }
 
     let name;
     if (context === 'locker') {
        name = sectionItemNameInput.value.trim();
-       if (!name) { alert('Item name is required.'); return; }
+       if (!name) { alert('Item name is required.'); return false; }
        item.name = name;
        item.desc = sectionItemDescInput.value;
        item.type = sectionItemTypeSelect.value;
@@ -1185,7 +1234,7 @@ function saveItem(options = {}) {
        if (item.type === 'container' && !item.subItems) item.subItems = [];
     } else { // context === 'container'
        name = cSectionItemNameInput.value.trim();
-       if (!name) { alert('Item name is required.'); return; }
+       if (!name) { alert('Item name is required.'); return false; }
        item.name = name;
        item.desc = cSectionItemDescInput.value;
        item.img = getSafePreviewImageRef(cSectionImagePreview, item.img);
@@ -1195,11 +1244,10 @@ function saveItem(options = {}) {
     isNewItem = false; // It's no longer a new item
     refreshCurrentView();
     
-    requestAnimationFrame(() => {
-        const activeBox = document.querySelector(`.item-editor-box[data-item-id='${activeItemId}']`);
-        if (activeBox) activeBox.classList.add('editing');
-    });
+    highlightActiveItemBox();
+    updateItemOrderButtons();
     if (shouldClose) closeItemEditor();
+    return true;
 }
 
 function openContainerEditor() {
@@ -1210,7 +1258,7 @@ function openContainerEditor() {
     }
 
     const containerId = activeItemId;
-    saveItem({ closeEditor: false }); 
+    if (!saveItem({ closeEditor: false })) return;
     activeContainerId = containerId;
     closeItemEditor();
 
@@ -1510,6 +1558,10 @@ function refreshCurrentView() {
         renderContainerItems();
     } else {
         renderLockerList();
+    }
+    if (activeItemId) {
+        highlightActiveItemBox();
+        updateItemOrderButtons();
     }
 }
 

@@ -532,6 +532,27 @@
             gap: 0.5rem;
             align-items: center;
         }
+        .item-order-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+        .item-order-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+        }
+        .item-order-btn[disabled] {
+            opacity: 0.45;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .item-order-icon {
+            font-size: 1rem;
+            line-height: 1;
+        }
         .item-move-row .item-select {
             flex: 1 1 200px;
         }
@@ -886,6 +907,20 @@
                             </div>
                             <div class="item-editor-subtitle">Moves to the start of the locker item area.</div>
                         </div>
+                        <div class="item-move">
+                            <label class="item-field-label">Item position</label>
+                            <div class="item-order-row">
+                                <button id="section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                                    <span class="item-order-icon">↑</span>
+                                    <span>Move up</span>
+                                </button>
+                                <button id="section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                                    <span class="item-order-icon">↓</span>
+                                    <span>Move down</span>
+                                </button>
+                            </div>
+                            <div class="item-editor-subtitle">Changes the order shown in this locker.</div>
+                        </div>
                         <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
                     </div>
                 </div>
@@ -922,6 +957,20 @@
                             <div>
                                 <label class="item-field-label" for="c-section-item-desc-input">Details</label>
                                 <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+                            </div>
+                            <div class="item-move">
+                                <label class="item-field-label">Item position</label>
+                                <div class="item-order-row">
+                                    <button id="c-section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                                        <span class="item-order-icon">↑</span>
+                                        <span>Move up</span>
+                                    </button>
+                                    <button id="c-section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                                        <span class="item-order-icon">↓</span>
+                                        <span>Move down</span>
+                                    </button>
+                                </div>
+                                <div class="item-editor-subtitle">Changes the order shown inside this container.</div>
                             </div>
                         </div>
                     </div>

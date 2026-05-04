@@ -384,8 +384,8 @@ const routes = {
     });
   },
   "/check/:brigadeId/:applianceId": async ({ params }) => {
-    // Use the full legacy check UI for now, inside the shell.
-    // Hide the shell header/footer to avoid duplicate headers.
+    // Render the check flow natively inside the shell, while preserving the legacy layout/behavior.
+    // Hide the shell header/footer to avoid duplicate chrome with the check screen's own header/footer.
     setShellChromeVisible(false);
     await renderCheck({
       root: appRoot,
@@ -403,7 +403,7 @@ const routes = {
     });
   },
   "/setup/:applianceId": async ({ params }) => {
-    // Use the legacy setup UI for now, inside the shell.
+    // Render the setup flow natively inside the shell, while preserving the legacy layout/behavior.
     setShellChromeVisible(false);
     const brigadeId = localStorage.getItem("activeBrigadeId");
     await renderSetupEditor({

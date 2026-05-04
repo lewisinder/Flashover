@@ -1,6 +1,1000 @@
 let setupScriptPromise = null;
 let imageCompressionPromise = null;
 
+const SETUP_SCREEN_STYLES = `
+body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
+.screen { display: none; }
+.screen.active { display: flex; }
+.editor-shelves-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    flex-grow: 1;
+    min-height: 0;
+}
+.shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.9rem; padding: 0.85rem; display: flex; flex-direction: column; }
+.shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
+.item-editor-box { flex: 1 1 0px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.6rem; overflow: hidden; position: relative; transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.item-editor-box:hover { background-color: #e2e8f0; }
+.item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
+.item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
+.hidden-file-input { display: none; }
+.custom-file-upload { border: 2px dashed #d1d5db; display: inline-block; padding: 1rem; cursor: pointer; text-align: center; transition: all 0.2s ease; width: 100%; border-radius: 0.5rem; }
+.custom-file-upload:hover { background-color: #f9fafb; border-color: #9ca3af; }
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+.shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
+.setup-locker-hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.25rem;
+    padding: 1.25rem;
+    color: #ffffff;
+    background: linear-gradient(135deg, #1b2775 0%, #2563eb 100%);
+    box-shadow: 0 18px 35px rgba(24, 15, 94, 0.25);
+    display: flex;
+    align-items: center;
+    min-height: 150px;
+}
+.setup-locker-hero::after {
+    content: "";
+    position: absolute;
+    top: -90px;
+    right: -90px;
+    width: 220px;
+    height: 220px;
+    background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 70%);
+    opacity: 0.8;
+}
+.setup-locker-hero-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    justify-content: center;
+}
+.setup-locker-hero-top {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: center;
+}
+.setup-locker-eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.7rem;
+    opacity: 0.75;
+}
+.setup-locker-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+.setup-locker-subtitle {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.85);
+}
+.setup-locker-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-self: center;
+}
+.setup-primary-btn {
+    background: #ffffff;
+    color: var(--blue);
+    font-weight: 700;
+    padding: 0.6rem 0.9rem;
+    border-radius: 0.75rem;
+    border: none;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.18);
+}
+.setup-primary-btn:hover {
+    transform: translateY(-1px);
+}
+.setup-locker-list-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 1.25rem;
+}
+.setup-locker-list-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.setup-locker-list-subtitle {
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+.setup-locker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem 0.1rem 1rem;
+}
+.setup-locker-list.hidden {
+    display: none;
+}
+.setup-locker-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.5rem 0;
+    color: #64748b;
+    font-size: 0.85rem;
+}
+.setup-locker-loading.hidden {
+    display: none;
+}
+.setup-spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(37, 99, 235, 0.2);
+    border-top-color: #2563eb;
+    animation: setupSpin 0.9s linear infinite;
+}
+@keyframes setupSpin {
+    to { transform: rotate(360deg); }
+}
+
+.locker-card {
+    background: #ffffff;
+    border-radius: 1rem;
+    border: 1px solid #e5e7eb;
+    padding: 0.85rem 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    cursor: grab;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.locker-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 24px rgba(15, 23, 42, 0.12);
+    border-color: rgba(24, 15, 94, 0.25);
+}
+.locker-card:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 16px 24px rgba(15, 23, 42, 0.12);
+}
+.locker-card-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1;
+}
+.locker-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 0.75rem;
+    background: rgba(24, 15, 94, 0.12);
+    color: var(--blue);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.locker-card-text {
+    min-width: 0;
+}
+.locker-card .locker-name {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #0f172a;
+}
+.locker-meta {
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+.locker-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    align-items: center;
+}
+.locker-action-btn,
+.locker-menu-btn {
+    border: 1px solid #e5e7eb;
+    background: #f8fafc;
+    border-radius: 0.6rem;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+.locker-action-btn:hover,
+.locker-menu-btn:hover {
+    background: #eef2ff;
+    border-color: rgba(24, 15, 94, 0.3);
+}
+.locker-menu-btn {
+    padding: 0.35rem 0.55rem;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.locker-delete-btn {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
+    color: #b91c1c;
+}
+.locker-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.16);
+    border-color: rgba(239, 68, 68, 0.6);
+}
+.locker-card.add-new {
+    border: 1px dashed rgba(24, 15, 94, 0.35);
+    background: rgba(24, 15, 94, 0.04);
+    box-shadow: none;
+}
+.locker-card.is-dragging {
+    opacity: 0.6;
+    background: #f8fafc;
+    border-color: rgba(24, 15, 94, 0.2);
+    transform: scale(1.01);
+    box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
+    cursor: grabbing;
+}
+.locker-drop-before::before,
+.locker-drop-after::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    height: 3px;
+    background: #2563eb;
+    border-radius: 999px;
+}
+.locker-drop-before::before {
+    top: -6px;
+}
+.locker-drop-after::after {
+    bottom: -6px;
+}
+.locker-add-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 0.75rem;
+    background: rgba(24, 15, 94, 0.12);
+    color: var(--blue);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.locker-editor-screen {
+    gap: 1rem;
+    min-height: 0;
+}
+.locker-editor-shell {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 1.25rem;
+    padding: 1rem;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    flex: 1 1 60%;
+    min-height: 0;
+    min-height: 320px;
+}
+.item-editor-empty {
+    align-items: center;
+    text-align: center;
+}
+.item-editor-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 70;
+}
+.item-editor-overlay.hidden {
+    display: none;
+}
+.item-editor-panel {
+    width: 92%;
+    max-width: 560px;
+}
+.locker-editor-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.locker-editor-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.locker-editor-label {
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.65rem;
+    color: #94a3b8;
+}
+.locker-editor-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.locker-editor-name-input {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.85rem;
+    padding: 0.6rem 0.9rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #0f172a;
+    width: 100%;
+}
+.locker-editor-name-input[readonly] {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+}
+.locker-editor-name-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+.locker-editor-name-btn {
+    border: 1px solid #e2e8f0;
+    background: #f1f5f9;
+    border-radius: 0.75rem;
+    width: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.locker-editor-name-btn img {
+    width: 18px;
+    height: 18px;
+}
+.locker-editor-subtitle {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+.locker-editor-shelves {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.locker-editor-heading {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.item-editor-panel {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 1.25rem;
+    padding: 0.9rem;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 0 0 auto;
+    max-height: none;
+    overflow: visible;
+}
+.item-editor-empty {
+    padding: 0.9rem;
+    min-height: 110px;
+}
+.item-editor-empty .item-editor-title {
+    font-size: 0.95rem;
+}
+.item-editor-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.item-editor-title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+.item-editor-subtitle {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+.item-editor-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+.item-upload {
+    border: 2px dashed #cbd5f5;
+    background: #f8fafc;
+    border-radius: 1rem;
+    padding: 0;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+.item-upload-status {
+    position: absolute;
+    left: 0.6rem;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    background: rgba(15, 23, 42, 0.8);
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+}
+.item-upload-status.success {
+    background: rgba(34, 197, 94, 0.85);
+}
+.item-upload-status.error {
+    background: rgba(239, 68, 68, 0.85);
+}
+.item-upload img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: center;
+}
+.item-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.item-field-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #94a3b8;
+    font-weight: 700;
+}
+.item-input,
+.item-textarea,
+.item-select {
+    width: 100%;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    color: #0f172a;
+}
+.item-textarea {
+    min-height: 70px;
+    resize: vertical;
+}
+.item-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+.item-editor-action-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.item-move {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+.item-move-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+.item-order-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+.item-order-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+}
+.item-order-btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+.item-order-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+.item-move-row .item-select {
+    flex: 1 1 200px;
+}
+.editor-btn {
+    border-radius: 0.85rem;
+    padding: 0.6rem 0.9rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.editor-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+}
+.editor-btn-primary {
+    background: #2563eb;
+    color: #ffffff;
+}
+.editor-btn-secondary {
+    background: #eef2ff;
+    color: #1e1b4b;
+    border-color: rgba(37, 99, 235, 0.2);
+}
+.editor-btn-ghost {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: #e2e8f0;
+}
+.editor-btn-danger {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+@media (min-width: 768px) {
+    .locker-editor-header {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .item-editor-grid {
+        grid-template-columns: 1fr 1.5fr;
+    }
+}
+@media (min-width: 640px) {
+    .setup-locker-hero-content {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .setup-locker-hero-top {
+        text-align: left;
+    }
+    .setup-locker-actions {
+        justify-content: flex-end;
+    }
+}
+@media (max-width: 1024px) {
+    .locker-context .shelf-items-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+@media (max-width: 640px) {
+    .locker-context .shelf-items-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.shelf-container {
+    background-color: #f8fafc;
+    border-radius: 1rem;
+    padding: 0.9rem;
+    box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.12);
+    border: 1px solid #e2e8f0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+}
+.locker-editor-shelves .shelf-container {
+    flex: 0 0 auto;
+}
+.locker-editor-shell > .shelf-container {
+    flex: 1 1 auto;
+}
+
+.shelf-items-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 0.75rem;
+}
+.shelf-items-grid.shelf-drop {
+    outline: 2px dashed rgba(37, 99, 235, 0.5);
+    outline-offset: 4px;
+    background: rgba(37, 99, 235, 0.06);
+    border-radius: 0.75rem;
+}
+
+.locker-context .shelf-items-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+.locker-context .item-editor-box,
+.locker-context .add-item-btn-circle {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+}
+
+.add-item-btn-circle {
+    background-color: #e2e8f0;
+    border-radius: 0.75rem;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    border: 1px dashed #cbd5f5;
+}
+.add-item-btn-circle:hover {
+    background-color: #dbeafe;
+    border-color: rgba(37, 99, 235, 0.35);
+}
+.item-editor-box {
+    aspect-ratio: 1 / 1;
+    background-color: #E5E7EB;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
+    -webkit-touch-callout: none;
+}
+.item-editor-box.editing {
+    border: 4px solid #180F5E;
+    box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
+}
+.item-editor-box.dragging {
+    opacity: 0.5;
+    border: 2px dashed #180F5E;
+}
+.item-editor-box .item-name-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(0,0,0,0.5);
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.25rem;
+    text-align: center;
+    word-break: break-word;
+}
+.item-editor-box.item-drop-before::before,
+.item-editor-box.item-drop-after::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    height: 3px;
+    background: #2563eb;
+    border-radius: 999px;
+    z-index: 2;
+}
+.item-editor-box.item-drop-before::before {
+    top: 4px;
+}
+.item-editor-box.item-drop-after::after {
+    bottom: 4px;
+}
+.locker-context .item-editor-box.item-drop-before::before,
+.locker-context .item-editor-box.item-drop-after::after {
+    top: 6px;
+    bottom: 6px;
+    width: 3px;
+    height: auto;
+    left: auto;
+    right: auto;
+}
+.locker-context .item-editor-box.item-drop-before::before {
+    left: 4px;
+}
+.locker-context .item-editor-box.item-drop-after::after {
+    right: 4px;
+}
+
+.bg-blue-200 {
+    background-color: #bfdbfe;
+}
+
+/* Shell safety overrides */
+#shell-setup-wrapper .screen.active { flex-direction: column; }
+#shell-setup-wrapper,
+#shell-setup-wrapper .max-w-4xl { min-height: 0; }
+`;
+
+const SETUP_SCREEN_MARKUP = `
+<div class="bg-background flex flex-col h-full">
+  <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
+    <div class="flex items-center">
+      <button id="back-btn" class="mr-3">
+        <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
+      </button>
+    </div>
+    <div class="flex items-center gap-3 flex-grow justify-center">
+      <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-9 w-9 object-contain">
+      <h1 class="text-white text-2xl font-bold">Appliance Setup</h1>
+    </div>
+    <div class="w-28 flex justify-end items-center">
+      <button id="header-save-btn" class="hidden bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg shadow-md animate-pulse">Save</button>
+    </div>
+  </header>
+
+  <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col">
+    <div id="select-locker-screen" class="screen active p-4 sm:p-6 flex-col h-full">
+      <div class="setup-locker-hero">
+        <div class="setup-locker-hero-content">
+          <div class="setup-locker-hero-top">
+            <div class="setup-locker-eyebrow">Appliance</div>
+            <h1 id="appliance-name-title" class="setup-locker-title">Loading appliance...</h1>
+            <div id="appliance-name-subtitle" class="setup-locker-subtitle" data-default="Choose a locker to edit items and containers.">Choose a locker to edit items and containers.</div>
+          </div>
+          <div class="setup-locker-actions">
+            <button id="create-locker-btn" class="setup-primary-btn">New locker</button>
+          </div>
+        </div>
+      </div>
+      <div class="setup-locker-list-header">
+        <div class="setup-locker-list-title">Lockers</div>
+        <div class="setup-locker-list-subtitle">Tap a locker to edit, or use quick actions on the right.</div>
+        <div class="setup-locker-list-subtitle">Drag and drop to reorder lockers.</div>
+      </div>
+      <div id="locker-loading-state" class="setup-locker-loading">
+        <div class="setup-spinner"></div>
+        <div class="setup-locker-loading-text">Fetching appliance setup...</div>
+      </div>
+      <div id="locker-list-container" class="setup-locker-list flex-grow overflow-y-auto hidden"></div>
+    </div>
+
+    <div id="locker-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
+      <div class="locker-editor-shell">
+        <div class="locker-editor-header">
+          <div class="locker-editor-meta">
+            <div class="locker-editor-label">Locker</div>
+            <div class="locker-editor-name-row">
+              <input type="text" id="locker-editor-name" placeholder="Locker name" class="locker-editor-name-input" readonly>
+            </div>
+            <div class="locker-editor-subtitle">Organize items and containers for this locker.</div>
+            <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
+          </div>
+        </div>
+        <div id="locker-editor-shelves" class="locker-editor-shelves"></div>
+      </div>
+    </div>
+
+    <div id="container-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
+      <div class="locker-editor-shell">
+        <div class="locker-editor-header">
+          <div class="locker-editor-meta">
+            <div class="locker-editor-label">Container</div>
+            <h1 id="container-editor-title" class="locker-editor-heading">Editing Container</h1>
+            <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
+          </div>
+        </div>
+        <div class="shelf-container">
+          <div id="container-editor-items" class="shelf-items-grid flex-grow overflow-y-auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modals-container">
+      <div id="unsaved-changes-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center">
+          <h3 class="text-xl font-bold mb-4">Unsaved Changes</h3>
+          <p class="text-gray-600 mb-6">You have unsaved changes. What would you like to do?</p>
+          <div class="flex flex-col space-y-3">
+            <button id="save-unsaved-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg">Save & Continue</button>
+            <button id="discard-unsaved-btn" class="w-full bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg">Discard & Continue</button>
+            <button id="cancel-unsaved-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-2">Cancel Navigation</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="item-editor-overlay" class="item-editor-overlay hidden">
+        <div id="item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
+          <div class="item-editor-header">
+            <div class="item-editor-title">Item details</div>
+            <div class="item-editor-subtitle">Update the name, photo, and description.</div>
+          </div>
+          <div class="item-editor-grid">
+            <label for="section-file-upload" class="item-upload cursor-pointer">
+              <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+              <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
+                <span class="font-bold text-lg leading-tight">Item image</span>
+                <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
+              </span>
+              <span id="section-image-status" class="item-upload-status hidden"></span>
+              <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+            </label>
+            <div class="item-fields">
+              <div>
+                <label class="item-field-label" for="section-item-name-input">Item name</label>
+                <input type="text" id="section-item-name-input" placeholder="Item name" class="item-input">
+              </div>
+              <div>
+                <label class="item-field-label" for="section-item-desc-input">Details</label>
+                <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+              </div>
+              <div>
+                <label class="item-field-label" for="section-item-type-select">Item type</label>
+                <select id="section-item-type-select" class="item-select">
+                  <option value="item">Standard Item</option>
+                  <option value="container">Container</option>
+                </select>
+              </div>
+              <div id="move-locker-section" class="item-move">
+                <label class="item-field-label" for="move-locker-select">Move to locker</label>
+                <div class="item-move-row">
+                  <select id="move-locker-select" class="item-select"></select>
+                  <button id="move-locker-btn" class="editor-btn editor-btn-ghost" type="button">Move</button>
+                </div>
+                <div class="item-editor-subtitle">Moves to the start of the locker item area.</div>
+              </div>
+              <div class="item-move">
+                <label class="item-field-label">Item position</label>
+                <div class="item-order-row">
+                  <button id="section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                    <span class="item-order-icon">↑</span>
+                    <span>Move up</span>
+                  </button>
+                  <button id="section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                    <span class="item-order-icon">↓</span>
+                    <span>Move down</span>
+                  </button>
+                </div>
+                <div class="item-editor-subtitle">Changes the order shown in this locker.</div>
+              </div>
+              <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
+            </div>
+          </div>
+          <div id="item-editor-actions" class="item-editor-actions">
+            <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+            <div class="item-editor-action-group">
+              <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+              <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="c-item-editor-overlay" class="item-editor-overlay hidden">
+        <div id="c-item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
+          <div class="item-editor-header">
+            <div class="item-editor-title">Container item</div>
+            <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
+          </div>
+          <div class="item-editor-grid">
+            <label for="c-section-file-upload" class="item-upload cursor-pointer">
+              <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
+              <span class="text-blue font-bold text-lg">Item image</span>
+              <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
+              <span id="c-section-image-status" class="item-upload-status hidden"></span>
+              <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
+            </label>
+            <div class="item-fields">
+              <div>
+                <label class="item-field-label" for="c-section-item-name-input">Item name</label>
+                <input type="text" id="c-section-item-name-input" placeholder="Item name" class="item-input">
+              </div>
+              <div>
+                <label class="item-field-label" for="c-section-item-desc-input">Details</label>
+                <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
+              </div>
+              <div class="item-move">
+                <label class="item-field-label">Item position</label>
+                <div class="item-order-row">
+                  <button id="c-section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                    <span class="item-order-icon">↑</span>
+                    <span>Move up</span>
+                  </button>
+                  <button id="c-section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
+                    <span class="item-order-icon">↓</span>
+                    <span>Move down</span>
+                  </button>
+                </div>
+                <div class="item-editor-subtitle">Changes the order shown inside this container.</div>
+              </div>
+            </div>
+          </div>
+          <div id="c-item-editor-actions" class="item-editor-actions">
+            <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
+            <div class="item-editor-action-group">
+              <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
+              <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="name-locker-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+          <h3 id="locker-name-modal-title" class="text-xl font-bold mb-4">Create new locker</h3>
+          <input type="text" id="new-locker-name-input" placeholder="Enter locker name..." class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
+          <div class="flex justify-end mt-6">
+            <button id="cancel-create-locker-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+            <button id="save-new-locker-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Create</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="locker-actions-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 55;">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+          <h3 id="locker-actions-title" class="text-xl font-bold mb-2">Locker actions</h3>
+          <p id="locker-actions-subtitle" class="text-gray-600 mb-6">Locker</p>
+          <div class="flex flex-col gap-2">
+            <button id="locker-actions-rename-btn" class="bg-gray-100 text-gray-900 font-bold py-2 px-4 rounded-lg">Rename</button>
+            <button id="locker-actions-delete-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+            <button id="locker-actions-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="delete-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+          <h3 id="delete-confirm-title" class="text-xl font-bold mb-2">Are you sure?</h3>
+          <p id="delete-confirm-text" class="text-gray-600 mb-6">This action cannot be undone.</p>
+          <div class="flex justify-end">
+            <button id="cancel-delete-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
+            <button id="confirm-delete-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="progress-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 60;">
+        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
+          <h3 id="progress-title" class="text-xl font-bold mb-4">Processing...</h3>
+          <p id="progress-text" class="text-gray-600 mb-4 text-center">Starting...</p>
+          <div class="w-full bg-gray-200 rounded-full h-4">
+            <div id="progress-bar" class="bg-blue h-4 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
 function loadImageCompression() {
   if (window.imageCompression) return Promise.resolve();
   if (imageCompressionPromise) return imageCompressionPromise;
@@ -34,20 +1028,6 @@ function loadSetupScript() {
   return setupScriptPromise;
 }
 
-async function loadSetupTemplate() {
-  const res = await fetch("/setup.html", { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to load setup template (${res.status})`);
-  const html = await res.text();
-
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const styles = Array.from(doc.head.querySelectorAll("style"))
-    .map((s) => s.textContent || "")
-    .join("\n\n");
-  doc.body.querySelectorAll("script").forEach((s) => s.remove());
-
-  return { styles, bodyHtml: doc.body.innerHTML };
-}
-
 export async function renderSetupEditor({
   root,
   auth,
@@ -72,22 +1052,10 @@ export async function renderSetupEditor({
   localStorage.setItem("selectedBrigadeId", brigadeId);
   localStorage.setItem("selectedApplianceId", applianceId);
 
-  const { styles, bodyHtml } = await loadSetupTemplate();
   const styleEl = document.createElement("style");
-  styleEl.textContent = `
-${styles || ""}
-
-/* Shell safety overrides (so embedded setup always lays out correctly) */
-#shell-setup-wrapper .screen.active { flex-direction: column; }
-#shell-setup-wrapper, #shell-setup-wrapper .max-w-4xl { min-height: 0; }
-`;
+  styleEl.textContent = SETUP_SCREEN_STYLES;
   wrapper.appendChild(styleEl);
-
-  const inner = document.createElement("div");
-  inner.className = "bg-background flex flex-col h-full";
-  inner.style.minHeight = "0";
-  inner.innerHTML = bodyHtml;
-  wrapper.appendChild(inner);
+  wrapper.insertAdjacentHTML("beforeend", SETUP_SCREEN_MARKUP);
 
   await loadImageCompression();
   await loadSetupScript();
@@ -110,4 +1078,3 @@ ${styles || ""}
     navigateToMenu,
   });
 }
-
