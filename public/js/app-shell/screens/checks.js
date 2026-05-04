@@ -33,6 +33,11 @@ function clearCheckSession() {
   sessionStorage.removeItem("currentCheckState");
 }
 
+function setCheckSessionStartupMode(mode) {
+  if (mode) localStorage.setItem("checkSessionStartupMode", mode);
+  else localStorage.removeItem("checkSessionStartupMode");
+}
+
 function normalizeRole(role) {
   const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   if (raw === "admin") return "admin";
@@ -343,6 +348,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
                 { token, method: "POST", body: force ? { force: true } : undefined }
               );
               preserveCheckSessionId(result);
+              setCheckSessionStartupMode("new");
               return result;
             };
 
@@ -402,6 +408,7 @@ export async function renderChecks({ root, auth, db, showLoading, hideLoading })
               resumeBtn.onclick = () => {
                 activeModalToken += 1;
                 modalOverlay.classList.add("hidden");
+                setCheckSessionStartupMode("resume");
                 openCheckForm();
               };
 

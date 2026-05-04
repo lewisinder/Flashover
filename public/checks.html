@@ -33,6 +33,12 @@
             height: 100%;
             object-fit: cover; /* Ensure image covers the box */
         }
+        .item-box.status-present > img,
+        .item-box.status-missing > img,
+        .item-box.status-note > img,
+        .item-box.status-partial > img {
+            opacity: 0.35;
+        }
         .item-box:hover { background-color: #d1d5db; }
         .item-box.is-active { 
             border: 4px solid #180F5E; /* Blue */

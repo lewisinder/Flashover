@@ -29,6 +29,12 @@ const CHECK_SCREEN_STYLES = `
   height: 100%;
   object-fit: cover;
 }
+#shell-check-wrapper .item-box.status-present > img,
+#shell-check-wrapper .item-box.status-missing > img,
+#shell-check-wrapper .item-box.status-note > img,
+#shell-check-wrapper .item-box.status-partial > img {
+  opacity: 0.35;
+}
 #shell-check-wrapper .item-box:hover { background-color: #d1d5db; }
 #shell-check-wrapper .item-box.is-active {
   border: 4px solid #180F5E;
