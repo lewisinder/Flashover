@@ -462,13 +462,15 @@ function drawIssueMark(doc, cellX, cellY, cellWidth, cellHeight, size, ref) {
 }
 
 function drawNotInSetupMark(doc, cellX, cellY, cellWidth, cellHeight) {
-    const centerY = cellY + cellHeight / 2;
     doc.save()
-        .strokeColor('#9ca3af')
-        .lineWidth(1)
-        .moveTo(cellX + cellWidth * 0.35, centerY)
-        .lineTo(cellX + cellWidth * 0.65, centerY)
-        .stroke()
+        .fillColor('#6b7280')
+        .font('Helvetica-Bold')
+        .fontSize(5.8)
+        .text('N/A', cellX + 2, cellY + 5, {
+            width: cellWidth - 4,
+            height: cellHeight - 4,
+            align: 'center',
+        })
         .restore();
 }
 
@@ -503,7 +505,7 @@ function drawPageHeader(doc, payload, page, pageIndex, totalPages) {
         .text(`Appliance: ${safeText(payload.applianceName, 'Appliance')}`, MARGIN, 46)
         .text(`Range: ${formatDate(payload.from)} to ${formatDate(payload.to)}`, MARGIN, 59);
     doc.fillColor('#666666').font('Helvetica').fontSize(7.5)
-        .text('Export uses the appliance layout saved with each report.', MARGIN, 72, { width: pageWidth - MARGIN * 2 - 180 });
+        .text('Export uses the appliance layout saved with each report. N/A = item was not in setup.', MARGIN, 72, { width: pageWidth - MARGIN * 2 - 180 });
     doc.fillColor('#111111').font('Helvetica-Bold').fontSize(10)
         .text(groupLabel, MARGIN, 84, { width: pageWidth - MARGIN * 2 - 180 });
     doc.fillColor('#444444').fontSize(8)
