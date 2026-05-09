@@ -25,6 +25,8 @@ const TERMS_BLURB =
 
 let loadingCount = 0;
 let loadingTimer = null;
+let routeGuard = null;
+let backHandler = null;
 
 function showLoading() {
   loadingCount += 1;
@@ -53,6 +55,24 @@ function setShellChromeVisible(visible) {
   tabbar?.classList.toggle("hidden", !visible);
 }
 
+function setRouteGuard(guard) {
+  routeGuard = typeof guard === "function" ? guard : null;
+}
+
+function setBackHandler(handler) {
+  backHandler = typeof handler === "function" ? handler : null;
+}
+
+function tryRouteNavigation(target, fallback) {
+  const allowed = routeGuard ? routeGuard(target) : true;
+  if (allowed === false) return;
+  if (target) {
+    window.location.hash = target;
+    return;
+  }
+  if (typeof fallback === "function") fallback();
+}
+
 function setHeader({ title, showBack, showLogout }) {
   setShellChromeVisible(true);
   try {
@@ -67,9 +87,15 @@ function setHeader({ title, showBack, showLogout }) {
       window.__setupCleanup = null;
     }
   } catch (e) {}
+  setRouteGuard(null);
+  setBackHandler(null);
   if (titleEl) titleEl.textContent = title || "Flashover";
   if (backBtn) backBtn.classList.toggle("hidden", !showBack);
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !showLogout);
+}
+
+function setHeaderTitle(title) {
+  if (titleEl) titleEl.textContent = title || "Flashover";
 }
 
 function requireEl(el, name) {
@@ -276,7 +302,7 @@ tabbar?.addEventListener("click", (e) => {
   const target = btn?.getAttribute?.("data-route");
   if (!target) return;
   if (window.location.hash === target) return;
-  window.location.hash = target;
+  tryRouteNavigation(target);
 });
 
 async function maybeSeedDemoData(user) {
@@ -319,35 +345,41 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 backBtn.addEventListener("click", () => {
+  if (backHandler?.() === true) return;
+
   const hash = window.location.hash || "";
 
   // Prefer "app-like" back behavior over browser history for core routes.
   if (hash.startsWith("#/check/")) {
-    window.location.hash = "#/checks";
+    tryRouteNavigation("#/checks");
     return;
   }
   if (hash.startsWith("#/brigade/")) {
-    window.location.hash = "#/brigades";
+    tryRouteNavigation("#/brigades");
     return;
   }
   if (hash.startsWith("#/report/")) {
-    window.location.hash = "#/reports";
+    tryRouteNavigation("#/reports");
+    return;
+  }
+  if (hash.startsWith("#/setup/")) {
+    tryRouteNavigation("#/setup");
     return;
   }
   if (hash === "#/setup") {
-    window.location.hash = "#/checks";
+    tryRouteNavigation("#/checks");
     return;
   }
   if (hash === "#/checks" || hash === "#/brigades") {
-    window.location.hash = "#/menu";
+    tryRouteNavigation("#/menu");
     return;
   }
   if (hash === "#/reports") {
-    window.location.hash = "#/checks";
+    tryRouteNavigation("#/checks");
     return;
   }
 
-  window.history.back();
+  tryRouteNavigation(null, () => window.history.back());
 });
 
 const routes = {
@@ -419,8 +451,7 @@ const routes = {
     });
   },
   "/setup/:applianceId": async ({ params }) => {
-    // Render the setup flow natively inside the shell, while preserving the legacy layout/behavior.
-    setShellChromeVisible(false);
+    setHeader({ title: "Appliance setup", showBack: true, showLogout: false });
     const brigadeId = localStorage.getItem("activeBrigadeId");
     await renderSetupEditor({
       root: appRoot,
@@ -428,6 +459,9 @@ const routes = {
       brigadeId,
       applianceId: params.applianceId,
       setShellChromeVisible,
+      setTitle: (t) => setHeaderTitle(t || "Appliance setup"),
+      setRouteGuard,
+      setBackHandler,
       navigateToSetupHome: () => {
         setShellChromeVisible(true);
         window.location.hash = "#/setup";

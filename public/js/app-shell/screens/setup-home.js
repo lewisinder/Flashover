@@ -15,6 +15,20 @@ function appendRowText(parent, titleText, metaText) {
   parent.appendChild(meta);
 }
 
+function normalizeRole(role) {
+  const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (raw === "admin") return "admin";
+  if (raw === "gearmanager") return "gearManager";
+  if (raw === "member") return "member";
+  if (raw === "viewer") return "viewer";
+  return "";
+}
+
+function canEditSetup(role) {
+  const normalized = normalizeRole(role);
+  return normalized === "admin" || normalized === "gearManager";
+}
+
 async function fetchJson(url, { token, method, body } = {}) {
   const res = await fetch(url, {
     method: method || "GET",
@@ -41,7 +55,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   topInner.innerHTML = `
     <div>
       <div class="fs-card-title">Appliance setup</div>
-      <div class="fs-card-subtitle">Admins can create and edit appliances for a brigade.</div>
+      <div class="fs-card-subtitle">Admins and gear managers can create and edit appliances for a brigade.</div>
     </div>
   `;
 
@@ -205,11 +219,11 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   }
 
   function updateAdminUi(brigadeId) {
-    const role = String((brigadeMetaById.get(brigadeId) || {}).role || "").toLowerCase();
-    canEdit = role === "admin";
-    setAlert(adminHintEl, canEdit ? "" : "Admins only: you don’t have permission to edit appliance setup.");
+    const role = (brigadeMetaById.get(brigadeId) || {}).role;
+    canEdit = canEditSetup(role);
+    setAlert(adminHintEl, canEdit ? "" : "Admins and gear managers only: you don’t have permission to edit appliance setup.");
     createBtn.disabled = !canEdit;
-    createBtn.title = canEdit ? "" : "Admins only";
+    createBtn.title = canEdit ? "" : "Admins and gear managers only";
   }
 
   function openModal(applianceId) {
@@ -319,7 +333,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
 
       const openAppliance = () => {
         if (!canEdit) {
-          alert("Admins only: you don't have permission to edit appliance setup.");
+          alert("Admins and gear managers only: you don't have permission to edit appliance setup.");
           return;
         }
         localStorage.setItem("selectedApplianceId", appliance.id);
@@ -338,7 +352,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
       menu.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!canEdit) {
-          alert("Admins only: you don't have permission to edit appliance setup.");
+          alert("Admins and gear managers only: you don't have permission to edit appliance setup.");
           return;
         }
         openActionSheet(appliance);
@@ -382,7 +396,7 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   cancelBtn.addEventListener("click", closeModal);
   createBtn.addEventListener("click", () => {
     if (!canEdit) {
-      alert("Admins only: you don't have permission to edit appliance setup.");
+      alert("Admins and gear managers only: you don't have permission to edit appliance setup.");
       return;
     }
     openModal(null);

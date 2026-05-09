@@ -169,7 +169,8 @@ App shell routes include:
 Some legacy pages still exist and are embedded by the app shell for full workflows:
 
 - `public/checks.html` with `public/js/checks.js`
-- `public/setup.html` with `public/js/setup.js`
+
+The old standalone setup editor has been replaced by the app shell setup route. `public/setup.html` is now only a redirect shim for older links.
 
 Legacy standalone pages also remain for sign-in/sign-up and older navigation flows, including:
 

@@ -1,1031 +1,473 @@
-let setupScriptPromise = null;
 let imageCompressionPromise = null;
 
-const SETUP_SCREEN_STYLES = `
-body { font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; touch-action: manipulation; }
-.screen { display: none; }
-.screen.active { display: flex; }
-.editor-shelves-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    flex-grow: 1;
-    min-height: 0;
+const SETUP_EDITOR_STYLES = `
+.fs-setup-editor {
+  padding-bottom: 18px;
 }
-.shelf-editor-container { position: relative; flex: 1 1 0px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.9rem; padding: 0.85rem; display: flex; flex-direction: column; }
-.shelf-content { display: flex; gap: 0.75rem; flex-grow: 1; align-items: stretch; }
-.item-editor-box { flex: 1 1 0px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.75rem; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0.6rem; overflow: hidden; position: relative; transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
-.item-editor-box:hover { background-color: #e2e8f0; }
-.item-editor-box img { max-width: 100%; max-height: 60px; object-fit: contain; border-radius: 0.25rem; }
-.item-editor-box .item-name { font-size: 0.75rem; font-weight: 500; color: #374151; text-align: center; margin-top: 0.5rem; word-break: break-word; }
-.hidden-file-input { display: none; }
-.custom-file-upload { border: 2px dashed #d1d5db; display: inline-block; padding: 1rem; cursor: pointer; text-align: center; transition: all 0.2s ease; width: 100%; border-radius: 0.5rem; }
-.custom-file-upload:hover { background-color: #f9fafb; border-color: #9ca3af; }
-@keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
+.fs-setup-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: -18px -16px 14px;
+  padding: 12px 16px;
+  background: rgba(246, 247, 251, 0.92);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.86);
+  backdrop-filter: blur(12px);
 }
-.shake { animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both; }
-.setup-locker-hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: 1.25rem;
-    padding: 1.25rem;
-    color: #ffffff;
-    background: linear-gradient(135deg, #1b2775 0%, #2563eb 100%);
-    box-shadow: 0 18px 35px rgba(24, 15, 94, 0.25);
-    display: flex;
-    align-items: center;
-    min-height: 150px;
+.fs-setup-toolbar-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
-.setup-locker-hero::after {
-    content: "";
-    position: absolute;
-    top: -90px;
-    right: -90px;
-    width: 220px;
-    height: 220px;
-    background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 70%);
-    opacity: 0.8;
+.fs-setup-status {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.setup-locker-hero-content {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
+.fs-setup-kicker {
+  color: var(--fs-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fs-setup-title {
+  color: var(--fs-text);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+.fs-setup-status-line {
+  color: var(--fs-muted);
+  font-size: 13px;
+}
+.fs-setup-save {
+  width: auto;
+  min-width: 96px;
+}
+.fs-setup-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 18px;
+  color: #fff;
+  background: linear-gradient(135deg, #172554 0%, #2563eb 100%);
+  box-shadow: 0 18px 35px rgba(37, 99, 235, 0.2);
+}
+.fs-setup-hero::after {
+  content: "";
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 190px;
+  height: 190px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.fs-setup-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.fs-setup-hero-label {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  opacity: 0.75;
+}
+.fs-setup-hero-title {
+  margin-top: 4px;
+  font-size: 32px;
+  line-height: 1.1;
+  font-weight: 850;
+}
+.fs-setup-hero-copy {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 15px;
+}
+.fs-setup-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+.fs-setup-section-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--fs-text);
+}
+.fs-setup-muted {
+  color: var(--fs-muted);
+  font-size: 13px;
+}
+.fs-setup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.fs-setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.fs-setup-row-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fs-setup-badge {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-text);
+  background: rgba(15, 23, 42, 0.08);
+  font-size: 18px;
+  font-weight: 850;
+}
+.fs-setup-row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fs-setup-row[draggable="true"] {
+  cursor: grab;
+}
+.fs-setup-row.is-dragging {
+  opacity: 0.55;
+}
+.fs-setup-drop-before {
+  box-shadow: inset 0 3px 0 #2563eb, 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+.fs-setup-drop-after {
+  box-shadow: inset 0 -3px 0 #2563eb, 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+.fs-setup-editor-head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.fs-setup-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.fs-setup-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 12px;
+}
+.fs-setup-item-card {
+  min-height: 136px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid var(--fs-border);
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
+.fs-setup-item-card[draggable="true"] {
+  cursor: grab;
+}
+.fs-setup-item-card.is-dragging {
+  opacity: 0.55;
+}
+.fs-setup-item-card.is-add {
+  border-style: dashed;
+  background: rgba(37, 99, 235, 0.05);
+}
+.fs-setup-item-card.is-drop-before {
+  box-shadow: inset 3px 0 0 #2563eb, 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+.fs-setup-item-card.is-drop-after {
+  box-shadow: inset -3px 0 0 #2563eb, 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+.fs-setup-item-image {
+  width: 72px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+}
+.fs-setup-item-name {
+  max-width: 100%;
+  color: var(--fs-text);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.fs-setup-item-meta {
+  color: var(--fs-muted);
+  font-size: 12px;
+}
+.fs-setup-plus {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-primary);
+  background: rgba(37, 99, 235, 0.11);
+  font-size: 28px;
+  font-weight: 800;
+}
+.fs-setup-modal-card {
+  width: 92%;
+  max-width: 560px;
+}
+.fs-setup-modal-wide {
+  max-width: 720px;
+}
+.fs-setup-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fs-setup-field-grid {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px;
+}
+.fs-setup-image-picker {
+  min-height: 150px;
+  border: 2px dashed rgba(37, 99, 235, 0.3);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+.fs-setup-image-picker img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.fs-setup-preview-text {
+  color: var(--fs-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.fs-setup-progress {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+}
+.fs-setup-progress > div {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--fs-primary) 0%, var(--fs-primary-2) 100%);
+}
+.fs-hidden-file {
+  display: none;
+}
+@media (max-width: 520px) {
+  .fs-setup-toolbar-inner,
+  .fs-setup-name-row,
+  .fs-setup-row {
+    grid-template-columns: 1fr;
+  }
+  .fs-setup-save {
     width: 100%;
-    justify-content: center;
-}
-.setup-locker-hero-top {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    text-align: center;
-}
-.setup-locker-eyebrow {
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
-    font-size: 0.7rem;
-    opacity: 0.75;
-}
-.setup-locker-title {
-    font-size: 1.75rem;
-    font-weight: 800;
-    line-height: 1.2;
-}
-.setup-locker-subtitle {
-    font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.85);
-}
-.setup-locker-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    align-self: center;
-}
-.setup-primary-btn {
-    background: #ffffff;
-    color: var(--blue);
-    font-weight: 700;
-    padding: 0.6rem 0.9rem;
-    border-radius: 0.75rem;
-    border: none;
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.18);
-}
-.setup-primary-btn:hover {
-    transform: translateY(-1px);
-}
-.setup-locker-list-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 1.25rem;
-}
-.setup-locker-list-title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: #0f172a;
-}
-.setup-locker-list-subtitle {
-    font-size: 0.75rem;
-    color: #6b7280;
-}
-.setup-locker-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.75rem 0.1rem 1rem;
-}
-.setup-locker-list.hidden {
-    display: none;
-}
-.setup-locker-loading {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 0.5rem 0;
-    color: #64748b;
-    font-size: 0.85rem;
-}
-.setup-locker-loading.hidden {
-    display: none;
-}
-.setup-spinner {
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    border: 2px solid rgba(37, 99, 235, 0.2);
-    border-top-color: #2563eb;
-    animation: setupSpin 0.9s linear infinite;
-}
-@keyframes setupSpin {
-    to { transform: rotate(360deg); }
-}
-
-.locker-card {
-    background: #ffffff;
-    border-radius: 1rem;
-    border: 1px solid #e5e7eb;
-    padding: 0.85rem 0.9rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    cursor: grab;
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
-    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-    position: relative;
-    user-select: none;
-    -webkit-user-select: none;
-}
-.locker-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 16px 24px rgba(15, 23, 42, 0.12);
-    border-color: rgba(24, 15, 94, 0.25);
-}
-.locker-card:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25), 0 16px 24px rgba(15, 23, 42, 0.12);
-}
-.locker-card-main {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-    flex: 1;
-}
-.locker-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 0.75rem;
-    background: rgba(24, 15, 94, 0.12);
-    color: var(--blue);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 1rem;
-    flex-shrink: 0;
-}
-.locker-card-text {
-    min-width: 0;
-}
-.locker-card .locker-name {
-    font-weight: 700;
-    font-size: 1rem;
-    color: #0f172a;
-}
-.locker-meta {
-    font-size: 0.75rem;
-    color: #6b7280;
-}
-.locker-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    flex-shrink: 0;
-    align-items: center;
-}
-.locker-action-btn,
-.locker-menu-btn {
-    border: 1px solid #e5e7eb;
-    background: #f8fafc;
-    border-radius: 0.6rem;
-    padding: 0.35rem 0.65rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #1f2937;
-}
-.locker-action-btn:hover,
-.locker-menu-btn:hover {
-    background: #eef2ff;
-    border-color: rgba(24, 15, 94, 0.3);
-}
-.locker-menu-btn {
-    padding: 0.35rem 0.55rem;
-    font-size: 1.1rem;
-    line-height: 1;
-}
-.locker-delete-btn {
-    border-color: rgba(239, 68, 68, 0.4);
-    background: rgba(239, 68, 68, 0.08);
-    color: #b91c1c;
-}
-.locker-delete-btn:hover {
-    background: rgba(239, 68, 68, 0.16);
-    border-color: rgba(239, 68, 68, 0.6);
-}
-.locker-card.add-new {
-    border: 1px dashed rgba(24, 15, 94, 0.35);
-    background: rgba(24, 15, 94, 0.04);
-    box-shadow: none;
-}
-.locker-card.is-dragging {
-    opacity: 0.6;
-    background: #f8fafc;
-    border-color: rgba(24, 15, 94, 0.2);
-    transform: scale(1.01);
-    box-shadow: 0 18px 30px rgba(15, 23, 42, 0.2);
-    cursor: grabbing;
-}
-.locker-drop-before::before,
-.locker-drop-after::after {
-    content: "";
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    height: 3px;
-    background: #2563eb;
-    border-radius: 999px;
-}
-.locker-drop-before::before {
-    top: -6px;
-}
-.locker-drop-after::after {
-    bottom: -6px;
-}
-.locker-add-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 0.75rem;
-    background: rgba(24, 15, 94, 0.12);
-    color: var(--blue);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    font-weight: 800;
-}
-
-.locker-editor-screen {
-    gap: 1rem;
-    min-height: 0;
-}
-.locker-editor-shell {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 1.25rem;
-    padding: 1rem;
-    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    flex: 1 1 60%;
-    min-height: 0;
-    min-height: 320px;
-}
-.item-editor-empty {
-    align-items: center;
-    text-align: center;
-}
-.item-editor-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(6px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 70;
-}
-.item-editor-overlay.hidden {
-    display: none;
-}
-.item-editor-panel {
-    width: 92%;
-    max-width: 560px;
-}
-.locker-editor-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-}
-.locker-editor-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-.locker-editor-label {
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
-    font-size: 0.65rem;
-    color: #94a3b8;
-}
-.locker-editor-name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.locker-editor-name-input {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.85rem;
-    padding: 0.6rem 0.9rem;
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #0f172a;
-    width: 100%;
-}
-.locker-editor-name-input[readonly] {
-    background: transparent;
-    border-color: transparent;
-    padding: 0;
-}
-.locker-editor-name-input:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-}
-.locker-editor-name-btn {
-    border: 1px solid #e2e8f0;
-    background: #f1f5f9;
-    border-radius: 0.75rem;
-    width: 38px;
-    height: 38px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-}
-.locker-editor-name-btn img {
-    width: 18px;
-    height: 18px;
-}
-.locker-editor-subtitle {
-    font-size: 0.8rem;
-    color: #64748b;
-}
-.locker-editor-shelves {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    min-height: 0;
+  }
+  .fs-setup-row-actions {
+    justify-content: stretch;
+  }
+  .fs-setup-row-actions > button {
     flex: 1 1 auto;
-    overflow-y: auto;
-    padding-right: 4px;
+  }
+  .fs-setup-field-grid {
+    grid-template-columns: 1fr;
+  }
 }
-.locker-editor-heading {
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: #0f172a;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.item-editor-panel {
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 1.25rem;
-    padding: 0.9rem;
-    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    flex: 0 0 auto;
-    max-height: none;
-    overflow: visible;
-}
-.item-editor-empty {
-    padding: 0.9rem;
-    min-height: 110px;
-}
-.item-editor-empty .item-editor-title {
-    font-size: 0.95rem;
-}
-.item-editor-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-.item-editor-title {
-    font-size: 1rem;
-    font-weight: 800;
-    color: #0f172a;
-}
-.item-editor-subtitle {
-    font-size: 0.8rem;
-    color: #64748b;
-}
-.item-editor-grid {
-    display: grid;
-    gap: 0.75rem;
-}
-.item-upload {
-    border: 2px dashed #cbd5f5;
-    background: #f8fafc;
-    border-radius: 1rem;
-    padding: 0;
-    min-height: 120px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-}
-.item-upload-status {
-    position: absolute;
-    left: 0.6rem;
-    right: 0.6rem;
-    bottom: 0.6rem;
-    background: rgba(15, 23, 42, 0.8);
-    color: #ffffff;
-    font-size: 0.7rem;
-    font-weight: 600;
-    padding: 0.25rem 0.5rem;
-    border-radius: 999px;
-}
-.item-upload-status.success {
-    background: rgba(34, 197, 94, 0.85);
-}
-.item-upload-status.error {
-    background: rgba(239, 68, 68, 0.85);
-}
-.item-upload img {
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    object-position: center;
-}
-.item-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-}
-.item-field-label {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #94a3b8;
-    font-weight: 700;
-}
-.item-input,
-.item-textarea,
-.item-select {
-    width: 100%;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    padding: 0.6rem 0.85rem;
-    color: #0f172a;
-}
-.item-textarea {
-    min-height: 70px;
-    resize: vertical;
-}
-.item-editor-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-}
-.item-editor-action-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-.item-move {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.4rem;
-}
-.item-move-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-}
-.item-order-row {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
-}
-.item-order-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-}
-.item-order-btn[disabled] {
-    opacity: 0.45;
-    cursor: not-allowed;
-    box-shadow: none;
-    transform: none;
-}
-.item-order-icon {
-    font-size: 1rem;
-    line-height: 1;
-}
-.item-move-row .item-select {
-    flex: 1 1 200px;
-}
-.editor-btn {
-    border-radius: 0.85rem;
-    padding: 0.6rem 0.9rem;
-    font-weight: 700;
-    border: 1px solid transparent;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-.editor-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
-}
-.editor-btn-primary {
-    background: #2563eb;
-    color: #ffffff;
-}
-.editor-btn-secondary {
-    background: #eef2ff;
-    color: #1e1b4b;
-    border-color: rgba(37, 99, 235, 0.2);
-}
-.editor-btn-ghost {
-    background: #ffffff;
-    color: #0f172a;
-    border-color: #e2e8f0;
-}
-.editor-btn-danger {
-    background: #ef4444;
-    color: #ffffff;
-}
-
-@media (min-width: 768px) {
-    .locker-editor-header {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .item-editor-grid {
-        grid-template-columns: 1fr 1.5fr;
-    }
-}
-@media (min-width: 640px) {
-    .setup-locker-hero-content {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .setup-locker-hero-top {
-        text-align: left;
-    }
-    .setup-locker-actions {
-        justify-content: flex-end;
-    }
-}
-@media (max-width: 1024px) {
-    .locker-context .shelf-items-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-@media (max-width: 640px) {
-    .locker-context .shelf-items-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-.shelf-container {
-    background-color: #f8fafc;
-    border-radius: 1rem;
-    padding: 0.9rem;
-    box-shadow: inset 0 2px 6px rgba(15, 23, 42, 0.12);
-    border: 1px solid #e2e8f0;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-height: 180px;
-}
-.locker-editor-shelves .shelf-container {
-    flex: 0 0 auto;
-}
-.locker-editor-shell > .shelf-container {
-    flex: 1 1 auto;
-}
-
-.shelf-items-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 0.75rem;
-}
-.shelf-items-grid.shelf-drop {
-    outline: 2px dashed rgba(37, 99, 235, 0.5);
-    outline-offset: 4px;
-    background: rgba(37, 99, 235, 0.06);
-    border-radius: 0.75rem;
-}
-
-.locker-context .shelf-items-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-}
-.locker-context .item-editor-box,
-.locker-context .add-item-btn-circle {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-}
-
-.add-item-btn-circle {
-    background-color: #e2e8f0;
-    border-radius: 0.75rem;
-    aspect-ratio: 1 / 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 2.2rem;
-    color: #94a3b8;
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-    border: 1px dashed #cbd5f5;
-}
-.add-item-btn-circle:hover {
-    background-color: #dbeafe;
-    border-color: rgba(37, 99, 235, 0.35);
-}
-.item-editor-box {
-    aspect-ratio: 1 / 1;
-    background-color: #E5E7EB;
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-    box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.25);
-    -webkit-touch-callout: none;
-}
-.item-editor-box.editing {
-    border: 4px solid #180F5E;
-    box-shadow: 0 4px 8px 3px rgba(0,0,0,0.25);
-}
-.item-editor-box.dragging {
-    opacity: 0.5;
-    border: 2px dashed #180F5E;
-}
-.item-editor-box .item-name-overlay {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background-color: rgba(0,0,0,0.5);
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.25rem;
-    text-align: center;
-    word-break: break-word;
-}
-.item-editor-box.item-drop-before::before,
-.item-editor-box.item-drop-after::after {
-    content: "";
-    position: absolute;
-    left: 6px;
-    right: 6px;
-    height: 3px;
-    background: #2563eb;
-    border-radius: 999px;
-    z-index: 2;
-}
-.item-editor-box.item-drop-before::before {
-    top: 4px;
-}
-.item-editor-box.item-drop-after::after {
-    bottom: 4px;
-}
-.locker-context .item-editor-box.item-drop-before::before,
-.locker-context .item-editor-box.item-drop-after::after {
-    top: 6px;
-    bottom: 6px;
-    width: 3px;
-    height: auto;
-    left: auto;
-    right: auto;
-}
-.locker-context .item-editor-box.item-drop-before::before {
-    left: 4px;
-}
-.locker-context .item-editor-box.item-drop-after::after {
-    right: 4px;
-}
-
-.bg-blue-200 {
-    background-color: #bfdbfe;
-}
-
-/* Shell safety overrides */
-#shell-setup-wrapper .screen.active { flex-direction: column; }
-#shell-setup-wrapper,
-#shell-setup-wrapper .max-w-4xl { min-height: 0; }
 `;
 
-const SETUP_SCREEN_MARKUP = `
-<div class="bg-background flex flex-col h-full">
-  <header class="bg-blue drop-shadow p-4 flex items-center justify-between flex-shrink-0">
-    <div class="flex items-center">
-      <button id="back-btn" class="mr-3">
-        <img src="/design_assets/Back Icon.png" alt="Back" class="h-8 w-8">
-      </button>
-    </div>
-    <div class="flex items-center gap-3 flex-grow justify-center">
-      <img src="/design_assets/Flashover Logo.png" alt="Flashover Logo" class="h-9 w-9 object-contain">
-      <h1 class="text-white text-2xl font-bold">Appliance Setup</h1>
-    </div>
-    <div class="w-28 flex justify-end items-center">
-      <button id="header-save-btn" class="hidden bg-green-action-1 text-white font-bold py-2 px-4 rounded-lg shadow-md animate-pulse">Save</button>
-    </div>
-  </header>
+function el(tag, className) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  return node;
+}
 
-  <div class="max-w-4xl w-full mx-auto flex-grow flex flex-col">
-    <div id="select-locker-screen" class="screen active p-4 sm:p-6 flex-col h-full">
-      <div class="setup-locker-hero">
-        <div class="setup-locker-hero-content">
-          <div class="setup-locker-hero-top">
-            <div class="setup-locker-eyebrow">Appliance</div>
-            <h1 id="appliance-name-title" class="setup-locker-title">Loading appliance...</h1>
-            <div id="appliance-name-subtitle" class="setup-locker-subtitle" data-default="Choose a locker to edit items and containers.">Choose a locker to edit items and containers.</div>
-          </div>
-          <div class="setup-locker-actions">
-            <button id="create-locker-btn" class="setup-primary-btn">New locker</button>
-          </div>
-        </div>
-      </div>
-      <div class="setup-locker-list-header">
-        <div class="setup-locker-list-title">Lockers</div>
-        <div class="setup-locker-list-subtitle">Tap a locker to edit, or use quick actions on the right.</div>
-        <div class="setup-locker-list-subtitle">Drag and drop to reorder lockers.</div>
-      </div>
-      <div id="locker-loading-state" class="setup-locker-loading">
-        <div class="setup-spinner"></div>
-        <div class="setup-locker-loading-text">Fetching appliance setup...</div>
-      </div>
-      <div id="locker-list-container" class="setup-locker-list flex-grow overflow-y-auto hidden"></div>
-    </div>
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
 
-    <div id="locker-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
-      <div class="locker-editor-shell">
-        <div class="locker-editor-header">
-          <div class="locker-editor-meta">
-            <div class="locker-editor-label">Locker</div>
-            <div class="locker-editor-name-row">
-              <input type="text" id="locker-editor-name" placeholder="Locker name" class="locker-editor-name-input" readonly>
-            </div>
-            <div class="locker-editor-subtitle">Organize items and containers for this locker.</div>
-            <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
-          </div>
-        </div>
-        <div id="locker-editor-shelves" class="locker-editor-shelves"></div>
-      </div>
-    </div>
+function isPrivateImageRef(value) {
+  return typeof value === "string" && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
 
-    <div id="container-editor-screen" class="screen locker-editor-screen p-4 flex-col h-full">
-      <div class="locker-editor-shell">
-        <div class="locker-editor-header">
-          <div class="locker-editor-meta">
-            <div class="locker-editor-label">Container</div>
-            <h1 id="container-editor-title" class="locker-editor-heading">Editing Container</h1>
-            <div class="locker-editor-subtitle">Tap an item to edit details in a pop-up.</div>
-          </div>
-        </div>
-        <div class="shelf-container">
-          <div id="container-editor-items" class="shelf-items-grid flex-grow overflow-y-auto"></div>
-        </div>
-      </div>
-    </div>
+function isDirectImageRef(value) {
+  return typeof value === "string" && (
+    value.startsWith("blob:") ||
+    value.startsWith("/design_assets/") ||
+    value.startsWith("https://storage.googleapis.com/") ||
+    value.startsWith("https://firebasestorage.googleapis.com/")
+  );
+}
 
-    <div id="modals-container">
-      <div id="unsaved-changes-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
-        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl text-center">
-          <h3 class="text-xl font-bold mb-4">Unsaved Changes</h3>
-          <p class="text-gray-600 mb-6">You have unsaved changes. What would you like to do?</p>
-          <div class="flex flex-col space-y-3">
-            <button id="save-unsaved-btn" class="w-full bg-blue text-white font-bold py-3 px-4 rounded-lg">Save & Continue</button>
-            <button id="discard-unsaved-btn" class="w-full bg-red-action-1 text-white font-bold py-3 px-4 rounded-lg">Discard & Continue</button>
-            <button id="cancel-unsaved-btn" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-2">Cancel Navigation</button>
-          </div>
-        </div>
-      </div>
+function cloneItem(item) {
+  const next = isPlainObject(item) ? { ...item } : {};
+  next.id = String(next.id || Date.now());
+  next.name = String(next.name || "Item");
+  next.desc = String(next.desc || "");
+  next.type = next.type === "container" ? "container" : "item";
+  next.img = String(next.img || "");
+  if (next.type === "container") {
+    next.subItems = Array.isArray(next.subItems) ? next.subItems.map(cloneItem) : [];
+  } else {
+    delete next.subItems;
+  }
+  return next;
+}
 
-      <div id="item-editor-overlay" class="item-editor-overlay hidden">
-        <div id="item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
-          <div class="item-editor-header">
-            <div class="item-editor-title">Item details</div>
-            <div class="item-editor-subtitle">Update the name, photo, and description.</div>
-          </div>
-          <div class="item-editor-grid">
-            <label for="section-file-upload" class="item-upload cursor-pointer">
-              <img id="section-image-preview" src="" alt="" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
-              <span id="section-image-upload-text" class="text-blue p-2 flex flex-col items-center justify-center">
-                <span class="font-bold text-lg leading-tight">Item image</span>
-                <span class="text-gray-600 text-sm mt-1 block leading-tight">Click to upload</span>
-              </span>
-              <span id="section-image-status" class="item-upload-status hidden"></span>
-              <input id="section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-            </label>
-            <div class="item-fields">
-              <div>
-                <label class="item-field-label" for="section-item-name-input">Item name</label>
-                <input type="text" id="section-item-name-input" placeholder="Item name" class="item-input">
-              </div>
-              <div>
-                <label class="item-field-label" for="section-item-desc-input">Details</label>
-                <textarea id="section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
-              </div>
-              <div>
-                <label class="item-field-label" for="section-item-type-select">Item type</label>
-                <select id="section-item-type-select" class="item-select">
-                  <option value="item">Standard Item</option>
-                  <option value="container">Container</option>
-                </select>
-              </div>
-              <div id="move-locker-section" class="item-move">
-                <label class="item-field-label" for="move-locker-select">Move to locker</label>
-                <div class="item-move-row">
-                  <select id="move-locker-select" class="item-select"></select>
-                  <button id="move-locker-btn" class="editor-btn editor-btn-ghost" type="button">Move</button>
-                </div>
-                <div class="item-editor-subtitle">Moves to the start of the locker item area.</div>
-              </div>
-              <div class="item-move">
-                <label class="item-field-label">Item position</label>
-                <div class="item-order-row">
-                  <button id="section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
-                    <span class="item-order-icon">↑</span>
-                    <span>Move up</span>
-                  </button>
-                  <button id="section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
-                    <span class="item-order-icon">↓</span>
-                    <span>Move down</span>
-                  </button>
-                </div>
-                <div class="item-editor-subtitle">Changes the order shown in this locker.</div>
-              </div>
-              <button id="section-enter-container-btn" class="hidden w-full editor-btn editor-btn-secondary" type="button">Edit container items</button>
-            </div>
-          </div>
-          <div id="item-editor-actions" class="item-editor-actions">
-            <button id="section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
-            <div class="item-editor-action-group">
-              <button id="section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
-              <button id="section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
-            </div>
-          </div>
-        </div>
-      </div>
+function lockerItems(locker) {
+  if (Array.isArray(locker?.items)) return locker.items;
+  if (Array.isArray(locker?.shelves)) {
+    return locker.shelves.flatMap((shelf) => Array.isArray(shelf?.items) ? shelf.items : []);
+  }
+  return [];
+}
 
-      <div id="c-item-editor-overlay" class="item-editor-overlay hidden">
-        <div id="c-item-editor-section" class="item-editor-panel" style="opacity: 0; transition: opacity 0.3s ease;">
-          <div class="item-editor-header">
-            <div class="item-editor-title">Container item</div>
-            <div class="item-editor-subtitle">Edit the details for items inside this container.</div>
-          </div>
-          <div class="item-editor-grid">
-            <label for="c-section-file-upload" class="item-upload cursor-pointer">
-              <img id="c-section-image-preview" src="" alt="Preview" class="w-full h-full object-contain rounded absolute top-0 left-0 hidden">
-              <span class="text-blue font-bold text-lg">Item image</span>
-              <span class="text-gray-600 text-sm mt-1">Click to upload or change</span>
-              <span id="c-section-image-status" class="item-upload-status hidden"></span>
-              <input id="c-section-file-upload" type="file" accept="image/*" class="hidden-file-input">
-            </label>
-            <div class="item-fields">
-              <div>
-                <label class="item-field-label" for="c-section-item-name-input">Item name</label>
-                <input type="text" id="c-section-item-name-input" placeholder="Item name" class="item-input">
-              </div>
-              <div>
-                <label class="item-field-label" for="c-section-item-desc-input">Details</label>
-                <textarea id="c-section-item-desc-input" rows="3" placeholder="Item details" class="item-textarea"></textarea>
-              </div>
-              <div class="item-move">
-                <label class="item-field-label">Item position</label>
-                <div class="item-order-row">
-                  <button id="c-section-move-up-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
-                    <span class="item-order-icon">↑</span>
-                    <span>Move up</span>
-                  </button>
-                  <button id="c-section-move-down-btn" class="editor-btn editor-btn-ghost item-order-btn" type="button">
-                    <span class="item-order-icon">↓</span>
-                    <span>Move down</span>
-                  </button>
-                </div>
-                <div class="item-editor-subtitle">Changes the order shown inside this container.</div>
-              </div>
-            </div>
-          </div>
-          <div id="c-item-editor-actions" class="item-editor-actions">
-            <button id="c-section-delete-item-btn" class="editor-btn editor-btn-danger" type="button">Delete</button>
-            <div class="item-editor-action-group">
-              <button id="c-section-cancel-edit-btn" class="editor-btn editor-btn-ghost" type="button">Cancel</button>
-              <button id="c-section-save-item-btn" class="editor-btn editor-btn-primary" type="button">Save</button>
-            </div>
-          </div>
-        </div>
-      </div>
+function normalizeTruckData(data) {
+  const normalized = isPlainObject(data) ? data : {};
+  normalized.appliances = Array.isArray(normalized.appliances) ? normalized.appliances : [];
+  normalized.appliances = normalized.appliances.map((appliance) => ({
+    ...appliance,
+    id: String(appliance?.id || Date.now()),
+    name: String(appliance?.name || "Appliance"),
+    lockers: Array.isArray(appliance?.lockers)
+      ? appliance.lockers.map((locker) => {
+          const nextLocker = {
+            ...locker,
+            id: String(locker?.id || Date.now()),
+            name: String(locker?.name || "Locker"),
+            items: lockerItems(locker).map(cloneItem),
+          };
+          delete nextLocker.shelves;
+          return nextLocker;
+        })
+      : [],
+  }));
+  return normalized;
+}
 
-      <div id="name-locker-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
-        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-          <h3 id="locker-name-modal-title" class="text-xl font-bold mb-4">Create new locker</h3>
-          <input type="text" id="new-locker-name-input" placeholder="Enter locker name..." class="w-full bg-gray-100 rounded-lg p-2 border border-gray-300 placeholder-gray-500">
-          <div class="flex justify-end mt-6">
-            <button id="cancel-create-locker-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
-            <button id="save-new-locker-btn" class="bg-blue text-white font-bold py-2 px-4 rounded-lg">Create</button>
-          </div>
-        </div>
-      </div>
+function visitItems(data, visitor) {
+  (Array.isArray(data?.appliances) ? data.appliances : []).forEach((appliance) => {
+    (Array.isArray(appliance?.lockers) ? appliance.lockers : []).forEach((locker) => {
+      (Array.isArray(locker?.items) ? locker.items : []).forEach((item) => {
+        visitor(item);
+        (Array.isArray(item?.subItems) ? item.subItems : []).forEach(visitor);
+      });
+    });
+  });
+}
 
-      <div id="locker-actions-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 55;">
-        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-          <h3 id="locker-actions-title" class="text-xl font-bold mb-2">Locker actions</h3>
-          <p id="locker-actions-subtitle" class="text-gray-600 mb-6">Locker</p>
-          <div class="flex flex-col gap-2">
-            <button id="locker-actions-rename-btn" class="bg-gray-100 text-gray-900 font-bold py-2 px-4 rounded-lg">Rename</button>
-            <button id="locker-actions-delete-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
-            <button id="locker-actions-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
-          </div>
-        </div>
-      </div>
+function collectBlobImageItems(data) {
+  const items = [];
+  visitItems(data, (item) => {
+    if (typeof item?.img === "string" && item.img.startsWith("blob:")) items.push(item);
+  });
+  return items;
+}
 
-      <div id="delete-confirm-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 50;">
-        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-          <h3 id="delete-confirm-title" class="text-xl font-bold mb-2">Are you sure?</h3>
-          <p id="delete-confirm-text" class="text-gray-600 mb-6">This action cannot be undone.</p>
-          <div class="flex justify-end">
-            <button id="cancel-delete-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mr-2">Cancel</button>
-            <button id="confirm-delete-btn" class="bg-red-action-2 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
-          </div>
-        </div>
-      </div>
+function sameData(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
-      <div id="progress-modal" class="fixed inset-0 w-full h-full flex items-center justify-center hidden" style="background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 60;">
-        <div class="bg-white text-gray-900 rounded-2xl p-6 w-11/12 max-w-sm shadow-2xl">
-          <h3 id="progress-title" class="text-xl font-bold mb-4">Processing...</h3>
-          <p id="progress-text" class="text-gray-600 mb-4 text-center">Starting...</p>
-          <div class="w-full bg-gray-200 rounded-full h-4">
-            <div id="progress-bar" class="bg-blue h-4 rounded-full" style="width: 0%"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-`;
+function formatBytes(bytes, decimals = 1) {
+  if (!bytes) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+async function fetchJson(url, { token, method, body } = {}) {
+  const res = await fetch(url, {
+    method: method || "GET",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Request failed (${res.status})`);
+  return data;
+}
 
 function loadImageCompression() {
   if (window.imageCompression) return Promise.resolve();
   if (imageCompressionPromise) return imageCompressionPromise;
 
-  imageCompressionPromise = new Promise((resolve, reject) => {
+  imageCompressionPromise = new Promise((resolve) => {
     const script = document.createElement("script");
-    script.src =
-      "https://cdn.jsdelivr.net/npm/browser-image-compression@latest/dist/browser-image-compression.js";
+    script.src = "https://cdn.jsdelivr.net/npm/browser-image-compression@latest/dist/browser-image-compression.js";
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load image compression library"));
+    script.onerror = () => resolve();
     document.head.appendChild(script);
   });
-
   return imageCompressionPromise;
 }
 
-function loadSetupScript() {
-  if (window.initSetupPage) return Promise.resolve();
-  if (setupScriptPromise) return setupScriptPromise;
-
-  setupScriptPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "/js/setup.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load /js/setup.js"));
-    document.head.appendChild(script);
+async function compressIfNeeded(file) {
+  if (!file || file.size <= 900 * 1024) return file;
+  await loadImageCompression();
+  if (!window.imageCompression) return file;
+  return window.imageCompression(file, {
+    maxSizeMB: 0.85,
+    maxWidthOrHeight: 1600,
+    useWebWorker: true,
+    fileType: "image/webp",
   });
+}
 
-  return setupScriptPromise;
+function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    Object.entries(extraHeaders).forEach(([key, value]) => {
+      if (value) xhr.setRequestHeader(key, String(value));
+    });
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
+      else reject(new Error(xhr.statusText || `Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Network request failed"));
+    xhr.send(formData);
+  });
 }
 
 export async function renderSetupEditor({
@@ -1034,47 +476,1081 @@ export async function renderSetupEditor({
   brigadeId,
   applianceId,
   setShellChromeVisible,
+  setTitle,
+  setRouteGuard,
+  setBackHandler,
   navigateToSetupHome,
-  navigateToMenu,
 }) {
-  setShellChromeVisible?.(false);
+  setShellChromeVisible?.(true);
+  root.innerHTML = "";
 
-  root.innerHTML =
-    '<div id="shell-setup-wrapper" style="height:100%; min-height:0; display:flex; flex-direction:column; background:var(--background,#f3f4f6);"></div>';
-  const wrapper = root.querySelector("#shell-setup-wrapper");
+  let currentUser = auth?.currentUser || null;
+  let truckData = { appliances: [] };
+  let lastSavedTruckData = { appliances: [] };
+  let activeView = "lockers";
+  let activeLockerId = null;
+  let activeContainerId = null;
+  let hasUnsavedChanges = false;
+  let isSaving = false;
+  let savedIndicator = false;
+  let savedTimer = null;
+  let pendingUploads = new Map();
+  let privateImageUrlCache = new Map();
+  let privateImageUrlFailures = new Set();
+  let dragInfo = null;
+  let pointerDrag = null;
+  let pendingNavigation = null;
+  let itemDraft = null;
 
-  try {
-    if (typeof window.__setupCleanup === "function") window.__setupCleanup();
-  } catch (e) {}
-  window.__setupCleanup = null;
+  const style = el("style");
+  style.textContent = SETUP_EDITOR_STYLES;
+  root.appendChild(style);
 
-  localStorage.setItem("activeBrigadeId", brigadeId);
-  localStorage.setItem("selectedBrigadeId", brigadeId);
-  localStorage.setItem("selectedApplianceId", applianceId);
+  const page = el("section", "fs-page fs-setup-editor max-w-4xl mx-auto");
+  page.innerHTML = `
+    <div class="fs-setup-toolbar">
+      <div class="fs-setup-toolbar-inner">
+        <div class="fs-setup-status">
+          <div class="fs-setup-kicker" id="setup-editor-kicker">Appliance setup</div>
+          <div class="fs-setup-title" id="setup-editor-title">Loading appliance</div>
+          <div class="fs-setup-status-line" id="setup-editor-status">Fetching setup data.</div>
+        </div>
+        <button id="setup-save-btn" class="fs-btn fs-btn-primary fs-setup-save" type="button" disabled>Save</button>
+      </div>
+    </div>
+    <div id="setup-error" class="fs-alert fs-alert-error" style="display:none"></div>
+    <div id="setup-content" class="fs-stack"></div>
+  `;
+  root.appendChild(page);
 
-  const styleEl = document.createElement("style");
-  styleEl.textContent = SETUP_SCREEN_STYLES;
-  wrapper.appendChild(styleEl);
-  wrapper.insertAdjacentHTML("beforeend", SETUP_SCREEN_MARKUP);
+  const titleEl = page.querySelector("#setup-editor-title");
+  const kickerEl = page.querySelector("#setup-editor-kicker");
+  const statusEl = page.querySelector("#setup-editor-status");
+  const saveBtn = page.querySelector("#setup-save-btn");
+  const errorEl = page.querySelector("#setup-error");
+  const contentEl = page.querySelector("#setup-content");
 
-  await loadImageCompression();
-  await loadSetupScript();
+  const modalLayer = el("div");
+  root.appendChild(modalLayer);
 
-  if (typeof window.initSetupPage !== "function") {
-    throw new Error("setup.js did not expose initSetupPage()");
+  function setError(message) {
+    errorEl.textContent = message || "";
+    errorEl.style.display = message ? "block" : "none";
   }
 
-  const user = auth?.currentUser;
-  if (!user) {
-    navigateToMenu?.();
-    return;
+  function getAppliance() {
+    return truckData.appliances.find((appliance) => String(appliance.id) === String(applianceId)) || null;
   }
 
-  window.__setupCleanup = window.initSetupPage({
-    brigadeId,
-    applianceId,
-    isShell: true,
-    navigateToSetupHome,
-    navigateToMenu,
+  function getLocker(lockerId = activeLockerId) {
+    const appliance = getAppliance();
+    return appliance?.lockers?.find((locker) => String(locker.id) === String(lockerId)) || null;
+  }
+
+  function getContainer(containerId = activeContainerId) {
+    const locker = getLocker();
+    return locker?.items?.find((item) => String(item.id) === String(containerId) && item.type === "container") || null;
+  }
+
+  function getCurrentItems(context, parentId) {
+    if (context === "container") {
+      const container = getContainer(parentId);
+      if (!container) return [];
+      if (!Array.isArray(container.subItems)) container.subItems = [];
+      return container.subItems;
+    }
+    const locker = getLocker(parentId || activeLockerId);
+    if (!locker) return [];
+    if (!Array.isArray(locker.items)) locker.items = [];
+    return locker.items;
+  }
+
+  function markDirty() {
+    hasUnsavedChanges = !sameData(truckData, lastSavedTruckData);
+    updateToolbar();
+  }
+
+  function hasActiveUploads() {
+    return Array.from(pendingUploads.values()).some((entry) => entry?.status === "uploading");
+  }
+
+  function updateToolbar() {
+    const appliance = getAppliance();
+    const title = appliance?.name || "Appliance setup";
+    const locker = getLocker();
+    const container = getContainer();
+    titleEl.textContent = activeView === "container" && container
+      ? container.name
+      : activeView === "locker" && locker
+        ? locker.name
+        : title;
+    kickerEl.textContent = activeView === "container" ? "Container" : activeView === "locker" ? "Locker" : "Appliance setup";
+    setTitle?.(activeView === "lockers" ? title : titleEl.textContent);
+
+    let status = "All changes saved.";
+    if (isSaving) status = "Saving setup.";
+    else if (hasActiveUploads()) status = "Uploading images.";
+    else if (hasUnsavedChanges) status = "Unsaved changes.";
+    else if (savedIndicator) status = "Saved.";
+    statusEl.textContent = status;
+
+    saveBtn.disabled = isSaving || hasActiveUploads() || !hasUnsavedChanges;
+    saveBtn.textContent = isSaving ? "Saving..." : hasActiveUploads() ? "Uploading..." : savedIndicator ? "Saved" : "Save";
+  }
+
+  function showSaved() {
+    savedIndicator = true;
+    updateToolbar();
+    if (savedTimer) clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => {
+      savedIndicator = false;
+      updateToolbar();
+    }, 1600);
+  }
+
+  async function resolveImageDisplayUrl(imageRef) {
+    if (!imageRef) return "";
+    if (isDirectImageRef(imageRef)) return imageRef;
+    if (!isPrivateImageRef(imageRef) || !brigadeId || !currentUser) return "";
+    if (privateImageUrlCache.has(imageRef)) return privateImageUrlCache.get(imageRef);
+    if (privateImageUrlFailures.has(imageRef)) return "";
+
+    const fileName = imageRef.split("/").pop();
+    const token = await currentUser.getIdToken();
+    const response = await fetch(`/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      privateImageUrlFailures.add(imageRef);
+      return "";
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    privateImageUrlCache.set(imageRef, url);
+    return url;
+  }
+
+  function setImage(img, imageRef) {
+    img.dataset.imageRef = imageRef || "";
+    if (!imageRef) {
+      img.removeAttribute("src");
+      return;
+    }
+    if (isDirectImageRef(imageRef)) {
+      img.src = imageRef;
+      return;
+    }
+    void resolveImageDisplayUrl(imageRef).then((url) => {
+      if (url && img.dataset.imageRef === imageRef) img.src = url;
+    });
+  }
+
+  function makeIconButton(label, text) {
+    const btn = el("button", "fs-icon-btn");
+    btn.type = "button";
+    btn.setAttribute("aria-label", label);
+    btn.title = label;
+    btn.textContent = text;
+    return btn;
+  }
+
+  function render() {
+    updateToolbar();
+    if (activeView === "locker") {
+      renderLockerEditor();
+      return;
+    }
+    if (activeView === "container") {
+      renderContainerEditor();
+      return;
+    }
+    renderLockerList();
+  }
+
+  function renderLockerList() {
+    const appliance = getAppliance();
+    if (!appliance) return;
+    if (!Array.isArray(appliance.lockers)) appliance.lockers = [];
+    contentEl.innerHTML = "";
+
+    const hero = el("div", "fs-setup-hero");
+    hero.innerHTML = `
+      <div class="fs-setup-hero-label">Appliance</div>
+      <div class="fs-setup-hero-title"></div>
+      <div class="fs-setup-hero-copy">Choose a locker to edit its items and containers.</div>
+    `;
+    hero.querySelector(".fs-setup-hero-title").textContent = appliance.name || "Appliance";
+    contentEl.appendChild(hero);
+
+    const head = el("div", "fs-setup-section-head");
+    const left = el("div");
+    left.innerHTML = `
+      <div class="fs-setup-section-title">Lockers</div>
+      <div class="fs-setup-muted">Tap a locker to edit. Drag or use arrows to reorder.</div>
+    `;
+    const addBtn = el("button", "fs-btn fs-btn-primary fs-btn-compact");
+    addBtn.type = "button";
+    addBtn.textContent = "New locker";
+    addBtn.addEventListener("click", () => openLockerModal());
+    head.appendChild(left);
+    head.appendChild(addBtn);
+    contentEl.appendChild(head);
+
+    const list = el("div", "fs-setup-list");
+    if (appliance.lockers.length === 0) {
+      const empty = el("div", "fs-row");
+      empty.innerHTML = '<div><div class="fs-row-title">No lockers yet</div><div class="fs-row-meta">Create a locker to start adding items.</div></div>';
+      list.appendChild(empty);
+    }
+
+    appliance.lockers.forEach((locker, index) => {
+      const row = el("div", "fs-row fs-setup-row");
+      row.draggable = true;
+      row.dataset.lockerId = locker.id;
+      const itemCount = Array.isArray(locker.items) ? locker.items.length : 0;
+      const initial = (locker.name || "L").trim().charAt(0).toUpperCase() || "L";
+
+      const main = el("div", "fs-setup-row-main");
+      const badge = el("div", "fs-setup-badge");
+      badge.textContent = initial;
+      const text = el("div");
+      text.innerHTML = `<div class="fs-row-title"></div><div class="fs-row-meta"></div>`;
+      text.querySelector(".fs-row-title").textContent = locker.name || "Locker";
+      text.querySelector(".fs-row-meta").textContent = itemCount ? `${itemCount} item${itemCount === 1 ? "" : "s"}` : "No items yet";
+      main.appendChild(badge);
+      main.appendChild(text);
+
+      const actions = el("div", "fs-setup-row-actions");
+      const up = makeIconButton("Move up", "↑");
+      const down = makeIconButton("Move down", "↓");
+      const menu = makeIconButton("Locker actions", "⋯");
+      up.disabled = index === 0;
+      down.disabled = index === appliance.lockers.length - 1;
+      up.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveLocker(index, index - 1);
+      });
+      down.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveLocker(index, index + 1);
+      });
+      menu.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openLockerActions(locker);
+      });
+      actions.appendChild(up);
+      actions.appendChild(down);
+      actions.appendChild(menu);
+
+      row.appendChild(main);
+      row.appendChild(actions);
+      row.addEventListener("click", () => openLocker(locker.id));
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openLocker(locker.id);
+        }
+      });
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.addEventListener("dragstart", (e) => {
+        dragInfo = { type: "locker", id: locker.id };
+        row.classList.add("is-dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      row.addEventListener("dragend", () => {
+        dragInfo = null;
+        clearLockerDropState();
+        row.classList.remove("is-dragging");
+      });
+      row.addEventListener("dragover", (e) => {
+        if (dragInfo?.type !== "locker") return;
+        e.preventDefault();
+        clearLockerDropState();
+        const rect = row.getBoundingClientRect();
+        row.classList.add(e.clientY < rect.top + rect.height / 2 ? "fs-setup-drop-before" : "fs-setup-drop-after");
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("fs-setup-drop-before", "fs-setup-drop-after"));
+      row.addEventListener("drop", (e) => {
+        if (dragInfo?.type !== "locker") return;
+        e.preventDefault();
+        const from = appliance.lockers.findIndex((item) => String(item.id) === String(dragInfo.id));
+        let to = index;
+        const rect = row.getBoundingClientRect();
+        if (e.clientY >= rect.top + rect.height / 2) to += 1;
+        if (from < to) to -= 1;
+        moveLocker(from, to);
+      });
+      list.appendChild(row);
+    });
+    contentEl.appendChild(list);
+  }
+
+  function clearLockerDropState() {
+    root.querySelectorAll(".fs-setup-drop-before,.fs-setup-drop-after").forEach((node) => {
+      node.classList.remove("fs-setup-drop-before", "fs-setup-drop-after");
+    });
+  }
+
+  function moveLocker(from, to) {
+    const appliance = getAppliance();
+    if (!appliance || from < 0 || to < 0 || from === to || to >= appliance.lockers.length) return;
+    const [locker] = appliance.lockers.splice(from, 1);
+    appliance.lockers.splice(to, 0, locker);
+    markDirty();
+    render();
+  }
+
+  function openLocker(lockerId) {
+    activeLockerId = lockerId;
+    activeContainerId = null;
+    activeView = "locker";
+    render();
+  }
+
+  function renderLockerEditor() {
+    const locker = getLocker();
+    if (!locker) {
+      activeView = "lockers";
+      render();
+      return;
+    }
+    if (!Array.isArray(locker.items)) locker.items = [];
+    contentEl.innerHTML = "";
+
+    const card = el("div", "fs-card");
+    const inner = el("div", "fs-card-inner");
+    inner.innerHTML = `
+      <div class="fs-setup-editor-head">
+        <button id="setup-back-lockers" class="fs-btn fs-btn-secondary fs-btn-compact" type="button">Back to lockers</button>
+        <div class="fs-setup-name-row">
+          <div class="fs-field">
+            <label class="fs-label" for="setup-locker-name">Locker name</label>
+            <input id="setup-locker-name" class="fs-input" type="text">
+          </div>
+          <button id="setup-delete-locker" class="fs-btn fs-btn-danger fs-btn-compact" type="button">Delete locker</button>
+        </div>
+        <div class="fs-setup-muted">Tap an item to edit. Drag items in this grid to reorder them.</div>
+      </div>
+      <div id="setup-item-grid" class="fs-setup-item-grid"></div>
+    `;
+    card.appendChild(inner);
+    contentEl.appendChild(card);
+
+    const nameInput = inner.querySelector("#setup-locker-name");
+    nameInput.value = locker.name || "";
+    nameInput.addEventListener("change", () => {
+      locker.name = nameInput.value.trim() || "Locker";
+      markDirty();
+      updateToolbar();
+      render();
+    });
+    inner.querySelector("#setup-back-lockers").addEventListener("click", () => {
+      activeView = "lockers";
+      activeLockerId = null;
+      render();
+    });
+    inner.querySelector("#setup-delete-locker").addEventListener("click", () => {
+      openDeleteConfirm("locker", locker.id, locker.name || "Locker");
+    });
+
+    renderItemGrid(inner.querySelector("#setup-item-grid"), locker.items, "locker", locker.id);
+  }
+
+  function renderContainerEditor() {
+    const container = getContainer();
+    if (!container) {
+      activeView = "locker";
+      render();
+      return;
+    }
+    if (!Array.isArray(container.subItems)) container.subItems = [];
+    contentEl.innerHTML = "";
+
+    const card = el("div", "fs-card");
+    const inner = el("div", "fs-card-inner");
+    inner.innerHTML = `
+      <div class="fs-setup-editor-head">
+        <button id="setup-back-locker" class="fs-btn fs-btn-secondary fs-btn-compact" type="button">Back to locker</button>
+        <div>
+          <div class="fs-card-title"></div>
+          <div class="fs-card-subtitle">Items inside this container.</div>
+        </div>
+      </div>
+      <div id="setup-container-grid" class="fs-setup-item-grid"></div>
+    `;
+    inner.querySelector(".fs-card-title").textContent = container.name || "Container";
+    card.appendChild(inner);
+    contentEl.appendChild(card);
+    inner.querySelector("#setup-back-locker").addEventListener("click", () => {
+      activeView = "locker";
+      activeContainerId = null;
+      render();
+    });
+    renderItemGrid(inner.querySelector("#setup-container-grid"), container.subItems, "container", container.id);
+  }
+
+  function renderItemGrid(grid, items, context, parentId) {
+    grid.innerHTML = "";
+    items.forEach((item, index) => {
+      const card = el("button", "fs-setup-item-card");
+      card.type = "button";
+      card.draggable = true;
+      card.dataset.itemId = item.id;
+      card.dataset.context = context;
+      card.dataset.parentId = parentId;
+
+      if (item.img) {
+        const img = el("img", "fs-setup-item-image");
+        img.alt = "";
+        setImage(img, item.img);
+        card.appendChild(img);
+      } else {
+        const plus = el("div", "fs-setup-plus");
+        plus.textContent = item.type === "container" ? "▣" : "•";
+        card.appendChild(plus);
+      }
+      const name = el("div", "fs-setup-item-name");
+      name.textContent = item.name || "Item";
+      const meta = el("div", "fs-setup-item-meta");
+      meta.textContent = item.type === "container" ? `${(item.subItems || []).length} container item${(item.subItems || []).length === 1 ? "" : "s"}` : "Item";
+      card.appendChild(name);
+      card.appendChild(meta);
+
+      card.addEventListener("click", () => openItemModal({ context, itemId: item.id, parentId }));
+      card.addEventListener("dragstart", (e) => {
+        dragInfo = { type: "item", context, parentId, itemId: item.id };
+        card.classList.add("is-dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      card.addEventListener("dragend", () => {
+        dragInfo = null;
+        clearItemDropState();
+        card.classList.remove("is-dragging");
+      });
+      card.addEventListener("dragover", (e) => handleItemDragOver(e, card));
+      card.addEventListener("dragleave", () => card.classList.remove("is-drop-before", "is-drop-after"));
+      card.addEventListener("drop", (e) => handleItemDrop(e, card, index));
+      card.addEventListener("pointerdown", (e) => startPointerItemDrag(e, card));
+      card.addEventListener("pointermove", movePointerItemDrag);
+      card.addEventListener("pointerup", endPointerItemDrag);
+      card.addEventListener("pointercancel", endPointerItemDrag);
+      grid.appendChild(card);
+    });
+
+    const add = el("button", "fs-setup-item-card is-add");
+    add.type = "button";
+    add.innerHTML = '<div class="fs-setup-plus">+</div><div class="fs-setup-item-name">Add item</div>';
+    add.addEventListener("click", () => openItemModal({ context, parentId }));
+    add.addEventListener("dragover", (e) => {
+      if (dragInfo?.type !== "item" || dragInfo.context !== context || String(dragInfo.parentId) !== String(parentId)) return;
+      e.preventDefault();
+    });
+    add.addEventListener("drop", (e) => {
+      if (dragInfo?.type !== "item") return;
+      e.preventDefault();
+      moveItemWithinList(dragInfo.context, dragInfo.parentId, dragInfo.itemId, items.length);
+    });
+    grid.appendChild(add);
+  }
+
+  function clearItemDropState() {
+    root.querySelectorAll(".is-drop-before,.is-drop-after").forEach((node) => {
+      node.classList.remove("is-drop-before", "is-drop-after");
+    });
+  }
+
+  function handleItemDragOver(e, card) {
+    if (dragInfo?.type !== "item") return;
+    if (dragInfo.context !== card.dataset.context || String(dragInfo.parentId) !== String(card.dataset.parentId)) return;
+    e.preventDefault();
+    clearItemDropState();
+    const rect = card.getBoundingClientRect();
+    card.classList.add(e.clientX < rect.left + rect.width / 2 ? "is-drop-before" : "is-drop-after");
+  }
+
+  function handleItemDrop(e, card, index) {
+    if (dragInfo?.type !== "item") return;
+    if (dragInfo.context !== card.dataset.context || String(dragInfo.parentId) !== String(card.dataset.parentId)) return;
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    let to = index;
+    if (e.clientX >= rect.left + rect.width / 2) to += 1;
+    moveItemWithinList(dragInfo.context, dragInfo.parentId, dragInfo.itemId, to);
+  }
+
+  function startPointerItemDrag(e, card) {
+    if (e.pointerType === "mouse") return;
+    pointerDrag = {
+      card,
+      context: card.dataset.context,
+      parentId: card.dataset.parentId,
+      itemId: card.dataset.itemId,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+    };
+  }
+
+  function movePointerItemDrag(e) {
+    if (!pointerDrag || e.pointerType === "mouse") return;
+    const dx = Math.abs(e.clientX - pointerDrag.startX);
+    const dy = Math.abs(e.clientY - pointerDrag.startY);
+    if (!pointerDrag.active && (dx > 8 || dy > 8)) {
+      pointerDrag.active = true;
+      pointerDrag.card.classList.add("is-dragging");
+      pointerDrag.card.setPointerCapture?.(e.pointerId);
+    }
+    if (pointerDrag.active) e.preventDefault();
+  }
+
+  function endPointerItemDrag(e) {
+    if (!pointerDrag || e.pointerType === "mouse") return;
+    const current = pointerDrag;
+    pointerDrag = null;
+    current.card.classList.remove("is-dragging");
+    current.card.releasePointerCapture?.(e.pointerId);
+    if (!current.active) return;
+    const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".fs-setup-item-card[data-item-id]");
+    if (!hit || hit.dataset.context !== current.context || String(hit.dataset.parentId) !== String(current.parentId)) return;
+    const items = getCurrentItems(current.context, current.parentId);
+    let to = items.findIndex((item) => String(item.id) === String(hit.dataset.itemId));
+    const rect = hit.getBoundingClientRect();
+    if (e.clientX >= rect.left + rect.width / 2) to += 1;
+    moveItemWithinList(current.context, current.parentId, current.itemId, to);
+  }
+
+  function moveItemWithinList(context, parentId, itemId, to) {
+    const items = getCurrentItems(context, parentId);
+    const from = items.findIndex((item) => String(item.id) === String(itemId));
+    if (from < 0) return;
+    let nextTo = Math.max(0, Math.min(to, items.length));
+    if (from < nextTo) nextTo -= 1;
+    if (from === nextTo) return;
+    const [item] = items.splice(from, 1);
+    items.splice(nextTo, 0, item);
+    markDirty();
+    render();
+  }
+
+  function openLockerModal(locker = null) {
+    const isEdit = !!locker;
+    const modal = openModal({
+      title: isEdit ? "Rename locker" : "Create new locker",
+      body: `<div class="fs-field"><label class="fs-label" for="setup-locker-modal-name">Locker name</label><input id="setup-locker-modal-name" class="fs-input" type="text"></div>`,
+      actions: [
+        { label: "Cancel", className: "fs-btn-secondary", close: true },
+        { label: isEdit ? "Save" : "Create", className: "fs-btn-primary", action: () => saveLockerFromModal(modal, locker) },
+      ],
+    });
+    const input = modal.querySelector("#setup-locker-modal-name");
+    input.value = locker?.name || "";
+    setTimeout(() => input.focus(), 0);
+  }
+
+  function saveLockerFromModal(modal, locker) {
+    const input = modal.querySelector("#setup-locker-modal-name");
+    const name = input.value.trim();
+    if (!name) return;
+    const appliance = getAppliance();
+    if (!appliance) return;
+    if (locker) {
+      locker.name = name;
+    } else {
+      appliance.lockers.push({
+        id: String(Date.now()),
+        name,
+        items: [],
+      });
+    }
+    closeModal(modal);
+    markDirty();
+    render();
+  }
+
+  function openLockerActions(locker) {
+    const modal = openModal({
+      title: "Locker actions",
+      subtitle: locker.name || "Locker",
+      actions: [
+        { label: "Rename", className: "fs-btn-secondary", action: () => { closeModal(modal); openLockerModal(locker); } },
+        { label: "Delete", className: "fs-btn-danger", action: () => { closeModal(modal); openDeleteConfirm("locker", locker.id, locker.name || "Locker"); } },
+        { label: "Cancel", className: "fs-btn-secondary", close: true },
+      ],
+    });
+  }
+
+  function openItemModal({ context, itemId = null, parentId }) {
+    const items = getCurrentItems(context, parentId);
+    const existing = itemId ? items.find((item) => String(item.id) === String(itemId)) : null;
+    itemDraft = {
+      isNew: !existing,
+      context,
+      parentId,
+      itemId: existing?.id || String(Date.now()),
+      imageRef: existing?.img || "",
+    };
+    const canBeContainer = context === "locker";
+    const modal = openModal({
+      title: existing ? "Edit item" : "Add item",
+      extraClass: "fs-setup-modal-wide",
+      body: `
+        <div class="fs-setup-field-grid">
+          <div>
+            <label for="setup-item-image-input" class="fs-setup-image-picker" id="setup-item-image-picker">
+              <span class="fs-setup-preview-text">Item image<br>Tap to upload</span>
+            </label>
+            <input id="setup-item-image-input" class="fs-hidden-file" type="file" accept="image/*">
+            <div id="setup-item-image-status" class="fs-row-meta" style="margin-top:8px"></div>
+          </div>
+          <div class="fs-stack">
+            <div class="fs-field">
+              <label class="fs-label" for="setup-item-name">Name</label>
+              <input id="setup-item-name" class="fs-input" type="text">
+            </div>
+            <div class="fs-field">
+              <label class="fs-label" for="setup-item-desc">Description</label>
+              <textarea id="setup-item-desc" class="fs-input" rows="4"></textarea>
+            </div>
+            ${canBeContainer ? `
+              <div class="fs-field">
+                <label class="fs-label" for="setup-item-type">Type</label>
+                <select id="setup-item-type" class="fs-select">
+                  <option value="item">Item</option>
+                  <option value="container">Container</option>
+                </select>
+              </div>
+            ` : ""}
+            ${canBeContainer ? `
+              <div class="fs-field" id="setup-move-locker-field" style="display:none">
+                <label class="fs-label" for="setup-move-locker">Move to locker</label>
+                <select id="setup-move-locker" class="fs-select"></select>
+              </div>
+            ` : ""}
+          </div>
+        </div>
+      `,
+      actions: [
+        { label: "Delete", className: "fs-btn-danger", hidden: !existing, action: () => { closeModal(modal); openDeleteConfirm("item", itemDraft.itemId, existing?.name || "Item", context, parentId); } },
+        { label: "Move to another locker", className: "fs-btn-secondary", hidden: !existing || context !== "locker", action: () => revealMoveLocker(modal) },
+        { label: "Open container items", className: "fs-btn-secondary", hidden: context !== "locker", action: () => enterContainerFromModal(modal) },
+        { label: "Cancel", className: "fs-btn-secondary", close: true },
+        { label: "Save", className: "fs-btn-primary", action: () => saveItemFromModal(modal, { close: true }) },
+      ],
+    });
+
+    const nameInput = modal.querySelector("#setup-item-name");
+    const descInput = modal.querySelector("#setup-item-desc");
+    const typeInput = modal.querySelector("#setup-item-type");
+    const fileInput = modal.querySelector("#setup-item-image-input");
+    const picker = modal.querySelector("#setup-item-image-picker");
+    const status = modal.querySelector("#setup-item-image-status");
+    nameInput.value = existing?.name || "";
+    descInput.value = existing?.desc || "";
+    if (typeInput) {
+      typeInput.value = existing?.type === "container" ? "container" : "item";
+    }
+    renderPickerPreview(picker, itemDraft.imageRef);
+    status.textContent = itemDraft.imageRef?.startsWith("blob:") ? "Will upload on save." : "";
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (itemDraft.imageRef?.startsWith("blob:")) {
+        try { URL.revokeObjectURL(itemDraft.imageRef); } catch (err) {}
+        pendingUploads.delete(itemDraft.imageRef);
+      }
+      const blobUrl = URL.createObjectURL(file);
+      itemDraft.imageRef = blobUrl;
+      pendingUploads.set(blobUrl, { file, status: "ready" });
+      renderPickerPreview(picker, blobUrl);
+      status.textContent = "Will upload on save.";
+      updateToolbar();
+    });
+
+    populateMoveLockerSelect(modal);
+    updateContainerActionVisibility(modal);
+    typeInput?.addEventListener("change", () => updateContainerActionVisibility(modal));
+    setTimeout(() => nameInput.focus(), 0);
+  }
+
+  function renderPickerPreview(picker, imageRef) {
+    picker.innerHTML = "";
+    if (imageRef) {
+      const img = el("img");
+      img.alt = "";
+      setImage(img, imageRef);
+      picker.appendChild(img);
+      return;
+    }
+    const span = el("span", "fs-setup-preview-text");
+    span.innerHTML = "Item image<br>Tap to upload";
+    picker.appendChild(span);
+  }
+
+  function updateContainerActionVisibility(modal) {
+    const type = modal.querySelector("#setup-item-type")?.value || "item";
+    const buttons = Array.from(modal.querySelectorAll("[data-action-label]"));
+    const enterBtn = buttons.find((btn) => btn.dataset.actionLabel === "Open container items");
+    if (enterBtn) enterBtn.style.display = type === "container" ? "" : "none";
+  }
+
+  function revealMoveLocker(modal) {
+    const field = modal.querySelector("#setup-move-locker-field");
+    if (!field) return;
+    if (field.style.display !== "none") {
+      moveItemToLocker(modal);
+      return;
+    }
+    field.style.display = "";
+    const button = modal.querySelector('[data-action-label="Move to another locker"]');
+    if (button) {
+      button.textContent = "Move";
+      button.dataset.actionLabel = "Move";
+    }
+  }
+
+  function populateMoveLockerSelect(modal) {
+    const select = modal.querySelector("#setup-move-locker");
+    if (!select) return;
+    const appliance = getAppliance();
+    const lockers = (appliance?.lockers || []).filter((locker) => String(locker.id) !== String(activeLockerId));
+    select.innerHTML = "";
+    if (lockers.length === 0) {
+      const option = el("option");
+      option.value = "";
+      option.textContent = "No other lockers";
+      select.appendChild(option);
+      select.disabled = true;
+      return;
+    }
+    lockers.forEach((locker) => {
+      const option = el("option");
+      option.value = locker.id;
+      option.textContent = locker.name || "Locker";
+      select.appendChild(option);
+    });
+  }
+
+  function saveItemFromModal(modal, { close }) {
+    const name = modal.querySelector("#setup-item-name").value.trim();
+    if (!name) {
+      alert("Item name is required.");
+      return null;
+    }
+    const desc = modal.querySelector("#setup-item-desc").value;
+    const type = modal.querySelector("#setup-item-type")?.value === "container" ? "container" : "item";
+    const items = getCurrentItems(itemDraft.context, itemDraft.parentId);
+    let item = items.find((entry) => String(entry.id) === String(itemDraft.itemId));
+    if (!item) {
+      item = { id: itemDraft.itemId, name: "", desc: "", type: "item", img: "" };
+      items.push(item);
+    }
+    item.name = name;
+    item.desc = desc;
+    item.img = itemDraft.imageRef || "";
+    if (itemDraft.context === "locker") {
+      item.type = type;
+      if (type === "container") {
+        item.subItems = Array.isArray(item.subItems) ? item.subItems : [];
+      } else {
+        delete item.subItems;
+      }
+    } else {
+      item.type = "item";
+      delete item.subItems;
+    }
+    markDirty();
+    if (close) {
+      closeModal(modal);
+      render();
+    }
+    return item;
+  }
+
+  function enterContainerFromModal(modal) {
+    const typeInput = modal.querySelector("#setup-item-type");
+    if (typeInput) typeInput.value = "container";
+    const item = saveItemFromModal(modal, { close: false });
+    if (!item) return;
+    if (item.type !== "container") return;
+    activeContainerId = item.id;
+    activeView = "container";
+    closeModal(modal);
+    render();
+  }
+
+  function moveItemToLocker(modal) {
+    const item = saveItemFromModal(modal, { close: false });
+    if (!item) return;
+    const targetLockerId = modal.querySelector("#setup-move-locker")?.value;
+    if (!targetLockerId || String(targetLockerId) === String(activeLockerId)) return;
+    const source = getCurrentItems("locker", activeLockerId);
+    const index = source.findIndex((entry) => String(entry.id) === String(item.id));
+    if (index < 0) return;
+    const [moved] = source.splice(index, 1);
+    const targetLocker = getLocker(targetLockerId);
+    if (!targetLocker) return;
+    if (!Array.isArray(targetLocker.items)) targetLocker.items = [];
+    targetLocker.items.unshift(moved);
+    markDirty();
+    closeModal(modal);
+    render();
+  }
+
+  function openDeleteConfirm(type, id, name, context = "locker", parentId = activeLockerId) {
+    const modal = openModal({
+      title: "Are you sure?",
+      subtitle: `This will permanently delete ${name}.`,
+      actions: [
+        { label: "Cancel", className: "fs-btn-secondary", close: true },
+        { label: "Delete", className: "fs-btn-danger", action: () => { deleteEntity(type, id, context, parentId); closeModal(modal); } },
+      ],
+    });
+  }
+
+  function deleteEntity(type, id, context, parentId) {
+    const appliance = getAppliance();
+    if (!appliance) return;
+    if (type === "locker") {
+      appliance.lockers = appliance.lockers.filter((locker) => String(locker.id) !== String(id));
+      activeLockerId = null;
+      activeContainerId = null;
+      activeView = "lockers";
+    } else {
+      const items = getCurrentItems(context, parentId);
+      const item = items.find((entry) => String(entry.id) === String(id));
+      if (item?.img?.startsWith("blob:")) {
+        try { URL.revokeObjectURL(item.img); } catch (err) {}
+        pendingUploads.delete(item.img);
+      }
+      const index = items.findIndex((entry) => String(entry.id) === String(id));
+      if (index >= 0) items.splice(index, 1);
+    }
+    markDirty();
+    render();
+  }
+
+  function openUnsavedModal(target) {
+    pendingNavigation = target || null;
+    const modal = openModal({
+      title: "Unsaved changes",
+      subtitle: "Save changes before leaving this setup editor?",
+      actions: [
+        { label: "Cancel", className: "fs-btn-secondary", close: true },
+        { label: "Discard", className: "fs-btn-danger", action: () => { closeModal(modal); discardAndNavigate(); } },
+        { label: "Save", className: "fs-btn-primary", action: async () => {
+          const saved = await saveBrigadeData();
+          if (!saved) return;
+          closeModal(modal);
+          continuePendingNavigation();
+        } },
+      ],
+    });
+  }
+
+  function discardAndNavigate() {
+    truckData = JSON.parse(JSON.stringify(lastSavedTruckData));
+    hasUnsavedChanges = false;
+    continuePendingNavigation();
+  }
+
+  function continuePendingNavigation() {
+    const target = pendingNavigation;
+    pendingNavigation = null;
+    setRouteGuard?.(null);
+    if (target) window.location.hash = target;
+    else navigateToSetupHome?.();
+  }
+
+  function openModal({ title, subtitle = "", body = "", actions = [], extraClass = "" }) {
+    const backdrop = el("div", "fs-sheet-backdrop");
+    const card = el("div", `fs-card fs-setup-modal-card ${extraClass}`.trim());
+    const inner = el("div", "fs-card-inner fs-stack");
+    const head = el("div");
+    const heading = el("div", "fs-card-title");
+    heading.textContent = title;
+    head.appendChild(heading);
+    if (subtitle) {
+      const sub = el("div", "fs-card-subtitle");
+      sub.textContent = subtitle;
+      head.appendChild(sub);
+    }
+    inner.appendChild(head);
+    if (body) {
+      const bodyWrap = el("div");
+      bodyWrap.innerHTML = body;
+      inner.appendChild(bodyWrap);
+    }
+    const actionRow = el("div", "fs-setup-modal-actions");
+    actions.forEach((action) => {
+      const btn = el("button", `fs-btn ${action.className || "fs-btn-secondary"} fs-btn-compact`);
+      btn.type = "button";
+      btn.textContent = action.label;
+      btn.dataset.actionLabel = action.label;
+      if (action.hidden) btn.style.display = "none";
+      btn.addEventListener("click", () => {
+        if (action.close) closeModal(backdrop);
+        if (action.action) void action.action();
+      });
+      actionRow.appendChild(btn);
+    });
+    inner.appendChild(actionRow);
+    card.appendChild(inner);
+    backdrop.appendChild(card);
+    modalLayer.appendChild(backdrop);
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeModal(backdrop);
+    });
+    return backdrop;
+  }
+
+  function closeModal(modal) {
+    modal?.remove();
+  }
+
+  async function uploadBlobImageItem(item, index, total, progress) {
+    const blobUrl = item?.img || "";
+    if (!blobUrl.startsWith("blob:")) return;
+    const pending = pendingUploads.get(blobUrl);
+    const file = pending?.file || pending;
+    if (!file) {
+      item.img = "";
+      pendingUploads.delete(blobUrl);
+      return;
+    }
+    pendingUploads.set(blobUrl, { ...pending, status: "uploading" });
+    updateToolbar();
+
+    progress.textContent = `Compressing image ${index + 1} of ${total}`;
+    const compressedFile = await compressIfNeeded(file);
+    const formData = new FormData();
+    formData.append("image", compressedFile, compressedFile.name || "compressed-image.webp");
+    const token = await currentUser.getIdToken();
+    const responseText = await uploadWithProgress("/api/upload", token, formData, (event) => {
+      const loadedRatio = event.total ? event.loaded / event.total : 0;
+      const overall = ((index + loadedRatio) / total) * 100;
+      progress.dataset.progress = String(overall);
+      progress.textContent = `Uploading image ${index + 1} of ${total}: ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
+      progress.previousElementSibling.firstElementChild.style.width = `${overall}%`;
+    }, { "x-brigade-id": brigadeId });
+    const result = JSON.parse(responseText);
+    item.img = result.storagePath || result.filePath || "";
+    try { URL.revokeObjectURL(blobUrl); } catch (err) {}
+    pendingUploads.delete(blobUrl);
+  }
+
+  async function saveBrigadeData() {
+    if (!currentUser || !brigadeId || isSaving || hasActiveUploads()) return;
+    isSaving = true;
+    updateToolbar();
+    const progressModal = openModal({
+      title: "Saving setup",
+      body: '<div class="fs-stack"><div class="fs-setup-progress"><div></div></div><div id="setup-progress-text" class="fs-row-meta">Preparing to save.</div></div>',
+    });
+    const progressText = progressModal.querySelector("#setup-progress-text");
+    try {
+      const items = collectBlobImageItems(truckData);
+      for (let i = 0; i < items.length; i += 1) {
+        await uploadBlobImageItem(items[i], i, items.length, progressText);
+      }
+      progressText.textContent = "Saving data.";
+      progressText.previousElementSibling.firstElementChild.style.width = "100%";
+      const token = await currentUser.getIdToken();
+      await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, {
+        method: "POST",
+        token,
+        body: truckData,
+      });
+      lastSavedTruckData = JSON.parse(JSON.stringify(truckData));
+      hasUnsavedChanges = false;
+      showSaved();
+      return true;
+    } catch (error) {
+      console.error("Setup save failed:", error);
+      setError(error.message || "Failed to save appliance setup.");
+      hasUnsavedChanges = true;
+      return false;
+    } finally {
+      isSaving = false;
+      closeModal(progressModal);
+      updateToolbar();
+      render();
+    }
+  }
+
+  async function loadData() {
+    setError("");
+    contentEl.innerHTML = '<div class="fs-row"><div><div class="fs-row-title">Loading...</div><div class="fs-row-meta">Fetching appliance setup.</div></div></div>';
+    if (!brigadeId || !applianceId || !currentUser) {
+      navigateToSetupHome?.();
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken();
+      truckData = normalizeTruckData(await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, { token }));
+      const appliance = getAppliance();
+      if (!appliance) {
+        alert("Appliance not found in this brigade.");
+        navigateToSetupHome?.();
+        return;
+      }
+      lastSavedTruckData = JSON.parse(JSON.stringify(truckData));
+      hasUnsavedChanges = false;
+      activeView = "lockers";
+      render();
+    } catch (error) {
+      console.error("Setup load failed:", error);
+      setError(error.message || "Failed to load appliance setup.");
+      contentEl.innerHTML = "";
+    }
+  }
+
+  saveBtn.addEventListener("click", () => void saveBrigadeData());
+
+  function beforeUnloadHandler(e) {
+    if (!hasUnsavedChanges) return;
+    e.preventDefault();
+    e.returnValue = "";
+  }
+
+  window.addEventListener("beforeunload", beforeUnloadHandler);
+  setRouteGuard?.((target) => {
+    if (!hasUnsavedChanges || isSaving) return true;
+    openUnsavedModal(target);
+    return false;
   });
+  setBackHandler?.(() => {
+    if (activeView === "container") {
+      activeView = "locker";
+      activeContainerId = null;
+      render();
+      return true;
+    }
+    if (activeView === "locker") {
+      activeView = "lockers";
+      activeLockerId = null;
+      activeContainerId = null;
+      render();
+      return true;
+    }
+    return false;
+  });
+
+  window.__setupCleanup = () => {
+    window.removeEventListener("beforeunload", beforeUnloadHandler);
+    setRouteGuard?.(null);
+    setBackHandler?.(null);
+    if (savedTimer) clearTimeout(savedTimer);
+    pendingUploads.forEach((entry, blobUrl) => {
+      if (blobUrl.startsWith("blob:")) {
+        try { URL.revokeObjectURL(blobUrl); } catch (err) {}
+      }
+    });
+    privateImageUrlCache.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch (err) {}
+    });
+    modalLayer.remove();
+  };
+
+  await loadData();
 }

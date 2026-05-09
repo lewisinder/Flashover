@@ -42,6 +42,11 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.fs-header.hidden,
+.fs-tabbar.hidden {
+  display: none !important;
+}
+
 .fs-header-title {
   min-width: 0;
   overflow-wrap: anywhere;
