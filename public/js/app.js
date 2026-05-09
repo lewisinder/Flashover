@@ -1552,25 +1552,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Back button logic for setup.html
+        // Back button logic for the legacy setup redirect.
         if (path.includes('/setup.html')) {
-             if (screens.containerEditor && screens.containerEditor.classList.contains('active')) {
-                closeItemEditor();
-                renderLockerEditor();
-                showScreen('lockerEditor');
-            } else if (screens.lockerEditor && screens.lockerEditor.classList.contains('active')) {
-                const locker = findLockerById(currentlyEditing.lockerId);
-                const lockerNameInput = getElement('locker-editor-name');
-                if (locker && lockerNameInput && locker.name !== lockerNameInput.value) {
-                    locker.name = lockerNameInput.value;
-                    saveData(); 
-                }
-                closeItemEditor();
-                renderLockerSelection();
-                showScreen('selectLocker');
-            } else {
-                 window.location.href = '/select-appliance.html';
-            }
+            window.location.href = '/app.html#/setup';
             return;
         }
 
@@ -1585,7 +1569,7 @@ document.addEventListener('DOMContentLoaded', () => {
     delegateEvent('appliance-list', 'click', '.appliance-list-item', (e, item) => {
         if (e.target.closest('button')) return;
         localStorage.setItem('selectedApplianceId', item.dataset.applianceId);
-        window.location.href = '/setup.html';
+        window.location.href = `/app.html#/setup/${encodeURIComponent(item.dataset.applianceId)}`;
     });
     delegateEvent('appliance-list', 'click', '.edit-appliance-btn', (e, btn) => {
         const applianceId = btn.closest('.appliance-list-item').dataset.applianceId;
@@ -1906,8 +1890,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (path.includes('/select-appliance-for-check.html')) {
                     renderApplianceSelectionForCheck();
                 } else if (path.includes('/setup.html')) {
-                    renderLockerSelection();
-                    showScreen('selectLocker');
+                    window.location.href = '/app.html#/setup';
+                    return;
                 } else if (path.includes('/checks.html')) {
                     if (!checkInProgress) {
                         window.location.href = '/menu.html';

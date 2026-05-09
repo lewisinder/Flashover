@@ -110,7 +110,8 @@ function renderApplianceList() {
             
             // The entire div is now the main clickable element
             div.addEventListener('click', () => {
-                window.location.href = `setup.html?applianceId=${appliance.id}`;
+                localStorage.setItem('selectedApplianceId', appliance.id);
+                window.location.href = `/app.html#/setup/${encodeURIComponent(appliance.id)}`;
             });
 
             div.innerHTML = `
