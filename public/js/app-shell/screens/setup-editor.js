@@ -1,4 +1,5 @@
-let imageCompressionPromise = null;
+const SETUP_AUTOSAVE_DELAY_MS = 1000;
+const SETUP_IMAGE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
 
 const SETUP_EDITOR_STYLES = `
 .fs-setup-editor {
@@ -391,12 +392,21 @@ function visitItems(data, visitor) {
   });
 }
 
-function collectBlobImageItems(data) {
-  const items = [];
+function collectPrivateImageRefs(data) {
+  const refs = new Set();
   visitItems(data, (item) => {
-    if (typeof item?.img === "string" && item.img.startsWith("blob:")) items.push(item);
+    if (isPrivateImageRef(item?.img)) refs.add(item.img);
   });
-  return items;
+  return refs;
+}
+
+function collectItemImageRefs(item) {
+  const refs = [];
+  if (isPrivateImageRef(item?.img)) refs.push(item.img);
+  (Array.isArray(item?.subItems) ? item.subItems : []).forEach((subItem) => {
+    refs.push(...collectItemImageRefs(subItem));
+  });
+  return refs;
 }
 
 function sameData(a, b) {
@@ -426,33 +436,6 @@ async function fetchJson(url, { token, method, body } = {}) {
   return data;
 }
 
-function loadImageCompression() {
-  if (window.imageCompression) return Promise.resolve();
-  if (imageCompressionPromise) return imageCompressionPromise;
-
-  imageCompressionPromise = new Promise((resolve) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/browser-image-compression@latest/dist/browser-image-compression.js";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => resolve();
-    document.head.appendChild(script);
-  });
-  return imageCompressionPromise;
-}
-
-async function compressIfNeeded(file) {
-  if (!file || file.size <= 900 * 1024) return file;
-  await loadImageCompression();
-  if (!window.imageCompression) return file;
-  return window.imageCompression(file, {
-    maxSizeMB: 0.85,
-    maxWidthOrHeight: 1600,
-    useWebWorker: true,
-    fileType: "image/webp",
-  });
-}
-
 function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -465,8 +448,15 @@ function uploadWithProgress(url, token, formData, onProgress, extraHeaders = {})
       if (event.lengthComputable) onProgress?.(event);
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText);
-      else reject(new Error(xhr.statusText || `Upload failed (${xhr.status})`));
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.responseText);
+        return;
+      }
+      let message = xhr.statusText || `Upload failed (${xhr.status})`;
+      try {
+        message = JSON.parse(xhr.responseText)?.message || message;
+      } catch (err) {}
+      reject(new Error(message));
     };
     xhr.onerror = () => reject(new Error("Network request failed"));
     xhr.send(formData);
@@ -495,15 +485,19 @@ export async function renderSetupEditor({
   let activeContainerId = null;
   let hasUnsavedChanges = false;
   let isSaving = false;
+  let saveErrorMessage = "";
   let savedIndicator = false;
   let savedTimer = null;
+  let autosaveTimer = null;
   let pendingUploads = new Map();
+  let pendingUploadedImages = new Set();
   let privateImageUrlCache = new Map();
   let privateImageUrlFailures = new Set();
   let dragInfo = null;
   let pointerDrag = null;
   let pendingNavigation = null;
   let itemDraft = null;
+  const modalCloseHandlers = new WeakMap();
 
   const style = el("style");
   style.textContent = SETUP_EDITOR_STYLES;
@@ -570,6 +564,10 @@ export async function renderSetupEditor({
 
   function markDirty() {
     hasUnsavedChanges = !sameData(truckData, lastSavedTruckData);
+    if (hasUnsavedChanges) {
+      saveErrorMessage = "";
+      scheduleAutosave();
+    }
     updateToolbar();
   }
 
@@ -591,14 +589,15 @@ export async function renderSetupEditor({
     setTitle?.(activeView === "lockers" ? title : titleEl.textContent);
 
     let status = "All changes saved.";
-    if (isSaving) status = "Saving setup.";
+    if (isSaving) status = "Saving changes.";
     else if (hasActiveUploads()) status = "Uploading images.";
+    else if (saveErrorMessage) status = "Save failed.";
     else if (hasUnsavedChanges) status = "Unsaved changes.";
     else if (savedIndicator) status = "Saved.";
     statusEl.textContent = status;
 
     saveBtn.disabled = isSaving || hasActiveUploads() || !hasUnsavedChanges;
-    saveBtn.textContent = isSaving ? "Saving..." : hasActiveUploads() ? "Uploading..." : savedIndicator ? "Saved" : "Save";
+    saveBtn.textContent = isSaving ? "Saving..." : hasActiveUploads() ? "Uploading..." : savedIndicator ? "Saved" : "Save now";
   }
 
   function showSaved() {
@@ -609,6 +608,63 @@ export async function renderSetupEditor({
       savedIndicator = false;
       updateToolbar();
     }, 1600);
+  }
+
+  function clearAutosaveTimer() {
+    if (!autosaveTimer) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+
+  function scheduleAutosave() {
+    clearAutosaveTimer();
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
+      void saveBrigadeData({ source: "autosave" });
+    }, SETUP_AUTOSAVE_DELAY_MS);
+  }
+
+  async function deleteUploadedImageRef(imageRef) {
+    if (!isPrivateImageRef(imageRef) || !currentUser || !brigadeId) return;
+    const fileName = imageRef.split("/").pop();
+    if (!fileName) return;
+    try {
+      const token = await currentUser.getIdToken();
+      await fetch(`/api/image/${encodeURIComponent(fileName)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "x-brigade-id": brigadeId,
+        },
+      });
+    } catch (error) {
+      console.warn("Failed to clean up uploaded setup image:", imageRef, error);
+    }
+  }
+
+  function cleanupPendingUploadedImage(imageRef) {
+    if (!pendingUploadedImages.has(imageRef)) return;
+    pendingUploadedImages.delete(imageRef);
+    void deleteUploadedImageRef(imageRef);
+  }
+
+  function cleanupPendingUploadedImages(refs) {
+    refs.forEach((ref) => cleanupPendingUploadedImage(ref));
+  }
+
+  async function cleanupUnsavedUploadedImages() {
+    const refs = Array.from(pendingUploadedImages);
+    pendingUploadedImages.clear();
+    await Promise.all(refs.map((ref) => deleteUploadedImageRef(ref)));
+  }
+
+  async function uploadSetupImageFile(file, onProgress) {
+    const formData = new FormData();
+    formData.append("image", file, file.name || "setup-image");
+    const token = await currentUser.getIdToken();
+    const responseText = await uploadWithProgress("/api/upload", token, formData, onProgress, { "x-brigade-id": brigadeId });
+    const result = JSON.parse(responseText);
+    return result.storagePath || result.filePath || "";
   }
 
   async function resolveImageDisplayUrl(imageRef) {
@@ -1083,6 +1139,103 @@ export async function renderSetupEditor({
     });
   }
 
+  function cleanupUncommittedDraftImage(draft) {
+    if (!draft) return;
+    if (!draft.committed) {
+      draft.cancelled = true;
+      if (draft.objectUrl) {
+        try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
+      }
+      if (draft.uploadId) pendingUploads.delete(draft.uploadId);
+      if (draft.uploadedImageRef) cleanupPendingUploadedImage(draft.uploadedImageRef);
+    }
+    if (itemDraft === draft) itemDraft = null;
+    updateToolbar();
+  }
+
+  function updateItemModalUploadState(modal, draft, statusText = "") {
+    const status = modal.querySelector("#setup-item-image-status");
+    if (status) status.textContent = statusText || "";
+    const busy = draft?.uploadStatus === "uploading";
+    const buttons = Array.from(modal.querySelectorAll("[data-action-label]"));
+    buttons.forEach((button) => {
+      const label = button.dataset.actionLabel;
+      if (["Save", "Open container items", "Move"].includes(label)) {
+        button.disabled = busy;
+      }
+    });
+  }
+
+  function startDraftImageUpload({ modal, draft, file, picker }) {
+    if (file.size > SETUP_IMAGE_UPLOAD_MAX_BYTES) {
+      draft.uploadStatus = "error";
+      draft.uploadError = "File too large. Please choose an image under 8MB.";
+      updateItemModalUploadState(modal, draft, draft.uploadError);
+      return;
+    }
+
+    if (draft.objectUrl) {
+      try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
+    }
+    if (draft.uploadedImageRef) {
+      cleanupPendingUploadedImage(draft.uploadedImageRef);
+      draft.uploadedImageRef = "";
+    }
+    if (draft.uploadId) pendingUploads.delete(draft.uploadId);
+
+    const uploadId = `setup-upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const objectUrl = URL.createObjectURL(file);
+    draft.uploadId = uploadId;
+    draft.objectUrl = objectUrl;
+    draft.imageRef = objectUrl;
+    draft.uploadStatus = "uploading";
+    draft.uploadError = "";
+    pendingUploads.set(uploadId, { status: "uploading", objectUrl });
+    renderPickerPreview(picker, objectUrl);
+    updateItemModalUploadState(modal, draft, "Uploading image...");
+    updateToolbar();
+
+    void uploadSetupImageFile(file, (event) => {
+      const total = event.total ? formatBytes(event.total) : "";
+      const loaded = formatBytes(event.loaded);
+      updateItemModalUploadState(modal, draft, total ? `Uploading image: ${loaded} / ${total}` : `Uploading image: ${loaded}`);
+    }).then((storagePath) => {
+      pendingUploads.delete(uploadId);
+      if (!storagePath) throw new Error("Upload did not return an image path.");
+      if (draft.cancelled || draft.uploadId !== uploadId || itemDraft !== draft) {
+        void deleteUploadedImageRef(storagePath);
+        return;
+      }
+      pendingUploadedImages.add(storagePath);
+      draft.uploadedImageRef = storagePath;
+      draft.imageRef = storagePath;
+      draft.uploadStatus = "uploaded";
+      if (draft.objectUrl) {
+        try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
+        draft.objectUrl = "";
+      }
+      renderPickerPreview(picker, storagePath);
+      updateItemModalUploadState(modal, draft, "Image uploaded. Save item to keep it.");
+      updateToolbar();
+    }).catch((error) => {
+      pendingUploads.delete(uploadId);
+      if (draft.cancelled || draft.uploadId !== uploadId || itemDraft !== draft) {
+        updateToolbar();
+        return;
+      }
+      draft.imageRef = draft.originalImageRef || "";
+      draft.uploadStatus = "error";
+      draft.uploadError = error.message || "Image upload failed.";
+      if (draft.objectUrl) {
+        try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
+        draft.objectUrl = "";
+      }
+      renderPickerPreview(picker, draft.imageRef);
+      updateItemModalUploadState(modal, draft, draft.uploadError);
+      updateToolbar();
+    });
+  }
+
   function openItemModal({ context, itemId = null, parentId }) {
     const items = getCurrentItems(context, parentId);
     const existing = itemId ? items.find((item) => String(item.id) === String(itemId)) : null;
@@ -1091,8 +1244,17 @@ export async function renderSetupEditor({
       context,
       parentId,
       itemId: existing?.id || String(Date.now()),
+      originalImageRef: existing?.img || "",
       imageRef: existing?.img || "",
+      uploadedImageRef: "",
+      uploadStatus: "",
+      uploadError: "",
+      uploadId: "",
+      objectUrl: "",
+      committed: false,
+      cancelled: false,
     };
+    const draft = itemDraft;
     const canBeContainer = context === "locker";
     const modal = openModal({
       title: existing ? "Edit item" : "Add item",
@@ -1134,12 +1296,13 @@ export async function renderSetupEditor({
         </div>
       `,
       actions: [
-        { label: "Delete", className: "fs-btn-danger", hidden: !existing, action: () => { closeModal(modal); openDeleteConfirm("item", itemDraft.itemId, existing?.name || "Item", context, parentId); } },
+        { label: "Delete", className: "fs-btn-danger", hidden: !existing, action: () => { closeModal(modal); openDeleteConfirm("item", draft.itemId, existing?.name || "Item", context, parentId); } },
         { label: "Move to another locker", className: "fs-btn-secondary", hidden: !existing || context !== "locker", action: () => revealMoveLocker(modal) },
         { label: "Open container items", className: "fs-btn-secondary", hidden: context !== "locker", action: () => enterContainerFromModal(modal) },
-        { label: "Cancel", className: "fs-btn-secondary", close: true },
+        { label: "Cancel", className: "fs-btn-secondary", action: () => closeModal(modal) },
         { label: "Save", className: "fs-btn-primary", action: () => saveItemFromModal(modal, { close: true }) },
       ],
+      onClose: () => cleanupUncommittedDraftImage(draft),
     });
 
     const nameInput = modal.querySelector("#setup-item-name");
@@ -1147,27 +1310,17 @@ export async function renderSetupEditor({
     const typeInput = modal.querySelector("#setup-item-type");
     const fileInput = modal.querySelector("#setup-item-image-input");
     const picker = modal.querySelector("#setup-item-image-picker");
-    const status = modal.querySelector("#setup-item-image-status");
     nameInput.value = existing?.name || "";
     descInput.value = existing?.desc || "";
     if (typeInput) {
       typeInput.value = existing?.type === "container" ? "container" : "item";
     }
-    renderPickerPreview(picker, itemDraft.imageRef);
-    status.textContent = itemDraft.imageRef?.startsWith("blob:") ? "Will upload on save." : "";
+    renderPickerPreview(picker, draft.imageRef);
+    updateItemModalUploadState(modal, draft, "");
     fileInput.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      if (itemDraft.imageRef?.startsWith("blob:")) {
-        try { URL.revokeObjectURL(itemDraft.imageRef); } catch (err) {}
-        pendingUploads.delete(itemDraft.imageRef);
-      }
-      const blobUrl = URL.createObjectURL(file);
-      itemDraft.imageRef = blobUrl;
-      pendingUploads.set(blobUrl, { file, status: "ready" });
-      renderPickerPreview(picker, blobUrl);
-      status.textContent = "Will upload on save.";
-      updateToolbar();
+      startDraftImageUpload({ modal, draft, file, picker });
     });
 
     populateMoveLockerSelect(modal);
@@ -1235,6 +1388,10 @@ export async function renderSetupEditor({
   }
 
   function saveItemFromModal(modal, { close }) {
+    if (itemDraft?.uploadStatus === "uploading") {
+      alert("Please wait for the image upload to finish.");
+      return null;
+    }
     const name = modal.querySelector("#setup-item-name").value.trim();
     if (!name) {
       alert("Item name is required.");
@@ -1262,6 +1419,7 @@ export async function renderSetupEditor({
       item.type = "item";
       delete item.subItems;
     }
+    itemDraft.committed = true;
     markDirty();
     if (close) {
       closeModal(modal);
@@ -1315,6 +1473,8 @@ export async function renderSetupEditor({
     const appliance = getAppliance();
     if (!appliance) return;
     if (type === "locker") {
+      const locker = appliance.lockers.find((entry) => String(entry.id) === String(id));
+      cleanupPendingUploadedImages((locker?.items || []).flatMap(collectItemImageRefs));
       appliance.lockers = appliance.lockers.filter((locker) => String(locker.id) !== String(id));
       activeLockerId = null;
       activeContainerId = null;
@@ -1322,10 +1482,7 @@ export async function renderSetupEditor({
     } else {
       const items = getCurrentItems(context, parentId);
       const item = items.find((entry) => String(entry.id) === String(id));
-      if (item?.img?.startsWith("blob:")) {
-        try { URL.revokeObjectURL(item.img); } catch (err) {}
-        pendingUploads.delete(item.img);
-      }
+      if (item) cleanupPendingUploadedImages(collectItemImageRefs(item));
       const index = items.findIndex((entry) => String(entry.id) === String(id));
       if (index >= 0) items.splice(index, 1);
     }
@@ -1337,7 +1494,7 @@ export async function renderSetupEditor({
     pendingNavigation = target || null;
     const modal = openModal({
       title: "Unsaved changes",
-      subtitle: "Save changes before leaving this setup editor?",
+      subtitle: saveErrorMessage || "Save changes before leaving this setup editor?",
       actions: [
         { label: "Cancel", className: "fs-btn-secondary", close: true },
         { label: "Discard", className: "fs-btn-danger", action: () => { closeModal(modal); discardAndNavigate(); } },
@@ -1351,9 +1508,23 @@ export async function renderSetupEditor({
     });
   }
 
-  function discardAndNavigate() {
+  function openUploadBlockedModal(target) {
+    pendingNavigation = target || null;
+    openModal({
+      title: "Upload in progress",
+      subtitle: "Please wait for the image upload to finish before leaving setup.",
+      actions: [
+        { label: "OK", className: "fs-btn-primary", close: true },
+      ],
+    });
+  }
+
+  async function discardAndNavigate() {
+    clearAutosaveTimer();
+    await cleanupUnsavedUploadedImages();
     truckData = JSON.parse(JSON.stringify(lastSavedTruckData));
     hasUnsavedChanges = false;
+    saveErrorMessage = "";
     continuePendingNavigation();
   }
 
@@ -1365,7 +1536,7 @@ export async function renderSetupEditor({
     else navigateToSetupHome?.();
   }
 
-  function openModal({ title, subtitle = "", body = "", actions = [], extraClass = "" }) {
+  function openModal({ title, subtitle = "", body = "", actions = [], extraClass = "", onClose = null }) {
     const backdrop = el("div", "fs-sheet-backdrop");
     const card = el("div", `fs-card fs-setup-modal-card ${extraClass}`.trim());
     const inner = el("div", "fs-card-inner fs-stack");
@@ -1401,6 +1572,7 @@ export async function renderSetupEditor({
     card.appendChild(inner);
     backdrop.appendChild(card);
     modalLayer.appendChild(backdrop);
+    if (typeof onClose === "function") modalCloseHandlers.set(backdrop, onClose);
     backdrop.addEventListener("click", (e) => {
       if (e.target === backdrop) closeModal(backdrop);
     });
@@ -1408,56 +1580,21 @@ export async function renderSetupEditor({
   }
 
   function closeModal(modal) {
+    if (!modal) return;
+    const onClose = modalCloseHandlers.get(modal);
+    modalCloseHandlers.delete(modal);
+    if (onClose) onClose();
     modal?.remove();
   }
 
-  async function uploadBlobImageItem(item, index, total, progress) {
-    const blobUrl = item?.img || "";
-    if (!blobUrl.startsWith("blob:")) return;
-    const pending = pendingUploads.get(blobUrl);
-    const file = pending?.file || pending;
-    if (!file) {
-      item.img = "";
-      pendingUploads.delete(blobUrl);
-      return;
-    }
-    pendingUploads.set(blobUrl, { ...pending, status: "uploading" });
-    updateToolbar();
-
-    progress.textContent = `Compressing image ${index + 1} of ${total}`;
-    const compressedFile = await compressIfNeeded(file);
-    const formData = new FormData();
-    formData.append("image", compressedFile, compressedFile.name || "compressed-image.webp");
-    const token = await currentUser.getIdToken();
-    const responseText = await uploadWithProgress("/api/upload", token, formData, (event) => {
-      const loadedRatio = event.total ? event.loaded / event.total : 0;
-      const overall = ((index + loadedRatio) / total) * 100;
-      progress.dataset.progress = String(overall);
-      progress.textContent = `Uploading image ${index + 1} of ${total}: ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`;
-      progress.previousElementSibling.firstElementChild.style.width = `${overall}%`;
-    }, { "x-brigade-id": brigadeId });
-    const result = JSON.parse(responseText);
-    item.img = result.storagePath || result.filePath || "";
-    try { URL.revokeObjectURL(blobUrl); } catch (err) {}
-    pendingUploads.delete(blobUrl);
-  }
-
-  async function saveBrigadeData() {
-    if (!currentUser || !brigadeId || isSaving || hasActiveUploads()) return;
+  async function saveBrigadeData({ source = "manual" } = {}) {
+    clearAutosaveTimer();
+    if (!currentUser || !brigadeId || isSaving || hasActiveUploads() || !hasUnsavedChanges) return false;
     isSaving = true;
+    saveErrorMessage = "";
+    setError("");
     updateToolbar();
-    const progressModal = openModal({
-      title: "Saving setup",
-      body: '<div class="fs-stack"><div class="fs-setup-progress"><div></div></div><div id="setup-progress-text" class="fs-row-meta">Preparing to save.</div></div>',
-    });
-    const progressText = progressModal.querySelector("#setup-progress-text");
     try {
-      const items = collectBlobImageItems(truckData);
-      for (let i = 0; i < items.length; i += 1) {
-        await uploadBlobImageItem(items[i], i, items.length, progressText);
-      }
-      progressText.textContent = "Saving data.";
-      progressText.previousElementSibling.firstElementChild.style.width = "100%";
       const token = await currentUser.getIdToken();
       await fetchJson(`/api/brigades/${encodeURIComponent(brigadeId)}/data`, {
         method: "POST",
@@ -1466,18 +1603,22 @@ export async function renderSetupEditor({
       });
       lastSavedTruckData = JSON.parse(JSON.stringify(truckData));
       hasUnsavedChanges = false;
+      const savedRefs = collectPrivateImageRefs(truckData);
+      pendingUploadedImages.forEach((ref) => {
+        if (savedRefs.has(ref)) pendingUploadedImages.delete(ref);
+        else cleanupPendingUploadedImage(ref);
+      });
       showSaved();
       return true;
     } catch (error) {
       console.error("Setup save failed:", error);
-      setError(error.message || "Failed to save appliance setup.");
+      saveErrorMessage = error.message || "Failed to save appliance setup.";
+      setError(saveErrorMessage);
       hasUnsavedChanges = true;
       return false;
     } finally {
       isSaving = false;
-      closeModal(progressModal);
       updateToolbar();
-      render();
     }
   }
 
@@ -1508,16 +1649,20 @@ export async function renderSetupEditor({
     }
   }
 
-  saveBtn.addEventListener("click", () => void saveBrigadeData());
+  saveBtn.addEventListener("click", () => void saveBrigadeData({ source: "manual" }));
 
   function beforeUnloadHandler(e) {
-    if (!hasUnsavedChanges) return;
+    if (!hasUnsavedChanges && !hasActiveUploads()) return;
     e.preventDefault();
     e.returnValue = "";
   }
 
   window.addEventListener("beforeunload", beforeUnloadHandler);
   setRouteGuard?.((target) => {
+    if (hasActiveUploads()) {
+      openUploadBlockedModal(target);
+      return false;
+    }
     if (!hasUnsavedChanges || isSaving) return true;
     openUnsavedModal(target);
     return false;
@@ -1544,9 +1689,11 @@ export async function renderSetupEditor({
     setRouteGuard?.(null);
     setBackHandler?.(null);
     if (savedTimer) clearTimeout(savedTimer);
-    pendingUploads.forEach((entry, blobUrl) => {
-      if (blobUrl.startsWith("blob:")) {
-        try { URL.revokeObjectURL(blobUrl); } catch (err) {}
+    clearAutosaveTimer();
+    void cleanupUnsavedUploadedImages();
+    pendingUploads.forEach((entry) => {
+      if (entry?.objectUrl) {
+        try { URL.revokeObjectURL(entry.objectUrl); } catch (err) {}
       }
     });
     privateImageUrlCache.forEach((url) => {

@@ -1400,12 +1400,23 @@ async function authorizeImageUpload(req, res, { adminOnly = false } = {}) {
     }
 }
 
+async function unlinkTmpFile(filePath) {
+    if (!filePath) return;
+    try {
+        await fs.unlink(filePath);
+    } catch (error) {
+        if (error && error.code !== 'ENOENT') {
+            console.warn('Failed to clean up temp upload file:', filePath, error);
+        }
+    }
+}
+
 function handleImageUploadRequest(req, res, brigadeId) {
     if (!req.rawBody) {
         console.error('Request did not have a rawBody.');
         return res.status(400).json({ message: 'Missing request body.' });
     }
-    const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+    const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
     const busboy = Busboy({ headers: req.headers, limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 1 } });
     const tmpdir = os.tmpdir();
     const uploads = {};
@@ -1440,20 +1451,21 @@ function handleImageUploadRequest(req, res, brigadeId) {
         fileWrites.push(promise);
     });
     busboy.on('finish', async () => {
-        await Promise.all(fileWrites);
-        if (fileTooLarge) {
-            return res.status(413).json({ message: 'File too large.' });
-        }
-        if (invalidFileType) {
-            return res.status(400).json({ message: 'Only image uploads are supported.' });
-        }
-        if (!uploads.filepath) {
-            return res.status(400).json({ message: 'No file uploaded.' });
-        }
+        let processedTmpPath = '';
         try {
+            await Promise.all(fileWrites);
+            if (fileTooLarge) {
+                return res.status(413).json({ message: 'File too large. Please choose an image under 8MB.' });
+            }
+            if (invalidFileType) {
+                return res.status(400).json({ message: 'Only image uploads are supported.' });
+            }
+            if (!uploads.filepath) {
+                return res.status(400).json({ message: 'No file uploaded.' });
+            }
             const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
             const newFilename = `image-${uniqueSuffix}.webp`;
-            const processedTmpPath = path.join(tmpdir, newFilename);
+            processedTmpPath = path.join(tmpdir, newFilename);
             await sharp(uploads.filepath)
                 .resize(800, 800, { fit: 'cover', withoutEnlargement: true })
                 .toFormat('webp', { quality: 80 })
@@ -1470,8 +1482,6 @@ function handleImageUploadRequest(req, res, brigadeId) {
                     },
                 },
             });
-            await fs.unlink(uploads.filepath);
-            await fs.unlink(processedTmpPath);
             res.status(200).json({
                 message: 'File uploaded successfully!',
                 filePath: destination,
@@ -1480,7 +1490,14 @@ function handleImageUploadRequest(req, res, brigadeId) {
             });
         } catch (error) {
             console.error('Upload process failed:', error);
-            res.status(500).json({ message: 'Failed to process and upload image.' });
+            if (!res.headersSent) {
+                res.status(500).json({ message: 'Failed to process and upload image.' });
+            }
+        } finally {
+            await Promise.all([
+                unlinkTmpFile(uploads.filepath),
+                unlinkTmpFile(processedTmpPath),
+            ]);
         }
     });
     busboy.end(req.rawBody);
