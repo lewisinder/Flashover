@@ -40,10 +40,10 @@ Important files:
 - `public/js/app-shell/app-shell.js`: app shell orchestration
 - `public/js/app-shell/router.js`: hash route handling
 - `public/js/app-shell/screens/*`: app shell screens
-- `public/checks.html` and `public/js/checks.js`: legacy check workflow embedded by the shell
-- `public/setup.html` and `public/js/setup.js`: legacy setup workflow embedded by the shell
+- `public/checks.html`: redirect shim for older check links
+- `public/setup.html` and `public/js/setup.js`: legacy setup workflow kept for standalone compatibility
 
-Keep changes compatible with both the app shell and the embedded legacy setup/check flows.
+Keep changes compatible with the app shell native setup/check flows and the remaining standalone compatibility shims.
 
 ## Deployment And Local Development
 
@@ -160,4 +160,3 @@ For rules changes:
 - Never commit secrets, tokens, app passwords, service account JSON, `.env` files, or generated access tokens.
 - Do not print raw tokens in chat or logs.
 - SMTP configuration belongs in Firebase Functions runtime config or the deployment workflow, not hardcoded source.
-
