@@ -2,6 +2,8 @@ const CHECK_SESSION_ID_KEY = "checkSessionId";
 const CHECK_SESSION_BRIGADE_ID_KEY = "checkSessionBrigadeId";
 const CHECK_SESSION_APPLIANCE_ID_KEY = "checkSessionApplianceId";
 const CHECK_SESSION_STARTUP_MODE_KEY = "checkSessionStartupMode";
+const IMAGE_PRELOAD_CONCURRENCY = 4;
+const PRIORITY_IMAGE_PRELOAD_COUNT = 4;
 
 const CHECK_RUNNER_STYLES = `
 .fs-check-runner {
@@ -50,6 +52,21 @@ const CHECK_RUNNER_STYLES = `
 .fs-check-status {
   color: var(--fs-muted);
   font-size: 13px;
+}
+.fs-check-image-preload {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 700;
+}
+.fs-check-image-preload.is-warning {
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
 }
 .fs-check-view {
   display: grid;
@@ -761,6 +778,13 @@ export async function renderCheck({
     isRechecking: false,
   };
   const privateImageUrlCache = new Map();
+  const privateImageUrlPromises = new Map();
+  let imagePreloadState = {
+    status: "idle",
+    loaded: 0,
+    total: 0,
+    failed: 0,
+  };
 
   const container = el("section", "fs-page fs-check-runner max-w-4xl mx-auto");
   root.appendChild(container);
@@ -780,16 +804,27 @@ export async function renderCheck({
     if (isDirectImageRef(imageRef)) return imageRef;
     if (!isPrivateImageRef(imageRef) || !currentUser) return "";
     if (privateImageUrlCache.has(imageRef)) return privateImageUrlCache.get(imageRef);
+    if (privateImageUrlPromises.has(imageRef)) return privateImageUrlPromises.get(imageRef);
     const fileName = imageRef.split("/").pop();
-    const token = await tokenPromise();
-    const res = await fetch(
-      `/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    if (!res.ok) throw new Error(`Image load failed (${res.status})`);
-    const url = URL.createObjectURL(await res.blob());
-    privateImageUrlCache.set(imageRef, url);
-    return url;
+    const promise = (async () => {
+      const token = await tokenPromise();
+      const res = await fetch(
+        `/api/brigades/${encodeURIComponent(brigadeId)}/images/${encodeURIComponent(fileName)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(`Image load failed (${res.status})`);
+      const blob = await res.blob();
+      if (disposed) return "";
+      const url = URL.createObjectURL(blob);
+      privateImageUrlCache.set(imageRef, url);
+      return url;
+    })();
+    privateImageUrlPromises.set(imageRef, promise);
+    try {
+      return await promise;
+    } finally {
+      privateImageUrlPromises.delete(imageRef);
+    }
   }
 
   function setImageSource(img, imageRef, fallback = "/design_assets/Flashover Logo.png") {
@@ -831,6 +866,113 @@ export async function renderCheck({
       if (item) return item;
     }
     return null;
+  }
+
+  function addImageRef(refs, imageRef) {
+    if (!imageRef) return;
+    const ref = String(imageRef);
+    if (!ref || privateImageUrlCache.has(ref) || refs.includes(ref)) return;
+    refs.push(ref);
+  }
+
+  function collectItemImageRefs(items, refs) {
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      addImageRef(refs, item?.img);
+      if (item?.type === "container") collectItemImageRefs(item.subItems, refs);
+    });
+  }
+
+  function collectApplianceImageRefs() {
+    const refs = [];
+    (appliance?.lockers || []).forEach((locker) => collectItemImageRefs(getLockerItems(locker), refs));
+    return refs;
+  }
+
+  function preloadImageRefs(refs, concurrency, onProgress) {
+    let nextIndex = 0;
+    async function worker() {
+      while (!disposed && nextIndex < refs.length) {
+        const ref = refs[nextIndex];
+        nextIndex += 1;
+        try {
+          await resolveImageDisplayUrl(ref);
+          onProgress(true);
+        } catch (error) {
+          console.warn("Could not preload appliance image:", error);
+          onProgress(false);
+        }
+      }
+    }
+    return Promise.all(Array.from({ length: Math.min(concurrency, refs.length) }, worker));
+  }
+
+  async function preloadPriorityImageRefs(refs, priorityCount, onProgress) {
+    const priorityRefs = refs.slice(0, priorityCount);
+    for (const ref of priorityRefs) {
+      if (disposed) return refs.slice(priorityRefs.length);
+      try {
+        await resolveImageDisplayUrl(ref);
+        onProgress(true);
+      } catch (error) {
+        console.warn("Could not preload appliance image:", error);
+        onProgress(false);
+      }
+    }
+    return refs.slice(priorityRefs.length);
+  }
+
+  function updateImagePreloadBanner() {
+    const banner = container.querySelector("[data-check-image-preload]");
+    if (!banner) return;
+    if (imagePreloadState.status === "loading") {
+      banner.classList.remove("is-warning");
+      banner.textContent = `Downloading appliance images ${imagePreloadState.loaded}/${imagePreloadState.total}`;
+      banner.hidden = false;
+      return;
+    }
+    if (imagePreloadState.status === "failed") {
+      banner.classList.add("is-warning");
+      banner.textContent = `${imagePreloadState.failed} appliance image${imagePreloadState.failed === 1 ? "" : "s"} could not download. They will retry when opened.`;
+      banner.hidden = false;
+      return;
+    }
+    banner.hidden = true;
+  }
+
+  function renderImagePreloadBanner() {
+    const visible = imagePreloadState.status === "loading" || imagePreloadState.status === "failed";
+    const warning = imagePreloadState.status === "failed";
+    const text = imagePreloadState.status === "loading"
+      ? `Downloading appliance images ${imagePreloadState.loaded}/${imagePreloadState.total}`
+      : warning
+        ? `${imagePreloadState.failed} appliance image${imagePreloadState.failed === 1 ? "" : "s"} could not download. They will retry when opened.`
+        : "";
+    return `<div class="fs-check-image-preload ${warning ? "is-warning" : ""}" data-check-image-preload ${visible ? "" : "hidden"}>${escapeHtml(text)}</div>`;
+  }
+
+  function startBackgroundImagePreload() {
+    const refs = collectApplianceImageRefs();
+    if (!refs.length) {
+      imagePreloadState = { status: "complete", loaded: 0, total: 0, failed: 0 };
+      updateImagePreloadBanner();
+      return;
+    }
+    imagePreloadState = { status: "loading", loaded: 0, total: refs.length, failed: 0 };
+    updateImagePreloadBanner();
+    const onProgress = (success) => {
+      if (disposed) return;
+      imagePreloadState.loaded += 1;
+      if (!success) imagePreloadState.failed += 1;
+      updateImagePreloadBanner();
+    };
+    void (async () => {
+      const remainingRefs = await preloadPriorityImageRefs(refs, PRIORITY_IMAGE_PRELOAD_COUNT, onProgress);
+      await preloadImageRefs(remainingRefs, IMAGE_PRELOAD_CONCURRENCY, onProgress);
+    })().then(() => {
+      if (disposed) return;
+      imagePreloadState.status = imagePreloadState.failed ? "failed" : "complete";
+      updateImagePreloadBanner();
+    });
   }
 
   function getCurrentLocker() {
@@ -1169,6 +1311,7 @@ export async function renderCheck({
           </div>
           <div>${actionHtml}</div>
         </div>
+        ${renderImagePreloadBanner()}
       </div>
     `;
   }
@@ -1946,6 +2089,7 @@ export async function renderCheck({
     closeExitModal();
     window.removeEventListener("beforeunload", beforeUnload);
     if (modalClickHandler) document.removeEventListener("click", modalClickHandler);
+    privateImageUrlPromises.clear();
     privateImageUrlCache.forEach((url) => URL.revokeObjectURL(url));
     privateImageUrlCache.clear();
     setRouteGuard?.(null);
@@ -2038,6 +2182,7 @@ export async function renderCheck({
       selectNextTopLevelItem(locker);
     }
     render();
+    startBackgroundImagePreload();
   } catch (error) {
     console.error("Could not start native check runner:", error);
     renderError(error.message || "Could not start this check.");
