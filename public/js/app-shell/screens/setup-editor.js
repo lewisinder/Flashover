@@ -251,7 +251,7 @@ const SETUP_EDITOR_STYLES = `
   gap: 14px;
 }
 .fs-setup-image-picker {
-  min-height: 150px;
+  height: 150px;
   border: 2px dashed rgba(37, 99, 235, 0.3);
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.03);
@@ -304,6 +304,9 @@ const SETUP_EDITOR_STYLES = `
   }
   .fs-setup-field-grid {
     grid-template-columns: 1fr;
+  }
+  .fs-setup-image-picker {
+    height: 118px;
   }
 }
 `;
