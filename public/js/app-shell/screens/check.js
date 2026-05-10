@@ -52,13 +52,13 @@ const CHECK_RUNNER_STYLES = `
 }
 .fs-check-focus {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 14px;
-  align-items: stretch;
+  grid-template-columns: minmax(190px, 42%) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
 }
 .fs-check-photo {
-  width: 120px;
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   border-radius: 16px;
   overflow: hidden;
   background: rgba(15, 23, 42, 0.06);
@@ -81,12 +81,16 @@ const CHECK_RUNNER_STYLES = `
   font-size: 15px;
   white-space: pre-wrap;
 }
+.fs-check-detail-status {
+  margin-top: 12px;
+}
 .fs-check-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
   gap: 12px;
 }
 .fs-check-tile {
+  position: relative;
   min-height: 136px;
   border: 1px solid rgba(203, 213, 225, 0.9);
   border-radius: 16px;
@@ -108,10 +112,28 @@ const CHECK_RUNNER_STYLES = `
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16), 0 12px 24px rgba(15, 23, 42, 0.08);
 }
+.fs-check-tile.is-active::after {
+  content: "✓";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #2563eb;
+  border: 2px solid #fff;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.3);
+}
 .fs-check-tile.status-present { border-color: rgba(22, 163, 74, 0.5); background: rgba(240, 253, 244, 0.92); }
 .fs-check-tile.status-missing { border-color: rgba(225, 29, 72, 0.5); background: rgba(255, 241, 242, 0.92); }
-.fs-check-tile.status-note { border-color: rgba(234, 88, 12, 0.5); background: rgba(255, 247, 237, 0.92); }
-.fs-check-tile.status-partial { border-color: rgba(124, 58, 237, 0.5); background: rgba(245, 243, 255, 0.92); }
+.fs-check-tile.status-note { border-color: rgba(194, 65, 12, 0.58); background: rgba(255, 237, 213, 0.94); }
+.fs-check-tile.status-partial { border-color: rgba(245, 158, 11, 0.62); background: rgba(254, 243, 199, 0.94); }
 .fs-check-thumb {
   position: relative;
   overflow: hidden;
@@ -152,8 +174,8 @@ const CHECK_RUNNER_STYLES = `
 }
 .fs-check-pill.present { background: #16a34a; }
 .fs-check-pill.missing { background: #e11d48; }
-.fs-check-pill.note { background: #ea580c; }
-.fs-check-pill.partial { background: #7c3aed; }
+.fs-check-pill.note { background: #c2410c; }
+.fs-check-pill.partial { background: #f59e0b; color: #111827; }
 .fs-check-pill.untouched { background: #94a3b8; }
 .fs-check-actions {
   position: fixed;
@@ -189,6 +211,32 @@ const CHECK_RUNNER_STYLES = `
 .fs-check-status-row {
   width: 100%;
   text-align: left;
+}
+.fs-check-status-row.fs-row-active {
+  border-color: #2563eb;
+  background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16), 0 12px 28px rgba(37, 99, 235, 0.16);
+}
+.fs-check-status-row.fs-row-active .fs-row-title {
+  color: #0f172a;
+}
+.fs-check-status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fs-check-selected-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.24);
 }
 .fs-check-summary-list {
   display: grid;
@@ -246,16 +294,50 @@ const CHECK_RUNNER_STYLES = `
     min-height: calc(100vh - 74px);
   }
   .fs-check-focus {
-    grid-template-columns: 92px minmax(0, 1fr);
-  }
-  .fs-check-photo {
-    width: 92px;
+    grid-template-columns: minmax(160px, 44%) minmax(0, 1fr);
+    gap: 12px;
   }
   .fs-check-item-name {
-    font-size: 20px;
+    font-size: 18px;
+  }
+  .fs-check-item-desc {
+    font-size: 13px;
+    line-height: 1.35;
   }
   .fs-check-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 7px;
+  }
+  .fs-check-tile {
+    min-height: 82px;
+    grid-template-rows: 44px auto;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 10px;
+  }
+  .fs-check-thumb {
+    border-radius: 8px;
+  }
+  .fs-check-tile-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.08;
+  }
+  .fs-check-tile-meta {
+    margin-top: 2px;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .fs-check-tile.is-active::after {
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    border-width: 1px;
   }
   .fs-check-actions-inner {
     gap: 8px;
@@ -263,6 +345,18 @@ const CHECK_RUNNER_STYLES = `
   .fs-check-action {
     min-height: 54px;
     font-size: 14px;
+  }
+}
+@media (max-width: 380px) {
+  .fs-check-focus {
+    grid-template-columns: 1fr;
+  }
+  .fs-check-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .fs-check-tile {
+    min-height: 92px;
+    grid-template-rows: 52px auto;
   }
 }
 `;
@@ -1006,10 +1100,25 @@ export async function renderCheck({
     });
   }
 
+  function scrollActiveTileIntoView() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const activeTile = container.querySelector(".fs-check-tile.is-active");
+        if (!activeTile) return;
+        activeTile.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      });
+    });
+  }
+
   function renderActiveView() {
     updateTitle();
     const locker = getCurrentLocker();
     const currentItem = getCurrentItem();
+    const currentResult = currentItem ? getResult(currentItem.id) : null;
     const items = currentCheckState.isInsideContainer
       ? (findItemById(currentCheckState.parentItemId)?.subItems || [])
       : getLockerItems(locker);
@@ -1031,6 +1140,9 @@ export async function renderCheck({
                 <div class="fs-check-kicker">${escapeHtml(currentCheckState.isRechecking ? "Re-check" : currentCheckState.isInsideContainer ? "Checking container item" : "Checking item")}</div>
                 <div class="fs-check-item-name">${escapeHtml(currentItem?.name || (items.length ? "Select an item" : "No items in this section"))}</div>
                 <div class="fs-check-item-desc">${escapeHtml(currentItem?.desc || (items.length ? "Tap an item below or use the controls to record its status." : "Use locker status to choose the next section."))}</div>
+                <div class="fs-check-detail-status">
+                  <span class="fs-check-pill ${escapeHtml(statusClass(currentResult?.status))}">${escapeHtml(statusLabel(currentResult?.status))}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1050,12 +1162,15 @@ export async function renderCheck({
                 const result = getResult(item.id);
                 const status = statusClass(result?.status);
                 const active = String(item.id) === String(currentCheckState.selectedItemId);
+                const meta = item.type === "container"
+                  ? `${(item.subItems || []).length} item${(item.subItems || []).length === 1 ? "" : "s"}`
+                  : statusLabel(result?.status);
                 return `
-                  <button class="fs-check-tile status-${status}${active ? " is-active" : ""}" type="button" data-action="select-item" data-item-id="${escapeHtml(item.id)}" data-parent-id="${escapeHtml(currentCheckState.isInsideContainer ? currentCheckState.parentItemId : "")}">
+                  <button class="fs-check-tile status-${status}${active ? " is-active" : ""}" type="button" data-action="select-item" data-item-id="${escapeHtml(item.id)}" data-parent-id="${escapeHtml(currentCheckState.isInsideContainer ? currentCheckState.parentItemId : "")}" aria-pressed="${active ? "true" : "false"}" title="${escapeHtml(`${item.name || "Item"} - ${meta}`)}">
                     ${renderThumb(item)}
                     <span class="fs-check-tile-label">
                       <span class="fs-check-tile-title">${escapeHtml(item.name || "Item")}</span>
-                      <span class="fs-check-tile-meta">${escapeHtml(item.type === "container" ? `${(item.subItems || []).length} container item${(item.subItems || []).length === 1 ? "" : "s"}` : statusLabel(result?.status))}</span>
+                      <span class="fs-check-tile-meta">${escapeHtml(meta)}</span>
                     </span>
                   </button>
                 `;
@@ -1067,6 +1182,7 @@ export async function renderCheck({
       ${renderActionBar(currentItem)}
     `;
     hydrateImages();
+    scrollActiveTileIntoView();
   }
 
   function renderActionBar(currentItem) {
@@ -1126,12 +1242,15 @@ export async function renderCheck({
                 const selected = String(locker.id) === String(nextLockerToStartId);
                 const count = getLockerItems(locker).filter((item) => answerExists(item.id)).length;
                 return `
-                  <button class="fs-row fs-check-status-row ${selected ? "fs-row-active" : ""}" type="button" data-action="choose-locker" data-locker-id="${escapeHtml(locker.id)}">
+                  <button class="fs-row fs-check-status-row ${selected ? "fs-row-active" : ""}" type="button" data-action="choose-locker" data-locker-id="${escapeHtml(locker.id)}" aria-pressed="${selected ? "true" : "false"}">
                     <div>
                       <div class="fs-row-title">${escapeHtml(locker.name || "Locker")}</div>
                       <div class="fs-row-meta">${escapeHtml(`${count}/${getLockerItems(locker).length} checked`)}</div>
                     </div>
-                    <span class="fs-check-pill ${escapeHtml(statusClass(status === "complete" ? "present" : status))}">${escapeHtml(status === "complete" ? "Complete" : statusLabel(status))}</span>
+                    <span class="fs-check-status-actions">
+                      ${selected ? '<span class="fs-check-selected-marker">Selected</span>' : ""}
+                      <span class="fs-check-pill ${escapeHtml(statusClass(status === "complete" ? "present" : status))}">${escapeHtml(status === "complete" ? "Complete" : statusLabel(status))}</span>
+                    </span>
                   </button>
                 `;
               }).join("")}
