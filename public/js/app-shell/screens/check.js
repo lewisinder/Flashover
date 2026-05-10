@@ -748,6 +748,7 @@ export async function renderCheck({
   let pendingNavigation = null;
   let hasCompletedReport = false;
   let modalClickHandler = null;
+  const activeItemsScrollPositions = new Map();
   let pendingAnswerSaves = new Set();
   let failedAnswerPayloads = new Map();
   let latestAnswerSequenceByItem = new Map();
@@ -1186,6 +1187,21 @@ export async function renderCheck({
     });
   }
 
+  function activeItemsScrollKey() {
+    return [
+      currentCheckState.lockerId || "",
+      currentCheckState.isInsideContainer ? currentCheckState.parentItemId || "" : "locker",
+    ].join(":");
+  }
+
+  function restoreActiveItemsScroll(scrollArea, scrollKey) {
+    if (!scrollArea) return;
+    scrollArea.scrollTop = activeItemsScrollPositions.get(scrollKey) || 0;
+    scrollArea.addEventListener("scroll", () => {
+      activeItemsScrollPositions.set(scrollKey, scrollArea.scrollTop);
+    }, { passive: true });
+  }
+
   function scrollActiveTileIntoView() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -1203,7 +1219,7 @@ export async function renderCheck({
           : activeRect.bottom - scrollRect.bottom + padding;
         scrollArea.scrollBy({
           top: Math.round(delta),
-          behavior: "smooth",
+          behavior: "auto",
         });
       });
     });
@@ -1219,6 +1235,11 @@ export async function renderCheck({
       : getLockerItems(locker);
     const parent = currentCheckState.isInsideContainer ? findItemById(currentCheckState.parentItemId) : null;
     const contextTitle = currentCheckState.isInsideContainer ? (parent?.name || "Container") : (locker?.name || "Locker");
+    const scrollKey = activeItemsScrollKey();
+    const currentScrollArea = container.querySelector(".fs-check-items-scroll");
+    if (currentScrollArea?.dataset.scrollKey === scrollKey) {
+      activeItemsScrollPositions.set(scrollKey, currentScrollArea.scrollTop);
+    }
 
     container.innerHTML = `
       ${renderToolbar(currentCheckState.isInsideContainer ? "Container" : "Locker", contextTitle, `
@@ -1244,7 +1265,7 @@ export async function renderCheck({
         </div>
 
         <div class="fs-card fs-check-items-card">
-          <div class="fs-card-inner fs-stack fs-check-items-scroll">
+          <div class="fs-card-inner fs-stack fs-check-items-scroll" data-scroll-key="${escapeHtml(scrollKey)}">
             <div class="fs-row">
               <div>
                 <div class="fs-row-title">${escapeHtml(contextTitle)}</div>
@@ -1276,6 +1297,7 @@ export async function renderCheck({
       </div>
       ${renderActionBar(currentItem)}
     `;
+    restoreActiveItemsScroll(container.querySelector(".fs-check-items-scroll"), scrollKey);
     hydrateImages();
     scrollActiveTileIntoView();
   }
