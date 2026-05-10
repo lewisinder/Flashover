@@ -318,6 +318,41 @@ const CHECK_RUNNER_STYLES = `
   background: #fff;
   touch-action: none;
 }
+@media (min-width: 760px) {
+  .fs-check-runner.fs-check-runner-active {
+    width: min(1180px, calc(100vw - 28px));
+    max-width: none;
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-active {
+    display: grid;
+    grid-template-columns: minmax(300px, 40%) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 16px;
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-detail-card,
+  .fs-check-runner.fs-check-runner-active .fs-check-items-card {
+    min-height: 0;
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-detail-card .fs-card-inner {
+    height: 100%;
+    display: flex;
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-focus {
+    width: 100%;
+    grid-template-columns: 1fr;
+    align-content: start;
+    align-items: start;
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-photo {
+    max-height: min(52vh, 480px);
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  .fs-check-runner.fs-check-runner-active .fs-check-actions-inner {
+    max-width: 1020px;
+  }
+}
 @media (max-width: 560px) {
   .fs-check-runner {
     min-height: calc(100vh - 74px);
@@ -828,6 +863,25 @@ export async function renderCheck({
     return (appliance?.lockers || []).every((locker) => getLockerStatus(locker.id) === "complete");
   }
 
+  function suggestedLockerAfter(lockerId) {
+    const lockers = appliance?.lockers || [];
+    if (!lockers.length) return null;
+    const currentIndex = lockers.findIndex((locker) => String(locker.id) === String(lockerId));
+    const startIndex = currentIndex >= 0 ? currentIndex : 0;
+    const orderedLockers = [
+      ...lockers.slice(startIndex + 1),
+      ...lockers.slice(0, startIndex + 1),
+    ];
+    return orderedLockers.find((locker) => getLockerStatus(locker.id) !== "complete") ||
+      lockers[startIndex] ||
+      lockers[0] ||
+      null;
+  }
+
+  function selectNextLockerAfter(lockerId) {
+    nextLockerToStartId = suggestedLockerAfter(lockerId)?.id || null;
+  }
+
   function nextUncheckedTopLevelItem(locker) {
     return getLockerItems(locker).find((item) => !answerExists(item.id)) || null;
   }
@@ -1136,11 +1190,20 @@ export async function renderCheck({
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const activeTile = container.querySelector(".fs-check-tile.is-active");
-        if (!activeTile) return;
-        activeTile.scrollIntoView({
+        const scrollArea = container.querySelector(".fs-check-items-scroll");
+        if (!activeTile || !scrollArea) return;
+        const activeRect = activeTile.getBoundingClientRect();
+        const scrollRect = scrollArea.getBoundingClientRect();
+        const padding = 12;
+        const isAbove = activeRect.top < scrollRect.top + padding;
+        const isBelow = activeRect.bottom > scrollRect.bottom - padding;
+        if (!isAbove && !isBelow) return;
+        const delta = isAbove
+          ? activeRect.top - scrollRect.top - padding
+          : activeRect.bottom - scrollRect.bottom + padding;
+        scrollArea.scrollBy({
+          top: Math.round(delta),
           behavior: "smooth",
-          block: "center",
-          inline: "nearest",
         });
       });
     });
@@ -1508,6 +1571,8 @@ export async function renderCheck({
       const next = nextUncheckedTopLevelItem(locker);
       currentCheckState.selectedItemId = next?.id || null;
       if (!next) {
+        selectNextLockerAfter(locker?.id);
+        saveLocalState();
         goToView("locker-status");
         return;
       }
@@ -1571,8 +1636,12 @@ export async function renderCheck({
     currentCheckState.parentItemId = null;
     currentCheckState.selectedItemId = nextUncheckedTopLevelItem(locker)?.id || null;
     saveLocalState();
-    if (!currentCheckState.selectedItemId) goToView("locker-status");
-    else render();
+    if (!currentCheckState.selectedItemId) {
+      selectNextLockerAfter(locker.id);
+      goToView("locker-status");
+    } else {
+      render();
+    }
   }
 
   function chooseLocker(lockerId) {
