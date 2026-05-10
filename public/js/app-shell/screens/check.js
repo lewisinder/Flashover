@@ -2,6 +2,8 @@ const CHECK_SESSION_ID_KEY = "checkSessionId";
 const CHECK_SESSION_BRIGADE_ID_KEY = "checkSessionBrigadeId";
 const CHECK_SESSION_APPLIANCE_ID_KEY = "checkSessionApplianceId";
 const CHECK_SESSION_STARTUP_MODE_KEY = "checkSessionStartupMode";
+const IMAGE_PRELOAD_CONCURRENCY = 4;
+const PRIORITY_IMAGE_PRELOAD_COUNT = 4;
 
 const CHECK_RUNNER_STYLES = `
 .fs-check-runner {
@@ -866,17 +868,24 @@ export async function renderCheck({
     return null;
   }
 
+  function addImageRef(refs, imageRef) {
+    if (!imageRef) return;
+    const ref = String(imageRef);
+    if (!ref || privateImageUrlCache.has(ref) || refs.includes(ref)) return;
+    refs.push(ref);
+  }
+
   function collectItemImageRefs(items, refs) {
     (Array.isArray(items) ? items : []).forEach((item) => {
-      if (item?.img) refs.add(String(item.img));
+      addImageRef(refs, item?.img);
       if (item?.type === "container") collectItemImageRefs(item.subItems, refs);
     });
   }
 
   function collectApplianceImageRefs() {
-    const refs = new Set();
+    const refs = [];
     (appliance?.lockers || []).forEach((locker) => collectItemImageRefs(getLockerItems(locker), refs));
-    return Array.from(refs).filter((ref) => ref && !privateImageUrlCache.has(ref));
+    return refs;
   }
 
   function preloadImageRefs(refs, concurrency, onProgress) {
@@ -895,6 +904,21 @@ export async function renderCheck({
       }
     }
     return Promise.all(Array.from({ length: Math.min(concurrency, refs.length) }, worker));
+  }
+
+  async function preloadPriorityImageRefs(refs, priorityCount, onProgress) {
+    const priorityRefs = refs.slice(0, priorityCount);
+    for (const ref of priorityRefs) {
+      if (disposed) return refs.slice(priorityRefs.length);
+      try {
+        await resolveImageDisplayUrl(ref);
+        onProgress(true);
+      } catch (error) {
+        console.warn("Could not preload appliance image:", error);
+        onProgress(false);
+      }
+    }
+    return refs.slice(priorityRefs.length);
   }
 
   function updateImagePreloadBanner() {
@@ -935,12 +959,16 @@ export async function renderCheck({
     }
     imagePreloadState = { status: "loading", loaded: 0, total: refs.length, failed: 0 };
     updateImagePreloadBanner();
-    void preloadImageRefs(refs, 4, (success) => {
+    const onProgress = (success) => {
       if (disposed) return;
       imagePreloadState.loaded += 1;
       if (!success) imagePreloadState.failed += 1;
       updateImagePreloadBanner();
-    }).then(() => {
+    };
+    void (async () => {
+      const remainingRefs = await preloadPriorityImageRefs(refs, PRIORITY_IMAGE_PRELOAD_COUNT, onProgress);
+      await preloadImageRefs(remainingRefs, IMAGE_PRELOAD_CONCURRENCY, onProgress);
+    })().then(() => {
       if (disposed) return;
       imagePreloadState.status = imagePreloadState.failed ? "failed" : "complete";
       updateImagePreloadBanner();
