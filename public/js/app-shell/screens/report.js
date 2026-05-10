@@ -1,3 +1,5 @@
+import { getUserBrigades } from "../cache.js";
+
 function el(tag, className) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -32,6 +34,55 @@ const statusIcons = {
 
 function isPrivateImageRef(value) {
   return typeof value === "string" && /^uploads\/[^/]+\/image-[A-Za-z0-9._-]+\.webp$/.test(value);
+}
+
+function normalizeRole(role) {
+  const raw = String(role || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (raw === "admin") return "admin";
+  if (raw === "gearmanager") return "gearManager";
+  if (raw === "member") return "member";
+  if (raw === "viewer") return "viewer";
+  return null;
+}
+
+function canManageReports(role) {
+  const normalized = normalizeRole(role);
+  return normalized === "admin" || normalized === "gearManager";
+}
+
+function filenameFromContentDisposition(header) {
+  const value = String(header || "");
+  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch (e) {
+      return "";
+    }
+  }
+  const quoted = value.match(/filename="([^"]+)"/i);
+  return quoted ? quoted[1] : "";
+}
+
+async function downloadReportPdf({ brigadeId, reportId, token, fallbackFilename }) {
+  const response = await fetch(
+    `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}/export.pdf`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || `Request failed (${response.status})`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromContentDisposition(response.headers.get("Content-Disposition")) || fallbackFilename || "flashover-report.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function drawSignatureOnCanvas(canvas, signature) {
@@ -216,6 +267,7 @@ function renderItem(
 export async function renderReport({
   root,
   auth,
+  db,
   brigadeId,
   reportId,
   setTitle,
@@ -232,12 +284,24 @@ export async function renderReport({
 
   const metaCard = el("div", "fs-card");
   const metaInner = el("div", "fs-card-inner fs-stack");
+  const metaHeader = el("div");
+  metaHeader.style.display = "flex";
+  metaHeader.style.alignItems = "flex-start";
+  metaHeader.style.justifyContent = "space-between";
+  metaHeader.style.gap = "12px";
   const metaTitle = el("div");
   metaTitle.innerHTML = `<div class="fs-card-title">Report details</div><div class="fs-card-subtitle">Who completed this check and when.</div>`;
+  const actionsMenu = el("button", "fs-icon-btn");
+  actionsMenu.type = "button";
+  actionsMenu.textContent = "⋯";
+  actionsMenu.setAttribute("aria-label", "More actions");
+  actionsMenu.disabled = true;
+  metaHeader.appendChild(metaTitle);
+  metaHeader.appendChild(actionsMenu);
   const metaBy = el("div", "fs-row-meta");
   const metaByApp = el("div", "fs-row-meta fs-row-meta-subtle");
   const metaDate = el("div", "fs-row-meta");
-  metaInner.appendChild(metaTitle);
+  metaInner.appendChild(metaHeader);
   metaInner.appendChild(metaBy);
   metaInner.appendChild(metaByApp);
   metaInner.appendChild(metaDate);
@@ -296,10 +360,103 @@ export async function renderReport({
   const user = auth?.currentUser;
   if (!user) return;
 
+  document.getElementById("report-detail-action-sheet")?.remove();
+  const actionSheet = el("div", "fs-sheet-backdrop hidden");
+  actionSheet.id = "report-detail-action-sheet";
+  const sheet = el("div", "fs-sheet");
+  const sheetTitle = el("div", "fs-sheet-title");
+  sheetTitle.textContent = "Report actions";
+  const sheetSubtitle = el("div", "fs-row-meta");
+  const sheetActions = el("div", "fs-sheet-actions");
+  const sheetDownload = el("button", "fs-btn fs-btn-secondary");
+  sheetDownload.type = "button";
+  sheetDownload.textContent = "Download report";
+  const sheetDelete = el("button", "fs-btn fs-btn-danger");
+  sheetDelete.type = "button";
+  sheetDelete.textContent = "Delete report";
+  const sheetCancel = el("button", "fs-btn fs-btn-secondary");
+  sheetCancel.type = "button";
+  sheetCancel.textContent = "Cancel";
+  sheetActions.appendChild(sheetDownload);
+  sheetActions.appendChild(sheetDelete);
+  sheetActions.appendChild(sheetCancel);
+  sheet.appendChild(sheetTitle);
+  sheet.appendChild(sheetSubtitle);
+  sheet.appendChild(sheetActions);
+  actionSheet.appendChild(sheet);
+  document.body.appendChild(actionSheet);
+
+  let currentReport = null;
+  let canDeleteReport = false;
+
   function setAlert(el, message) {
     el.textContent = message || "";
     el.style.display = message ? "block" : "none";
   }
+
+  function openActionSheet() {
+    if (!currentReport) return;
+    sheetSubtitle.textContent = currentReport.applianceName || "Report";
+    sheetDelete.style.display = canDeleteReport ? "" : "none";
+    actionSheet.classList.remove("hidden");
+  }
+
+  function closeActionSheet() {
+    actionSheet.classList.add("hidden");
+  }
+
+  sheet.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+
+  actionSheet.addEventListener("click", (e) => {
+    if (e.target === actionSheet) closeActionSheet();
+  });
+
+  actionsMenu.addEventListener("click", openActionSheet);
+  sheetCancel.addEventListener("click", closeActionSheet);
+
+  sheetDownload.addEventListener("click", async () => {
+    if (!currentReport) return;
+    closeActionSheet();
+    setAlert(errorEl, "");
+    showLoading?.();
+    try {
+      const token = await user.getIdToken();
+      await downloadReportPdf({
+        brigadeId,
+        reportId,
+        token,
+        fallbackFilename: `${currentReport.applianceName || "flashover-report"}.pdf`,
+      });
+    } catch (err) {
+      console.error("Failed to download report:", err);
+      setAlert(errorEl, err.message || "Could not download the report.");
+    } finally {
+      hideLoading?.();
+    }
+  });
+
+  sheetDelete.addEventListener("click", async () => {
+    if (!currentReport || !canDeleteReport) return;
+    if (!confirm("Are you sure you want to delete this report? This cannot be undone.")) return;
+    closeActionSheet();
+    setAlert(errorEl, "");
+    showLoading?.();
+    try {
+      const token = await user.getIdToken();
+      await fetchJson(
+        `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
+        { token, method: "DELETE" }
+      );
+      window.location.hash = "#/reports";
+    } catch (err) {
+      console.error("Failed to delete report:", err);
+      setAlert(errorEl, err.message || "Could not delete the report.");
+    } finally {
+      hideLoading?.();
+    }
+  });
 
   let searchEntries = [];
   let flashTimer = null;
@@ -444,10 +601,17 @@ export async function renderReport({
         noteImageUrlCache.set(imageRef, url);
         return url;
       }
-      const report = await fetchJson(
-        `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
-        { token }
-      );
+      const [report, brigades] = await Promise.all([
+        fetchJson(
+          `/api/brigades/${encodeURIComponent(brigadeId)}/reports/${encodeURIComponent(reportId)}`,
+          { token }
+        ),
+        db ? getUserBrigades({ db, uid: user.uid }).catch(() => []) : Promise.resolve([]),
+      ]);
+      currentReport = report;
+      const activeBrigade = Array.isArray(brigades) ? brigades.find((b) => b.id === brigadeId) : null;
+      canDeleteReport = canManageReports(activeBrigade?.role);
+      actionsMenu.disabled = false;
 
       const title = `Report for ${report.applianceName || "Appliance"}`;
       setTitle?.(title);
