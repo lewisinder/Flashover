@@ -166,7 +166,12 @@ App shell routes include:
 - `#/check/:brigadeId/:applianceId`
 - `#/report/:brigadeId/:reportId`
 
-Some legacy pages still exist and are embedded by the app shell for full workflows:
+The app shell owns the active setup and check workflows:
+
+- `#/setup/:applianceId`
+- `#/check/:brigadeId/:applianceId`
+
+The legacy standalone check page still exists while native check parity is verified:
 
 - `public/checks.html` with `public/js/checks.js`
 
@@ -221,4 +226,4 @@ When running on `localhost` or `127.0.0.1`, the frontend connects to the Auth an
 
 - Production runtime is Firebase Hosting plus Cloud Functions.
 - The top-level `package.json` is not used for production hosting; backend runtime dependencies live in `functions/package.json`.
-- Keep changes compatible with the app shell and the embedded legacy check/setup flows. `checks.js` and `setup.js` are still loaded inside the shell for those workflows.
+- Keep changes compatible with the app shell native setup/check flows. `public/checks.html` and `public/js/checks.js` remain as standalone legacy check files until the native runner has completed parity verification.
