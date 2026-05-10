@@ -10,6 +10,14 @@ const CHECK_RUNNER_STYLES = `
   min-height: calc(100vh - 82px);
   padding-bottom: 18px;
 }
+.fs-check-runner.fs-check-runner-active {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.fs-check-runner.fs-check-runner-active .fs-check-toolbar {
+  flex: 0 0 auto;
+}
 .fs-check-toolbar {
   position: sticky;
   top: 0;
@@ -48,7 +56,28 @@ const CHECK_RUNNER_STYLES = `
   gap: 14px;
 }
 .fs-check-active {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding-bottom: 98px;
+}
+.fs-check-detail-card {
+  flex: 0 0 auto;
+}
+.fs-check-items-card {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.fs-check-items-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 14px;
 }
 .fs-check-focus {
   display: grid;
@@ -58,7 +87,7 @@ const CHECK_RUNNER_STYLES = `
 }
 .fs-check-photo {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;
   border-radius: 16px;
   overflow: hidden;
   background: rgba(15, 23, 42, 0.06);
@@ -293,8 +322,11 @@ const CHECK_RUNNER_STYLES = `
   .fs-check-runner {
     min-height: calc(100vh - 74px);
   }
+  .fs-check-runner.fs-check-runner-active {
+    min-height: 0;
+  }
   .fs-check-focus {
-    grid-template-columns: minmax(160px, 44%) minmax(0, 1fr);
+    grid-template-columns: minmax(152px, 42%) minmax(0, 1fr);
     gap: 12px;
   }
   .fs-check-item-name {
@@ -1130,7 +1162,7 @@ export async function renderCheck({
         <button class="fs-btn fs-btn-secondary fs-btn-sm" type="button" data-action="show-status">Status</button>
       `)}
       <div class="fs-check-view fs-check-active">
-        <div class="fs-card">
+        <div class="fs-card fs-check-detail-card">
           <div class="fs-card-inner">
             <div class="fs-check-focus">
               <div class="fs-check-photo">
@@ -1148,8 +1180,8 @@ export async function renderCheck({
           </div>
         </div>
 
-        <div class="fs-card">
-          <div class="fs-card-inner fs-stack">
+        <div class="fs-card fs-check-items-card">
+          <div class="fs-card-inner fs-stack fs-check-items-scroll">
             <div class="fs-row">
               <div>
                 <div class="fs-row-title">${escapeHtml(contextTitle)}</div>
@@ -1433,6 +1465,7 @@ export async function renderCheck({
 
   function render() {
     if (disposed) return;
+    container.classList.toggle("fs-check-runner-active", view === "active");
     if (signaturePad) {
       signaturePad.destroy?.();
       signaturePad = null;

@@ -280,13 +280,16 @@ export async function renderSetupHome({ root, auth, db, showLoading, hideLoading
   sheetCancel.addEventListener("click", closeActionSheet);
   sheetRename.addEventListener("click", () => {
     if (!actionApplianceId) return;
+    const applianceId = actionApplianceId;
     closeActionSheet();
-    openModal(actionApplianceId);
+    openModal(applianceId);
   });
   sheetDelete.addEventListener("click", () => {
     if (!actionApplianceId) return;
+    const applianceId = actionApplianceId;
+    const applianceName = actionApplianceName;
     closeActionSheet();
-    openDeleteModal(actionApplianceId, actionApplianceName);
+    openDeleteModal(applianceId, applianceName);
   });
 
   function renderList() {
