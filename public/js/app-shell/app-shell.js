@@ -55,6 +55,10 @@ function setShellChromeVisible(visible) {
   tabbar?.classList.toggle("hidden", !visible);
 }
 
+function setShellTabbarVisible(visible) {
+  tabbar?.classList.toggle("hidden", !visible);
+}
+
 function setRouteGuard(guard) {
   routeGuard = typeof guard === "function" ? guard : null;
 }
@@ -432,14 +436,20 @@ const routes = {
     });
   },
   "/check/:brigadeId/:applianceId": async ({ params }) => {
-    // Render the check flow natively inside the shell, while preserving the legacy layout/behavior.
-    // Hide the shell header/footer to avoid duplicate chrome with the check screen's own header/footer.
-    setShellChromeVisible(false);
+    setHeader({ title: "Check", showBack: true, showLogout: false });
+    setShellTabbarVisible(false);
     await renderCheck({
       root: appRoot,
+      auth,
       brigadeId: params.brigadeId,
       applianceId: params.applianceId,
       setShellChromeVisible,
+      setShellTabbarVisible,
+      setTitle: (t) => setHeaderTitle(t || "Check"),
+      setRouteGuard,
+      setBackHandler,
+      showLoading,
+      hideLoading,
       navigateToChecksHome: () => {
         setShellChromeVisible(true);
         window.location.hash = "#/checks";
