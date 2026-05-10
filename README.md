@@ -171,9 +171,7 @@ The app shell owns the active setup and check workflows:
 - `#/setup/:applianceId`
 - `#/check/:brigadeId/:applianceId`
 
-The legacy standalone check page still exists while native check parity is verified:
-
-- `public/checks.html` with `public/js/checks.js`
+The old standalone check runner has been replaced by the app shell check route. `public/checks.html` is now only a redirect shim for older links.
 
 The old standalone setup editor has been replaced by the app shell setup route. `public/setup.html` is now only a redirect shim for older links.
 
@@ -226,4 +224,4 @@ When running on `localhost` or `127.0.0.1`, the frontend connects to the Auth an
 
 - Production runtime is Firebase Hosting plus Cloud Functions.
 - The top-level `package.json` is not used for production hosting; backend runtime dependencies live in `functions/package.json`.
-- Keep changes compatible with the app shell native setup/check flows. `public/checks.html` and `public/js/checks.js` remain as standalone legacy check files until the native runner has completed parity verification.
+- Keep changes compatible with the app shell native setup/check flows. Older `public/checks.html` and `public/setup.html` links are handled by redirect shims.
