@@ -428,6 +428,7 @@ const routes = {
     await renderReport({
       root: appRoot,
       auth,
+      db,
       brigadeId: params.brigadeId,
       reportId: params.reportId,
       setTitle: (t) => setHeader({ title: t, showBack: true, showLogout: false }),

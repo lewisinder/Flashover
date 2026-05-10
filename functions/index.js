@@ -128,6 +128,11 @@ function canViewReports(role) {
     return !!normalizeRole(role);
 }
 
+function canManageReports(role) {
+    const normalized = normalizeRole(role);
+    return normalized === ROLES.ADMIN || normalized === ROLES.GEAR_MANAGER;
+}
+
 function defaultReportEmailsEnabled(role) {
     const normalized = normalizeRole(role);
     return normalized === ROLES.ADMIN || normalized === ROLES.GEAR_MANAGER;
@@ -334,6 +339,43 @@ function isLegacyProjectStorageUrl(value) {
         return false;
     }
     return false;
+}
+
+function collectReportNoteImageRefs(brigadeId, reportData) {
+    const refs = new Set();
+    const addRef = (value) => {
+        const ref = normalizeUploadStoragePath(brigadeId, value);
+        if (ref) refs.add(ref);
+    };
+    const visitItem = (item) => {
+        if (!item || typeof item !== 'object') return;
+        addRef(item.noteImage);
+        if (Array.isArray(item.subItems)) {
+            item.subItems.forEach(visitItem);
+        }
+    };
+
+    const lockers = Array.isArray(reportData && reportData.lockers) ? reportData.lockers : [];
+    lockers.forEach((locker) => {
+        const items = Array.isArray(locker && locker.items)
+            ? locker.items
+            : (Array.isArray(locker && locker.shelves)
+                ? locker.shelves.flatMap((shelf) => Array.isArray(shelf && shelf.items) ? shelf.items : [])
+                : []);
+        items.forEach(visitItem);
+    });
+    return Array.from(refs);
+}
+
+async function deleteReportStorageImages(imageRefs) {
+    await Promise.all((Array.isArray(imageRefs) ? imageRefs : []).map(async (imageRef) => {
+        try {
+            await bucket.file(imageRef).delete();
+        } catch (error) {
+            if (error && error.code === 404) return;
+            throw error;
+        }
+    }));
 }
 
 function normalizeImageRef(brigadeId, value, existingValue = '') {
@@ -2066,6 +2108,90 @@ brigadeRouter.get('/:brigadeId/reports/:reportId', async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch report.' });
     }
 });
+
+brigadeRouter.get('/:brigadeId/reports/:reportId/export.pdf', async (req, res) => {
+    try {
+        const { brigadeId, reportId } = req.params;
+        const userId = req.user.uid;
+        const memberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(userId);
+        const memberDoc = await memberRef.get();
+        if (!memberDoc.exists) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+
+        const brigade = await getBrigadeDoc(brigadeId);
+        if (!brigade) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const reportRef = brigade.ref.collection('reports').doc(reportId);
+        const reportDoc = await reportRef.get();
+        if (!reportDoc.exists) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const reportData = { id: reportDoc.id, ...(reportDoc.data() || {}) };
+        const reportDate = parseReportDateMs(reportData.date) != null ? new Date(reportData.date) : new Date();
+        const payload = {
+            brigadeId,
+            brigadeName: brigade.data && brigade.data.name,
+            applianceId: reportData.applianceId || '',
+            applianceName: reportData.applianceName || 'Appliance',
+            from: reportDate,
+            to: reportDate,
+            reports: [reportData],
+        };
+        const pdfBuffer = await buildReportExportPdf(payload);
+        const filename = buildReportExportFilename(payload);
+
+        setPdfDownloadHeaders(res, filename, pdfBuffer.length);
+        res.status(200).send(pdfBuffer);
+    } catch (error) {
+        console.error(`Error exporting report ${req.params.reportId}:`, error);
+        res.status(500).json({ message: 'Failed to export report.' });
+    }
+});
+
+brigadeRouter.delete('/:brigadeId/reports/:reportId', async (req, res) => {
+    try {
+        const { brigadeId, reportId } = req.params;
+        const userId = req.user.uid;
+        const memberRef = db.collection('brigades').doc(brigadeId).collection('members').doc(userId);
+        const memberDoc = await memberRef.get();
+        if (!memberDoc.exists) {
+            return res.status(403).json({ message: 'Forbidden: You are not a member of this brigade.' });
+        }
+        if (!canManageReports(memberDoc.data().role)) {
+            return res.status(403).json({ message: 'Forbidden: Admin or Gear Manager role required to delete reports.' });
+        }
+
+        const brigadeRef = db.collection('brigades').doc(brigadeId);
+        const brigadeDoc = await brigadeRef.get();
+        if (!brigadeDoc.exists) {
+            return res.status(404).json({ message: 'Brigade not found.' });
+        }
+
+        const reportRef = brigadeRef.collection('reports').doc(reportId);
+        const reportDoc = await reportRef.get();
+        if (!reportDoc.exists) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const imageRefs = collectReportNoteImageRefs(brigadeId, reportDoc.data() || {});
+        await deleteReportStorageImages(imageRefs);
+
+        const batch = db.batch();
+        batch.delete(reportRef.collection('meta').doc('signoff'));
+        batch.delete(reportRef);
+        await batch.commit();
+
+        res.status(200).json({ message: 'Report deleted successfully.' });
+    } catch (error) {
+        console.error(`Error deleting report ${req.params.reportId}:`, error);
+        res.status(500).json({ message: 'Failed to delete report.' });
+    }
+});
+
 brigadeRouter.post('/:brigadeId/data', async (req, res) => {
     try {
         const { brigadeId } = req.params;
