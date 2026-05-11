@@ -55,6 +55,9 @@ const CHECK_RUNNER_STYLES = `
   display: grid;
   gap: 14px;
 }
+.fs-check-footer-view {
+  padding-bottom: 98px;
+}
 .fs-check-active {
   display: flex;
   flex: 1 1 auto;
@@ -233,6 +236,13 @@ const CHECK_RUNNER_STYLES = `
 .fs-check-action.present { background: #16a34a; color: #fff; }
 .fs-check-action.missing { background: #e11d48; color: #fff; }
 .fs-check-action.note { background: #ea580c; color: #fff; }
+.fs-check-nav-actions .fs-check-actions-inner {
+  max-width: 760px;
+}
+.fs-check-nav-actions .fs-btn {
+  min-height: 54px;
+  line-height: 1.15;
+}
 .fs-check-status-list {
   display: grid;
   gap: 10px;
@@ -412,6 +422,17 @@ const CHECK_RUNNER_STYLES = `
   .fs-check-action {
     min-height: 54px;
     font-size: 14px;
+  }
+  .fs-check-footer-view {
+    padding-bottom: 92px;
+  }
+  .fs-check-nav-actions .fs-check-actions-inner {
+    gap: 8px;
+  }
+  .fs-check-nav-actions .fs-btn {
+    min-height: 50px;
+    padding: 10px 8px;
+    font-size: 13px;
   }
 }
 @media (max-width: 380px) {
@@ -1344,7 +1365,7 @@ export async function renderCheck({
 
     container.innerHTML = `
       ${renderToolbar("Check progress", appliance?.name || "Appliance", "")}
-      <div class="fs-check-view">
+      <div class="fs-check-view fs-check-footer-view">
         <div class="fs-card">
           <div class="fs-card-inner fs-stack">
             <div class="fs-row">
@@ -1372,11 +1393,13 @@ export async function renderCheck({
                 `;
               }).join("")}
             </div>
-            <div class="fs-actions">
-              <button class="fs-btn fs-btn-secondary" type="button" data-action="return-active">Back to current locker</button>
-              <button class="fs-btn fs-btn-primary" type="button" data-action="go-locker">Open locker</button>
-              <button class="fs-btn fs-btn-primary" type="button" data-action="show-summary" ${allLockersComplete() ? "" : "disabled"}>Summary</button>
-            </div>
+          </div>
+        </div>
+        <div class="fs-check-actions fs-check-nav-actions">
+          <div class="fs-check-actions-inner">
+            <button class="fs-btn fs-btn-secondary" type="button" data-action="return-active">Back to current locker</button>
+            <button class="fs-btn fs-btn-primary" type="button" data-action="go-locker">Open locker</button>
+            <button class="fs-btn fs-btn-primary" type="button" data-action="show-summary" ${allLockersComplete() ? "" : "disabled"}>Summary</button>
           </div>
         </div>
       </div>
@@ -1387,7 +1410,7 @@ export async function renderCheck({
     updateTitle();
     container.innerHTML = `
       ${renderToolbar("Ready for sign-off", appliance?.name || "Appliance", "")}
-      <div class="fs-check-view">
+      <div class="fs-check-view fs-check-footer-view">
         <div class="fs-card">
           <div class="fs-card-inner fs-stack">
             <div class="fs-row">
@@ -1399,11 +1422,13 @@ export async function renderCheck({
             <div class="fs-check-summary-list">
               ${renderSummaryRows()}
             </div>
-            <div class="fs-actions">
-              <button class="fs-btn fs-btn-secondary" type="button" data-action="show-status">Edit check</button>
-              <button class="fs-btn fs-btn-secondary" type="button" data-action="pause-exit">Exit</button>
-              <button class="fs-btn fs-btn-primary" type="button" data-action="show-signoff">Sign off</button>
-            </div>
+          </div>
+        </div>
+        <div class="fs-check-actions fs-check-nav-actions">
+          <div class="fs-check-actions-inner">
+            <button class="fs-btn fs-btn-secondary" type="button" data-action="show-status">Edit check</button>
+            <button class="fs-btn fs-btn-secondary" type="button" data-action="pause-exit">Exit</button>
+            <button class="fs-btn fs-btn-primary" type="button" data-action="show-signoff">Sign off</button>
           </div>
         </div>
       </div>
