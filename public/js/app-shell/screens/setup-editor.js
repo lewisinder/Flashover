@@ -1156,14 +1156,6 @@ export async function renderSetupEditor({
   function updateItemModalUploadState(modal, draft, statusText = "") {
     const status = modal.querySelector("#setup-item-image-status");
     if (status) status.textContent = statusText || "";
-    const busy = draft?.uploadStatus === "uploading";
-    const buttons = Array.from(modal.querySelectorAll("[data-action-label]"));
-    buttons.forEach((button) => {
-      const label = button.dataset.actionLabel;
-      if (["Save", "Open container items", "Move"].includes(label)) {
-        button.disabled = busy;
-      }
-    });
   }
 
   function startDraftImageUpload({ modal, draft, file, picker }) {
@@ -1202,7 +1194,7 @@ export async function renderSetupEditor({
     }).then((storagePath) => {
       pendingUploads.delete(uploadId);
       if (!storagePath) throw new Error("Upload did not return an image path.");
-      if (draft.cancelled || draft.uploadId !== uploadId || itemDraft !== draft) {
+      if (draft.cancelled || draft.uploadId !== uploadId) {
         void deleteUploadedImageRef(storagePath);
         return;
       }
@@ -1210,28 +1202,44 @@ export async function renderSetupEditor({
       draft.uploadedImageRef = storagePath;
       draft.imageRef = storagePath;
       draft.uploadStatus = "uploaded";
+      if (draft.targetItem) {
+        draft.targetItem.img = storagePath;
+        markDirty();
+        render();
+      }
       if (draft.objectUrl) {
         try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
         draft.objectUrl = "";
       }
-      renderPickerPreview(picker, storagePath);
-      updateItemModalUploadState(modal, draft, "Image uploaded. Save item to keep it.");
+      if (modal.isConnected) {
+        renderPickerPreview(picker, storagePath);
+        updateItemModalUploadState(modal, draft, draft.committed ? "Image uploaded." : "Image uploaded. Save item to keep it.");
+      }
       updateToolbar();
     }).catch((error) => {
       pendingUploads.delete(uploadId);
-      if (draft.cancelled || draft.uploadId !== uploadId || itemDraft !== draft) {
+      if (draft.cancelled || draft.uploadId !== uploadId) {
         updateToolbar();
         return;
       }
       draft.imageRef = draft.originalImageRef || "";
       draft.uploadStatus = "error";
       draft.uploadError = error.message || "Image upload failed.";
+      if (draft.targetItem) {
+        draft.targetItem.img = draft.originalImageRef || "";
+        markDirty();
+        render();
+      }
       if (draft.objectUrl) {
         try { URL.revokeObjectURL(draft.objectUrl); } catch (err) {}
         draft.objectUrl = "";
       }
-      renderPickerPreview(picker, draft.imageRef);
-      updateItemModalUploadState(modal, draft, draft.uploadError);
+      if (modal.isConnected) {
+        renderPickerPreview(picker, draft.imageRef);
+        updateItemModalUploadState(modal, draft, draft.uploadError);
+      } else {
+        setError(draft.uploadError);
+      }
       updateToolbar();
     });
   }
@@ -1388,10 +1396,6 @@ export async function renderSetupEditor({
   }
 
   function saveItemFromModal(modal, { close }) {
-    if (itemDraft?.uploadStatus === "uploading") {
-      alert("Please wait for the image upload to finish.");
-      return null;
-    }
     const name = modal.querySelector("#setup-item-name").value.trim();
     if (!name) {
       alert("Item name is required.");
@@ -1419,6 +1423,7 @@ export async function renderSetupEditor({
       item.type = "item";
       delete item.subItems;
     }
+    itemDraft.targetItem = item;
     itemDraft.committed = true;
     markDirty();
     if (close) {
